@@ -265,6 +265,29 @@ def test_completed_epoch_is_not_rerun(tmp_path):
     assert second.generation == first.generation
 
 
+def test_new_registry_entry_after_complete_epoch_triggers_fresh_epoch(tmp_path):
+    sc = _Scenario(tmp_path)
+    first = asyncio.run(sc.reconciler().reconcile())
+    assert first.is_complete()
+
+    # Simulate a new subdir path added to the registry after reconciliation completed
+    # (e.g., by a legacy _update_registry call during entity extraction).
+    new_subdir = sc.main / "new_pkg"
+    new_subdir.mkdir()
+    (new_subdir / "x.py").write_text("z = 3")
+    current = read_registry(str(sc.db_dir))
+    current[_key(new_subdir)] = "new_pkg_graph.sqlite"
+    write_registry(str(sc.db_dir), current)
+
+    second = asyncio.run(sc.reconciler().reconcile())
+    # A fresh epoch should start because new_pkg is not in first's classifications.
+    assert second.epoch_id != first.epoch_id
+    assert second.is_complete()
+    # The new subdir should be classified as remapped (it's inside the main git repo).
+    assert _key(new_subdir) in second.classifications
+    assert second.classifications[_key(new_subdir)].serving_state == "remapped"
+
+
 def test_crash_mid_run_resumes_via_cas(tmp_path):
     sc = _Scenario(tmp_path)
     # Simulate a crashed run: an incomplete epoch with an expired lease.

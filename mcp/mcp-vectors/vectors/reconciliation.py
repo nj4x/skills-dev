@@ -258,7 +258,15 @@ class RegistryReconciler:
                 and existing.resolver_fingerprint == resolver_fp
             )
             if existing.is_complete() and fingerprints_match:
-                return existing
+                current_registry = read_registry(self._db_dir)
+                unprocessed = [r for r in current_registry if r not in existing.classifications]
+                if not unprocessed:
+                    return existing
+                logger.warning(
+                    "reconciliation: %d new registry entries since last epoch, starting fresh epoch: %s",
+                    len(unprocessed),
+                    unprocessed,
+                )
             if not existing.is_complete():
                 lease_live = existing.lease_expires_at > now
                 if lease_live and existing.owner_lease != self._owner:
