@@ -52,10 +52,13 @@ Four interconnected architectural decisions to fix recurring entity embedding fa
 
 ## ADR Files
 
-- docs/adr/0043-entity-identity-centralization.md
-- docs/adr/0044-stale-entity-vectors-cleanup.md
-- docs/adr/0045-edge-stub-entity-embedding.md
-- docs/adr/0046-entity-embedding-coverage-metrics.md
+ADRs are in the repository root `docs/adr/` alongside all prior mcp-vectors ADRs (0009-0042),
+continuing the single numbering sequence.
+
+- /docs/adr/0043-entity-identity-centralization.md
+- /docs/adr/0044-stale-entity-vectors-cleanup.md
+- /docs/adr/0045-edge-stub-entity-embedding.md
+- /docs/adr/0046-entity-embedding-coverage-metrics.md
 
 ## Critic Review
 

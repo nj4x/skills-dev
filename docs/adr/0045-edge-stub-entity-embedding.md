@@ -110,6 +110,13 @@ stub vectors are upserted.
 
 ## Related
 
+- [[0009-entity-embeddings-in-qdrant]]: established the embedding-at-extraction-time contract this
+  ADR extends to stubs; defines the collection and embedding-text format this ADR relies on.
+- [[0011-entity-search-scope-and-fallback]]: K=20 retrieval with 30% community cap — category-1
+  stubs (file paths, module names) consume this budget and may increase cap-trigger and zero-match
+  rates at search_global time. Whether stubs receive community assignments is not stated.
+- [[0012-mcp-vectors-entities-qdrant-collection]]: defines the entity collection schema; stubs are
+  upserted there with `description=""` in the payload.
 - [[0043-entity-identity-centralization]]: stub IDs computed using centralized formula.
 - [[0044-stale-entity-vectors-cleanup]]: stub IDs are in `deleted_ids`; the delete-after-upsert
   defect means 0044 currently deletes the freshly re-created stub vectors this ADR writes, inverting

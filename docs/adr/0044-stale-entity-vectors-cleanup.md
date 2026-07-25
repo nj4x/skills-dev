@@ -195,10 +195,18 @@ point survives.
 
 ## Related
 
+- [[0009-entity-embeddings-in-qdrant]]: established `mcp_vectors_entities` as the collection this
+  ADR targets for deletion; defines the embedding-at-extraction-time contract.
+- [[0010-entity-community-reverse-mapping-in-sqlite]]: build-scoped join table that mediates
+  community targeting (not direct entity-vector search); see Context for scope of mitigation.
+- [[0012-mcp-vectors-entities-qdrant-collection]]: defines the dedicated entity collection and its
+  schema; any change to payload fields or the collection name breaks the delete path.
 - [[0043-entity-identity-centralization]]: depends on centralized identity for targeted deletion.
+- [[0046-entity-embedding-coverage-metrics]]: vectors deleted by this ADR's defect are counted as
+  successfully embedded — the metrics understate the actual coverage deficit.
 - [[0045-edge-stub-entity-embedding]]: introduced the stubs list (second return value of
   `replace_file_entity_map`); this ADR added `deleted_ids` as the third.
-- [[0013-two-tier-entity-cleanup-on-removal]] (root `docs/adr/`): ADR-0013 explicitly considered
+- [[0013-two-tier-entity-cleanup-on-removal]]: ADR-0013 explicitly considered
   and rejected per-entity Qdrant deletion from the file-removal path, arguing orphans are
   "provably harmless and self-healing" via deterministic IDs. This ADR's mechanism implements
   exactly the pattern ADR-0013 rejected, applied at the re-index path instead of `remove_document`.
