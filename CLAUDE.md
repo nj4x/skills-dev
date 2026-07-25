@@ -29,6 +29,16 @@ How issues are tracked as markdown files under `.scratch/<feature>/`.
 Domain terminology and architecture decisions for this workspace.
 @docs/agents/domain.md
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues; skills use `gh issue create` to publish. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context repo with root `CONTEXT.md`, `docs/adr/`, and `.data/requirements/`. See `docs/agents/domain.md`.
+
 ## Pre-conditions
 
 Entity-graph tools require the codebase to be indexed first (`index_codebase`).

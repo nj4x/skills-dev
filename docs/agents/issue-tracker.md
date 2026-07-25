@@ -1,30 +1,22 @@
-# Issue tracker: Local Markdown
+# Issue tracker: GitHub Issues
 
-Issues and specs (you may know a spec as a PRD) for this repo live as markdown files in `.scratch/`.
+Issues and specs for this repo are tracked in GitHub Issues using the `gh` CLI.
 
 ## Conventions
 
-- One feature per directory: `.scratch/<feature-slug>/`
-- The spec is `.scratch/<feature-slug>/spec.md`
-- Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` — never a single combined tickets file
-- Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
-- Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- Skills like `to-tickets`, `to-spec`, and `triage` create issues via `gh issue create`
+- Issue titles follow the pattern `<category>: <title>` (e.g., `feature: add user authentication`)
+- Issue bodies use Markdown and may include labels for categorization
+- Issue state is managed via labels and GitHub's native state (open/closed)
 
 ## When a skill says "publish to the issue tracker"
 
-Create a new file under `.scratch/<feature-slug>/` (creating the directory if needed).
+Create a new issue using `gh issue create` with the provided title and body. The skill will handle label assignment and state transitions.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the file at the referenced path. The user will normally pass the path or the issue number directly.
+Read the issue via `gh issue view <number>` or the GitHub web UI. The user will normally pass the issue number directly.
 
-## Wayfinding operations
+## PRs as a request surface
 
-Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
-
-- **Map**: `.scratch/<effort>/map.md` — the Notes / Decisions-so-far / Fog body.
-- **Child ticket**: `.scratch/<effort>/issues/NN-<slug>.md`, numbered from `01`, with the question in the body. A `Type:` line records the ticket type (`research`/`prototype`/`grilling`/`task`); a `Status:` line records `claimed`/`resolved`.
-- **Blocking**: a `Blocked by: NN, NN` line near the top. A ticket is unblocked when every file it lists is `resolved`.
-- **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
-- **Claim**: set `Status: claimed` and save before any work.
-- **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
+By default, PRs are not included in the triage queue. To enable PR-based work requests, update this file's frontmatter (add `prs_as_requests: true`) and configure the `triage` skill accordingly.
