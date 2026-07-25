@@ -11,6 +11,16 @@ This repository contains **20 original skills** and **26 adapted skills** from u
 
 See [Borrowed Skills](#borrowed-skills) for the full attribution table with modification details.
 
+## Installation
+
+In Claude Code, tell the agent:
+
+```
+Hey please link all skills-dev skills to ~/.claude/skills.
+```
+
+The agent will symlink each skill directory to `~/.claude/skills/<name>` so they become available immediately.
+
 ## Usage
 
 **New repo — always start here:**
