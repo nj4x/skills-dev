@@ -57,10 +57,10 @@ Because the delete runs *after* the upserts and the ID sets overlap, re-indexing
 vectors that were just written for it.
 
 This can be derived from the code: `_purge_file_contributions()` returns all entities whose only
-source file was the re-indexed file (graph_store.py:481-482, 506-524); `replace_file_entity_map()`
-immediately re-inserts matching entities and creates stubs with identical IDs (rag.py:762-774); and
-`_extract_and_merge()` calls `delete_by_entity_ids` after upserts complete (rag.py:842). The
-three operations preserve the overlap by design.
+source file was the re-indexed file (graph_store.py:478-506); `replace_file_entity_map()` then
+re-inserts matching entities in SQLite (graph_store.py:763-774) and returns stubs with identical
+IDs (graph_store.py:798-822); and `_extract_and_merge()` calls `delete_by_entity_ids` after all
+upserts complete (rag.py:844). The three operations preserve the overlap by design.
 
 The hidden assumption behind the original decision — that `deleted_ids` is disjoint from the
 entities re-created in the same transaction — is false. The ADR's claim that "cleanup happens after
@@ -116,10 +116,10 @@ See "Known defect" section for detailed evaluation of remediations (a)-(d). At a
 ⚠️ **Net regression for single-file entities and stubs (known defect)**: re-indexing a file deletes
 the vectors of every entity/stub whose sole source is that file, even those re-inserted moments
 earlier in the same transaction — see "Known defect" above. The net outcome is zero Qdrant vectors
-where there were stale-but-present vectors before shipping this ADR, and stale vectors elsewhere
-remain unfixed. This is a regression; the mechanism does remove true orphans from multi-file
-entities and global orphans from file deletion, but at the cost of erasing live single-file vectors
-on every re-index.
+where there were stale-but-present vectors before shipping this ADR. This is a regression; entities
+with multiple source files are kept (trimmed, not deleted), and the file-deletion path
+(`delete_file_entities`) explicitly does not call `delete_by_entity_ids`. Single-file re-index
+remains the primary case where this ADR runs.
 ⚠️ **Best-effort with silent failures**: `QdrantEntities.delete_by_entity_ids` catches every
 exception internally, logs a generic best-effort warning without file context, and returns `None`.
 The caller's `try/except` in `_extract_and_merge` is therefore dead code and its file-path-scoped
@@ -146,6 +146,12 @@ point survives.
   (graph_store.py:499-504). A large single-file purge can exceed SQLITE_MAX_VARIABLE_NUMBER (999
   on installations before SQLite 3.32, 32766+ on 3.32+), aborting the entire transaction. The Qdrant
   request may also be rejected silently (swallowed by the internal exception handler).
+- Graceful shutdown mid-extraction: `RAGPipeline.close()` cancels in-flight extraction tasks via
+  `CancelledError` (a `BaseException`), which passes through all `except Exception` handlers in the
+  embed and delete paths. This deterministically leaves the SQLite transaction committed while the
+  async Qdrant delete is never attempted — creating permanent orphans. No repair or recovery path.
+  Same risk applies to any task cancellation between the SQLite COMMIT and the fire-and-forget
+  async delete call.
 
 ## Related
 
