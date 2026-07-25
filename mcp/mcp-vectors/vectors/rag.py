@@ -154,8 +154,11 @@ class GraphificationStats:
     files_extracted: int = 0
     files_pending_extraction: int = 0     # files queued but not yet done
     chunks_extracted: int = 0
-    entities_found: int = 0
-    entities_embed_failed: int = 0
+    entities_found: int = 0               # extracted entities only
+    entities_embedded: int = 0            # entities + stubs successfully embedded to Qdrant
+    entities_total: int = 0               # extracted entities + edge-stub entities
+    entities_embed_failed: int = 0        # total failures (entities + stubs)
+    entity_embedding_enabled: bool = False  # whether _qdrant_entities is initialized
     batches_sent: int = 0
     extraction_started_at: Optional[float] = None
     last_extraction_completed_at: Optional[float] = None
@@ -749,12 +752,14 @@ class RAGPipeline:
             )
             if getattr(self, "_qdrant_entities", None) is not None and entity_map.entities:
                 embed_sem = asyncio.Semaphore(self.config.entity_extraction_concurrency)
+                stats.entity_embedding_enabled = True
 
                 seen_sigs: set[str] = set()
                 embed_failures = 0
+                embeds_succeeded = 0
 
                 async def _embed_entity(entity) -> None:
-                    nonlocal embed_failures
+                    nonlocal embed_failures, embeds_succeeded
                     try:
                         etype = getattr(entity, "type", "") or ""
                         eid = entity_id(entity.name, etype, root_id_for_graph)
@@ -771,6 +776,7 @@ class RAGPipeline:
                             type_=etype,
                             embedding=emb,
                         )
+                        embeds_succeeded += 1
                     except Exception as exc:
                         embed_failures += 1
                         sig = type(exc).__name__
@@ -797,7 +803,7 @@ class RAGPipeline:
                 # Embed edge-stub entities (synthetic entities created for edge endpoints)
                 if stubs:
                     async def _embed_stub(stub_dict) -> None:
-                        nonlocal embed_failures
+                        nonlocal embed_failures, embeds_succeeded
                         try:
                             stub_id = stub_dict["id"]
                             stub_name = stub_dict["name"]
@@ -812,6 +818,7 @@ class RAGPipeline:
                                 type_=stub_type,
                                 embedding=emb,
                             )
+                            embeds_succeeded += 1
                         except Exception as exc:
                             embed_failures += 1
                             sig = type(exc).__name__
@@ -846,10 +853,16 @@ class RAGPipeline:
                     logger.warning(
                         "Entity embedding: %d/%d failures for %s",
                         embed_failures,
-                        len(entity_map.entities),
+                        len(entity_map.entities) + len(stubs),
                         sanitize_for_log(file_path.name),
                     )
                     stats.entities_embed_failed += embed_failures
+                    stats.entities_embedded += embeds_succeeded
+                    stats.entities_total += len(entity_map.entities) + len(stubs)
+            elif getattr(self, "_qdrant_entities", None) is not None and entity_map.entities:
+                    # All embeds succeeded (no failures)
+                    stats.entities_embedded += embeds_succeeded
+                    stats.entities_total += len(entity_map.entities) + len(stubs)
             self.schedule_detection(root_id_for_graph)
             stats.files_pending_extraction -= 1
             stats.files_extracted += 1
