@@ -54,3 +54,23 @@ Four interconnected architectural decisions to fix recurring entity embedding fa
 - docs/adr/0044-stale-entity-vectors-cleanup.md
 - docs/adr/0045-edge-stub-entity-embedding.md
 - docs/adr/0046-entity-embedding-coverage-metrics.md
+
+## Critic Review
+
+3 iterations. Final verdict: **approve (minor)**.
+
+### Resolved major issues (iterations 1–3)
+
+- ADR-0044: delete-after-upsert erases fresh vectors on re-index — documented as Known defect with cross-file concurrency window and remediation options.
+- ADR-0043: formula change is a breaking identity change requiring full re-index — added ⚠️ consequence; Context rewritten to describe id divergence (not collision).
+- ADR-0046: metrics are not queryable via `get_graph_stats()` — downgraded from "explicit and queryable" to "internal only".
+- ADR-0045: zero-entity files with stubs never embedded — documented in Scope; embedding text corrected to `f"{name}: (no description)"`.
+- All four ADRs: method name corrected to `extract_entities_from_file`; wikilinks fixed; Alternatives considered added to 0043 and 0046; Scope sections added to all four.
+- ADR-0044: cross-file concurrency window, unchunked batch sizes, silent failures in `delete_by_entity_ids` — all documented.
+
+### Remaining minor issues (not blocking)
+
+- ADR-0044 Known gaps: SQL description is slightly imprecise (`edge_contributions` delete binds ~2N params; entity/edge deletes are per-ID loops). Substance correct.
+- ADR-0044 Related: attribution inverted — 0045 introduced the stub list (second element); 0044 added `deleted_ids` (third).
+- ADR-0046 Related: 0044 described as "independent… purely observational", mildly contradicting the Consequences entry that says vectors erased by 0044's defect are counted as embedded.
+- ADR-0043 Known limitations: does not name the `"unknown"` vs `""` type fallback divergence between graph_store.py and entity_extractor.py for unresolved edge endpoints (consequence already covered in prose).
