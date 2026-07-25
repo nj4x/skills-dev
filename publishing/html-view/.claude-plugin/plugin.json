@@ -1,0 +1,6 @@
+{
+  "name": "html-view",
+  "description": "Generates a single shareable HTML artifact from markdown, a directory of docs, or conversation content. Modes: crafted (editorial, technical-doc, deck) for one source; dashboard SPA with sidebar navigation for multiple files or a directory. Mermaid.js diagrams are supported via optional CDN inclusion when the source contains diagram blocks.",
+  "version": "0.4.0",
+  "author": { "name": "skills-dev" }
+}

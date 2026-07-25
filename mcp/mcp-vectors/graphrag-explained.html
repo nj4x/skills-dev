@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GraphRAG in mcp-vectors vs. Original GraphRAG</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px 30px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .nav {
+            display: flex;
+            gap: 10px;
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            flex-wrap: wrap;
+        }
+
+        .nav button {
+            padding: 10px 20px;
+            border: 2px solid #667eea;
+            background: white;
+            color: #667eea;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        .nav button.active {
+            background: #667eea;
+            color: white;
+        }
+
+        .nav button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .content {
+            padding: 40px 30px;
+        }
+
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        h3 {
+            color: #764ba2;
+            margin: 25px 0 15px 0;
+            font-size: 1.3em;
+        }
+
+        .comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .comparison-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            background: #f9f9f9;
+            transition: all 0.3s ease;
+        }
+
+        .comparison-card:hover {
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+            border-color: #667eea;
+        }
+
+        .comparison-card h4 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .comparison-card ul {
+            list-style: none;
+            margin-left: 0;
+        }
+
+        .comparison-card li {
+            margin: 10px 0;
+            padding-left: 25px;
+            position: relative;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .comparison-card li:before {
+            content: "→";
+            position: absolute;
+            left: 0;
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .highlight {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+
+        .flow-diagram {
+            background: #f5f5f5;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'Courier New', monospace;
+            overflow-x: auto;
+        }
+
+        .flow-step {
+            display: inline-block;
+            background: #667eea;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin: 5px 5px 5px 0;
+            font-weight: 600;
+        }
+
+        .flow-arrow {
+            display: inline-block;
+            color: #667eea;
+            margin: 0 8px;
+            font-weight: bold;
+        }
+
+        .intro-box {
+            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            line-height: 1.8;
+        }
+
+        .key-difference {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            color: #1b5e20;
+            font-weight: 500;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: #f5f5f5;
+        }
+
+        @media (max-width: 768px) {
+            .comparison {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 1.8em;
+            }
+
+            .nav {
+                flex-direction: column;
+            }
+
+            .nav button {
+                width: 100%;
+            }
+
+            table {
+                font-size: 0.9em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 GraphRAG Explained</h1>
+            <p>mcp-vectors vs. Original GraphRAG Project</p>
+        </header>
+
+        <div class="nav">
+            <button class="tab-btn active" data-tab="overview">Overview</button>
+            <button class="tab-btn" data-tab="extraction">Extraction</button>
+            <button class="tab-btn" data-tab="communities">Communities</button>
+            <button class="tab-btn" data-tab="reports">Reports</button>
+            <button class="tab-btn" data-tab="storage">Storage & Caching</button>
+            <button class="tab-btn" data-tab="async">Async Model</button>
+            <button class="tab-btn" data-tab="summary">Quick Summary</button>
+        </div>
+
+        <div class="content">
+            <!-- Overview Section -->
+            <div id="overview" class="section active">
+                <h2>What is GraphRAG?</h2>
+
+                <div class="intro-box">
+                    <strong>GraphRAG</strong> is a technique for building knowledge graphs from text documents. Instead of just storing text chunks, it:
+                    <ul style="margin-top: 10px; margin-left: 20px;">
+                        <li><strong>Extracts entities & relationships</strong> from text (e.g., "Alice works at Company B")</li>
+                        <li><strong>Builds a knowledge graph</strong> connecting these entities</li>
+                        <li><strong>Detects communities</strong> (clusters of related entities)</li>
+                        <li><strong>Generates summaries</strong> of each community</li>
+                        <li><strong>Uses the graph for smarter retrieval</strong> instead of just semantic search</li>
+                    </ul>
+                </div>
+
+                <h3>The Two Implementations</h3>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>📦 mcp-vectors</h4>
+                        <ul>
+                            <li>Lightweight, local-first GraphRAG</li>
+                            <li>Built as an MCP (Model Context Protocol) server</li>
+                            <li>Uses LM Studio (local LLM)</li>
+                            <li>SQLite graph storage</li>
+                            <li>Can run offline, no cloud dependencies</li>
+                            <li>Designed for code analysis with AST parsing</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>🌐 Original GraphRAG</h4>
+                        <ul>
+                            <li>Enterprise-scale, production GraphRAG</li>
+                            <li>Developed by Microsoft Research</li>
+                            <li>Pluggable LLM backends (OpenAI, etc.)</li>
+                            <li>Flexible storage backends (Azure, local file, etc.)</li>
+                            <li>Designed for large-scale document indexing</li>
+                            <li>Hierarchical community detection</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="key-difference">
+                    ✨ <strong>Main Philosophy Difference:</strong> mcp-vectors prioritizes simplicity and local execution. The original GraphRAG prioritizes scalability and extensibility.
+                </div>
+            </div>
+
+            <!-- Extraction Section -->
+            <div id="extraction" class="section">
+                <h2>Entity Extraction: How They Find Information</h2>
+
+                <h3>🔍 mcp-vectors Approach</h3>
+                <p>Uses a <strong>hybrid LLM + code analysis (AST)</strong> strategy:</p>
+                <div class="flow-diagram">
+                    <span class="flow-step">Read chunk</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Parse Python AST</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Send to LLM</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Extract entities</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Iterative gleaning</span>
+                </div>
+                <p style="margin-top: 10px;"><strong>Key feature:</strong> If indexing Python code, it first parses the AST to find functions, classes, and imports. Then the LLM adds semantic meaning to what it sees. This makes extraction more accurate for code.</p>
+
+                <h3>🔍 Original GraphRAG Approach</h3>
+                <p>Uses <strong>pure LLM extraction</strong>:</p>
+                <div class="flow-diagram">
+                    <span class="flow-step">Read chunk</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Send to LLM</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Parse response</span>
+                    <span class="flow-arrow">→</span>
+                    <span class="flow-step">Iterative gleaning</span>
+                </div>
+                <p style="margin-top: 10px;"><strong>Key feature:</strong> No structural parsing—relies entirely on the LLM to understand the text and extract entities. Works for any document type (articles, emails, code comments, etc.).</p>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>mcp-vectors Pros</h4>
+                        <ul>
+                            <li>More accurate for code (AST provides structure)</li>
+                            <li>Finds functions, classes automatically</li>
+                            <li>Reduces LLM hallucination in code</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>Original GraphRAG Pros</h4>
+                        <ul>
+                            <li>Works for any document type</li>
+                            <li>Simpler, fewer dependencies</li>
+                            <li>No need to parse file format</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="highlight">
+                    <strong>Both use identical "gleaning":</strong> After initial extraction, they ask the LLM: "Did you miss anything?" If it says "yes," they ask again. This iterative process finds entities missed on first pass.
+                </div>
+            </div>
+
+            <!-- Communities Section -->
+            <div id="communities" class="section">
+                <h2>Community Detection: Grouping Related Entities</h2>
+
+                <p>After extracting entities and relationships, both systems group related entities into <strong>communities</strong>. Think of it as finding clusters: "These 5 people and 3 companies form a business unit."</p>
+
+                <h3>🔗 mcp-vectors Algorithm</h3>
+                <div class="flow-diagram">
+                    Try graspologic library <span class="flow-arrow">→</span> If fails, use NetworkX <span class="flow-arrow">→</span> If fails, create singleton clusters
+                </div>
+                <p style="margin-top: 10px;"><strong>Key feature:</strong> Graceful fallback. Even if the fancy algorithm isn't available, it still produces communities (one entity per community as worst case).</p>
+
+                <h3>🔗 Original GraphRAG Algorithm</h3>
+                <div class="flow-diagram">
+                    Use graspologic hierarchical Leiden (required)
+                </div>
+                <p style="margin-top: 10px;"><strong>Key feature:</strong> Uses <strong>hierarchical</strong> clustering, so you get communities at multiple levels (communities within communities within communities). This is powerful but requires the graspologic library to be installed.</p>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>mcp-vectors</h4>
+                        <ul>
+                            <li>Single-level communities</li>
+                            <li>Fallback algorithms if needed</li>
+                            <li>Lightweight, fewer dependencies</li>
+                            <li>Handles empty graphs gracefully</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>Original GraphRAG</h4>
+                        <ul>
+                            <li>Hierarchical communities (multi-level)</li>
+                            <li>More detailed structure</li>
+                            <li>Requires graspologic library</li>
+                            <li>Better for large, complex graphs</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="key-difference">
+                    💡 <strong>Why hierarchical matters:</strong> If you have 1000 entities, hierarchical clustering gives you level-0 (all 1000), level-1 (100 macro-communities), level-2 (10 meta-communities). This lets you summarize at different zoom levels.
+                </div>
+            </div>
+
+            <!-- Reports Section -->
+            <div id="reports" class="section">
+                <h2>Report Generation: Summarizing Communities</h2>
+
+                <p>After detecting communities, both systems generate <strong>summaries</strong> of what each community is about.</p>
+
+                <h3>📝 mcp-vectors Approach</h3>
+                <p><strong>Separate facts from prose:</strong></p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>Facts (from graph):</strong> Entity names, file paths, relationship count (deterministic, always correct)</li>
+                    <li><strong>Prose (from LLM):</strong> Title, summary, key findings (LLM-generated, may be incomplete if LLM fails)</li>
+                </ul>
+                <p style="margin-top: 10px;">If the LLM fails or returns bad data, the facts are still correct. The prose just stays empty.</p>
+
+                <h3>📝 Original GraphRAG Approach</h3>
+                <p><strong>Hierarchical context:</strong></p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>Uses child community summaries to build parent summaries</li>
+                    <li>Tracks token budgets to fit summaries in LLM context window</li>
+                    <li>Reports include rank, attributes, period, size</li>
+                    <li>Generates reports for each hierarchy level</li>
+                </ul>
+                <p style="margin-top: 10px;">More complex but gives hierarchical summaries: overview → detail → detail.</p>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>mcp-vectors</h4>
+                        <ul>
+                            <li>Simple, flat report</li>
+                            <li>Graph facts separate from LLM prose</li>
+                            <li>Graceful degradation if LLM fails</li>
+                            <li>Fast to generate</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>Original GraphRAG</h4>
+                        <ul>
+                            <li>Hierarchical reports</li>
+                            <li>Context-aware (uses child summaries)</li>
+                            <li>Token-budget aware</li>
+                            <li>Richer metadata (rank, period, etc.)</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="highlight">
+                    <strong>mcp-vectors bonus:</strong> Handles LLM response format flexibly. If the LLM returns arrays instead of strings (like llama-3.2-1b-instruct does), it converts them automatically.
+                </div>
+            </div>
+
+            <!-- Storage Section -->
+            <div id="storage" class="section">
+                <h2>Storage & Caching: Where Does the Data Live?</h2>
+
+                <h3>💾 mcp-vectors</h3>
+                <p><strong>Three layers:</strong></p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>SQLite graph:</strong> Entities, relationships, communities stored locally in `~/.mcp-vectors/graphs/`</li>
+                    <li><strong>Qdrant vectors:</strong> Community summaries (embeddings) for fast similarity search</li>
+                    <li><strong>In-memory cache:</strong> LLM extraction results cached during a session (not persisted)</li>
+                </ul>
+                <p style="margin-top: 10px;">Everything stays on your machine. SQLite uses WAL (Write-Ahead Logging) for concurrent access.</p>
+
+                <h3>💾 Original GraphRAG</h3>
+                <p><strong>Pluggable storage:</strong></p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li><strong>FileStorage:</strong> Writes to local JSON/Parquet files</li>
+                    <li><strong>Azure CosmosDB:</strong> Cloud-based NoSQL for enterprise scale</li>
+                    <li><strong>Azure Blob Storage:</strong> For large document archives</li>
+                    <li><strong>Abstract Cache:</strong> LLM response caching via pluggable backend</li>
+                </ul>
+                <p style="margin-top: 10px;">You choose where data goes. Designed for cloud-scale deployments.</p>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>mcp-vectors</h4>
+                        <ul>
+                            <li>Fixed: SQLite + Qdrant</li>
+                            <li>Local-first (privacy)</li>
+                            <li>No network calls</li>
+                            <li>Session-based caching</li>
+                            <li>Fast startup</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>Original GraphRAG</h4>
+                        <ul>
+                            <li>Flexible backends</li>
+                            <li>Cloud-scale ready</li>
+                            <li>Multi-region support</li>
+                            <li>Persistent caching</li>
+                            <li>More configuration</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="key-difference">
+                    🔒 <strong>Privacy:</strong> mcp-vectors stores everything locally. Original GraphRAG can use cloud storage, which is powerful but requires security consideration.
+                </div>
+            </div>
+
+            <!-- Async Model Section -->
+            <div id="async" class="section">
+                <h2>Async & Background Tasks: How They Process in Real-Time</h2>
+
+                <h3>⚡ mcp-vectors</h3>
+                <p><strong>Task deduplication:</strong></p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>When files change, it schedules a graph rebuild</li>
+                    <li>If a rebuild is already running, it doesn't spawn a second one</li>
+                    <li>If files change during rebuild, it reschedules one more pass</li>
+                    <li>This prevents thundering herd and redundant work</li>
+                </ul>
+                <p style="margin-top: 10px;"><strong>Graceful shutdown:</strong> When stopping, it waits for active operations to finish (up to 60 seconds by default).</p>
+
+                <h3>⚡ Original GraphRAG</h3>
+                <p><strong>Workflow-driven batching:</strong></p>
+                <ul style="margin-left: 20px; margin-top: 10px;">
+                    <li>Processes files in batches through a pipeline</li>
+                    <li>Each stage is async-configurable: EAGER, SEMAPHORE, or THREADED</li>
+                    <li>Progress callbacks notify you of advancement</li>
+                    <li>Designed for "run once, index everything" rather than continuous updates</li>
+                </ul>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>mcp-vectors</h4>
+                        <ul>
+                            <li>Continuous updates (watch mode)</li>
+                            <li>Single-flight semantics</li>
+                            <li>Backpressure handling (reschedule)</li>
+                            <li>Real-time index updates</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>Original GraphRAG</h4>
+                        <ul>
+                            <li>Batch processing</li>
+                            <li>Progress tracking</li>
+                            <li>Flexible concurrency</li>
+                            <li>Pipeline orchestration</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="highlight">
+                    <strong>mcp-vectors use case:</strong> Great for watching a codebase and keeping the index fresh as you edit files.
+                    <br><br>
+                    <strong>Original GraphRAG use case:</strong> Great for one-time indexing of a document archive.
+                </div>
+            </div>
+
+            <!-- Summary Section -->
+            <div id="summary" class="section">
+                <h2>Quick Comparison Table</h2>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Aspect</th>
+                            <th>mcp-vectors</th>
+                            <th>Original GraphRAG</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Extraction</strong></td>
+                            <td>LLM + AST parsing (code-aware)</td>
+                            <td>Pure LLM</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Communities</strong></td>
+                            <td>Flat (single-level)</td>
+                            <td>Hierarchical (multi-level)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Fallback</strong></td>
+                            <td>Yes (graceful degradation)</td>
+                            <td>No (requires dependencies)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Report Generation</strong></td>
+                            <td>Separate facts/prose</td>
+                            <td>Hierarchical context</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Graph Storage</strong></td>
+                            <td>SQLite (local)</td>
+                            <td>Pluggable (local/cloud)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>LLM Cache</strong></td>
+                            <td>In-memory (session)</td>
+                            <td>Pluggable backend (persistent)</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Processing Model</strong></td>
+                            <td>Continuous updates (watch mode)</td>
+                            <td>Batch processing</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Best For</strong></td>
+                            <td>Local code analysis, real-time indexing</td>
+                            <td>Enterprise indexing, document archives</td>
+                        </tr>
+                    </tbody>
+                </table>
+
+                <h3 style="margin-top: 40px;">🎯 When to Use Each</h3>
+
+                <div class="comparison">
+                    <div class="comparison-card">
+                        <h4>Use mcp-vectors if...</h4>
+                        <ul>
+                            <li>You want to analyze code (Python, etc.)</li>
+                            <li>You need privacy (local-only)</li>
+                            <li>You want real-time index updates</li>
+                            <li>You have a small-medium codebase</li>
+                            <li>You want to run offline</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-card">
+                        <h4>Use Original GraphRAG if...</h4>
+                        <ul>
+                            <li>You're indexing documents (articles, PDFs, etc.)</li>
+                            <li>You need cloud scalability</li>
+                            <li>You want hierarchical summaries</li>
+                            <li>You have large enterprise archives</li>
+                            <li>You need pluggable storage backends</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="highlight">
+                    <strong>💡 Fun fact:</strong> Both systems use the same delimiter scheme for parsing LLM output! `<|>` for tuples, `##` for records. This makes them compatible in spirit, even if implementation differs.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tabs = document.querySelectorAll('.tab-btn');
+        const sections = document.querySelectorAll('.section');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all
+                tabs.forEach(t => t.classList.remove('active'));
+                sections.forEach(s => s.classList.remove('active'));
+
+                // Add active class to clicked tab and corresponding section
+                tab.classList.add('active');
+                const sectionId = tab.getAttribute('data-tab');
+                document.getElementById(sectionId).classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>

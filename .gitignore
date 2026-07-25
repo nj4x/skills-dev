@@ -1,0 +1,21 @@
+.DS_Store
+.claude/
+__pycache__
+.pytest_cache
+.data
+.claude
+
+# Credentials and personal config
+.env
+email/inbox/prefs.json
+
+# Python
+.venv/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Scratch artifacts (issue tracker markdown files are committed; only ignore temp/generated)
+.scratch
