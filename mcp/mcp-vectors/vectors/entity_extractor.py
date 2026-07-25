@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from .graph_store import entity_id
+
 if TYPE_CHECKING:
     from vectors.lm_studio import LMStudioClient
     from vectors.extraction_cache import ExtractionCache
@@ -465,9 +467,7 @@ class EntityExtractor:
         """Deduplicate by (name.lower(), type), merging chunk_ids and descriptions."""
         merged: dict[str, Entity] = {}
         for e in all_entities:
-            key = hashlib.sha256(
-                f"{e.name.lower()}|{e.type}|{root_id}".encode()
-            ).hexdigest()
+            key = entity_id(e.name, e.type or "", root_id)
             if key in merged:
                 merged[key].chunk_ids.extend(e.chunk_ids)
                 merged[key].descriptions.extend(e.descriptions)

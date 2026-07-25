@@ -32,7 +32,7 @@ from .errors import (
 from .extraction_cache import ExtractionCache
 from .git_resolver import GitResolution, GitResolver
 from .gitignore import GitignoreMatcher
-from .graph_store import GraphStore, GraphSnapshot, _entity_id
+from .graph_store import GraphStore, GraphSnapshot, entity_id
 from .lm_studio import LMStudioClient
 from .locks import PathLockConflict, PathLockManager
 from .paths import PathPolicy
@@ -757,7 +757,7 @@ class RAGPipeline:
                     nonlocal embed_failures
                     try:
                         etype = getattr(entity, "type", "") or ""
-                        eid = _entity_id(entity.name, etype, root_id_for_graph)
+                        eid = entity_id(entity.name, etype, root_id_for_graph)
                         text = _entity_embedding_text(
                             entity.name,
                             getattr(entity, "description", None),

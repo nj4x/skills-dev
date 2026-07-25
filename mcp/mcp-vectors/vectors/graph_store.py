@@ -29,11 +29,12 @@ SCHEMA_VERSION = 2
 # ID helpers
 # ---------------------------------------------------------------------------
 
-def _entity_id(name: str, type_: str, root_id: str) -> str:
-    return hashlib.sha256(f"{name.lower()}|{type_}|{root_id}".encode()).hexdigest()
+def entity_id(name: str, type_: str, root_id: str) -> str:
+    type_normalized = (type_ or "").strip().lower()
+    return hashlib.sha256(f"{name.lower()}|{type_normalized}|{root_id}".encode()).hexdigest()
 
 
-def _edge_id(source_id: str, target_id: str, edge_type: str, root_id: str) -> str:
+def edge_id(source_id: str, target_id: str, edge_type: str, root_id: str) -> str:
     return hashlib.sha256(f"{source_id}|{target_id}|{edge_type}|{root_id}".encode()).hexdigest()
 
 
@@ -522,7 +523,7 @@ class GraphStore:
         Does NOT call mark_communities_dirty; callers handle that.
         """
         self._ensure_schema(root_id)
-        eid = _entity_id(name, type_, root_id)
+        eid = entity_id(name, type_, root_id)
         conn = self._connect(root_id)
         try:
             with conn:
@@ -604,7 +605,7 @@ class GraphStore:
                     (source_name, source_type),
                     (target_name, target_type),
                 ):
-                    eid = _entity_id(name, type_, root_id)
+                    eid = entity_id(name, type_, root_id)
                     exists = conn.execute(
                         "SELECT 1 FROM entities WHERE id = ?", (eid,)
                     ).fetchone()
@@ -619,9 +620,9 @@ class GraphStore:
                             (eid, name, name.lower(), type_, "", root_id),
                         )
 
-                source_id = _entity_id(source_name, source_type, root_id)
-                target_id = _entity_id(target_name, target_type, root_id)
-                eid = _edge_id(source_id, target_id, edge_type, root_id)
+                source_id = entity_id(source_name, source_type, root_id)
+                target_id = entity_id(target_name, target_type, root_id)
+                eid = edge_id(source_id, target_id, edge_type, root_id)
 
                 row = conn.execute(
                     "SELECT id FROM edges WHERE id = ?", (eid,)
@@ -722,7 +723,7 @@ class GraphStore:
                     # Process entities
                     entity_name_to_id = {}
                     for entity in entity_map.entities:
-                        eid = _entity_id(entity.name, entity.type, root_id)
+                        eid = entity_id(entity.name, entity.type, root_id)
                         entity_name_to_id[entity.name.lower()] = eid
 
                         row = conn.execute(
@@ -765,7 +766,7 @@ class GraphStore:
 
                     # Populate entity_chunks for this file
                     for entity in entity_map.entities:
-                        eid = _entity_id(entity.name, entity.type, root_id)
+                        eid = entity_id(entity.name, entity.type, root_id)
                         for cid in (getattr(entity, "chunk_ids", []) or []):
                             conn.execute(
                                 "INSERT OR IGNORE INTO entity_chunks (entity_id, file_path, chunk_id, root_id) VALUES (?,?,?,?)",
@@ -780,9 +781,9 @@ class GraphStore:
                         source_type = getattr(edge, "source_type", "") or entity_type_map.get(edge.source.lower(), "unknown")
                         target_type = getattr(edge, "target_type", "") or entity_type_map.get(edge.target.lower(), "unknown")
 
-                        source_id = _entity_id(edge.source, source_type, root_id)
-                        target_id = _entity_id(edge.target, target_type, root_id)
-                        eid = _edge_id(source_id, target_id, edge.edge_type, root_id)
+                        source_id = entity_id(edge.source, source_type, root_id)
+                        target_id = entity_id(edge.target, target_type, root_id)
+                        eid = edge_id(source_id, target_id, edge.edge_type, root_id)
                         new_edge_ids.add(eid)
 
                         # Stub missing source

@@ -19,7 +19,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from vectors.entity_extractor import Entity
-from vectors.graph_store import _entity_id
+from vectors.graph_store import entity_id
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ def test_upsert_entity_id_matches_graph_store_id():
         await _drive(pipeline, [entity], Path("/tmp/a.py"), root_id="root_id")
 
         assert len(recorder.calls) == 1
-        assert recorder.calls[0]["entity_id"] == _entity_id(
+        assert recorder.calls[0]["entity_id"] == entity_id(
             "PositionEngine", "class", "root_id"
         )
         # payload type_ and the id-computation type must be the same value

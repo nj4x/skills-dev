@@ -13,7 +13,7 @@ import types
 
 import pytest
 
-from vectors.graph_store import GraphStore, _entity_id
+from vectors.graph_store import GraphStore, entity_id
 
 
 ROOT = "test_root_id_abc123"
@@ -178,7 +178,7 @@ def test_get_neighbors_single_hop(tmp_path):
     # B→C
     gs.merge_edge("B", "C", "function", "function", "calls", ROOT)
 
-    a_id = _entity_id("A", "function", ROOT)
+    a_id = entity_id("A", "function", ROOT)
     neighbors = gs.get_neighbors(a_id, max_depth=1)
     neighbor_names = {n["name"] for n in neighbors}
 
@@ -197,7 +197,7 @@ def test_get_neighbors_two_hop(tmp_path):
     gs.merge_edge("A", "B", "function", "function", "calls", ROOT)
     gs.merge_edge("B", "C", "function", "function", "calls", ROOT)
 
-    a_id = _entity_id("A", "function", ROOT)
+    a_id = entity_id("A", "function", ROOT)
     neighbors = gs.get_neighbors(a_id, max_depth=2)
     neighbor_names = {n["name"] for n in neighbors}
 
@@ -217,7 +217,7 @@ def test_get_neighbors_edge_type_filter(tmp_path):
     gs.merge_edge("A", "B", "class", "class", "inherits", ROOT)
     gs.merge_edge("A", "C", "class", "module", "imports", ROOT)
 
-    a_id = _entity_id("A", "class", ROOT)
+    a_id = entity_id("A", "class", ROOT)
     neighbors = gs.get_neighbors(a_id, max_depth=1, edge_types=["inherits"])
     neighbor_names = {n["name"] for n in neighbors}
 
@@ -322,9 +322,9 @@ def test_rebuild_degree(tmp_path):
 
     gs.rebuild_degree(ROOT)
 
-    a_id = _entity_id("A", "function", ROOT)
-    b_id = _entity_id("B", "function", ROOT)
-    c_id = _entity_id("C", "function", ROOT)
+    a_id = entity_id("A", "function", ROOT)
+    b_id = entity_id("B", "function", ROOT)
+    c_id = entity_id("C", "function", ROOT)
 
     entities = gs.find_entities("", ROOT, limit=100)  # wildcard
     by_id = {e["id"]: e for e in entities}
@@ -397,10 +397,10 @@ def test_edge_weight_accumulation(tmp_path):
 
     # Read back via find_entities + separate edge check (direct sqlite)
     import sqlite3
-    from vectors.graph_store import _entity_id, _edge_id
-    x_id = _entity_id("X", "function", ROOT)
-    y_id = _entity_id("Y", "function", ROOT)
-    e_id = _edge_id(x_id, y_id, "calls", ROOT)
+    from vectors.graph_store import entity_id, edge_id
+    x_id = entity_id("X", "function", ROOT)
+    y_id = entity_id("Y", "function", ROOT)
+    e_id = edge_id(x_id, y_id, "calls", ROOT)
 
     db_path = gs._db_path(ROOT)
     conn = sqlite3.connect(db_path)
@@ -825,7 +825,7 @@ def test_phantom_edges_manual_sentinel_cleaned_when_entity_deleted(tmp_path):
     also be gone.
     """
     import sqlite3
-    from vectors.graph_store import _entity_id, _edge_id, MIGRATION_SENTINEL_FILE
+    from vectors.graph_store import entity_id, edge_id, MIGRATION_SENTINEL_FILE
 
     gs = make_store(tmp_path)
 
@@ -836,9 +836,9 @@ def test_phantom_edges_manual_sentinel_cleaned_when_entity_deleted(tmp_path):
     )
     gs.replace_file_entity_map(em, ROOT, "/sole.py")
 
-    a_id = _entity_id("A", "function", ROOT)
-    b_id = _entity_id("B", "function", ROOT)
-    e_id = _edge_id(a_id, b_id, "calls", ROOT)
+    a_id = entity_id("A", "function", ROOT)
+    b_id = entity_id("B", "function", ROOT)
+    e_id = edge_id(a_id, b_id, "calls", ROOT)
 
     db_path = gs._db_path(ROOT)
 
@@ -1078,8 +1078,8 @@ def test_frequency_preserved_on_reindex(tmp_path):
 
     db_path = gs._db_path(ROOT)
     conn = _sqlite3.connect(db_path)
-    from vectors.graph_store import _entity_id
-    eid = _entity_id("E", "function", ROOT)
+    from vectors.graph_store import entity_id
+    eid = entity_id("E", "function", ROOT)
     freq_before = conn.execute("SELECT frequency FROM entities WHERE id=?", (eid,)).fetchone()[0]
     conn.close()
     assert freq_before == 2, f"Expected frequency=2 after indexing two files, got {freq_before}"
