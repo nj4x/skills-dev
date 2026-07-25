@@ -12,7 +12,10 @@ The `GraphificationStats` dataclass tracked `entities_found` (extracted count) a
 - How many entities were successfully embedded (only failures tracked).
 - Total entity scope (extracted entities + edge-stub entities).
 
-This made it impossible to answer: "What is our embedding coverage for this file?"
+This made it impossible to trend the embed-attempt success rate within a running process. Note: the
+original motivating question ("What is our embedding coverage for this file?") is not actually
+answerable with these counters, since they are per-root cumulative. See Decision for the corrected
+semantics.
 
 ## Decision
 
@@ -32,11 +35,19 @@ class GraphificationStats:
   flag, not the "embedding is configured" flag its name suggests. The inline comment in `rag.py`
   currently says `# whether _qdrant_entities is initialized`, which is incomplete; see Consequences
   for the documented stale comment caveat.
-- `entities_embedded`: incremented for each successful entity/stub upsert (independent counter, not
-  derived from the failure count).
-- `entities_total`: `len(entity_map.entities) + len(stubs)` accumulated per file.
+- `entities_embedded`: incremented (`+=`) for each successful entity/stub upsert (independent
+  counter, not derived from the failure count). Accumulated monotonically per root for the process
+  lifetime — not reset between files or re-indexes.
+- `entities_total`: `len(entity_map.entities) + len(stubs)` accumulated per file, also monotonically
+  (`+=`). Counts upsert _attempts_, not distinct entities: if the same entity appears in multiple
+  files (multi-source), it is counted once per file processing pass; if the same file is re-indexed
+  N times, it is counted N times. Pre-existing SQLite stubs (inserted before this ADR) are not in
+  the `stubs` return value and are not counted.
 
-Coverage is computed as: `entities_embedded / entities_total` (when `entity_embedding_enabled=True`).
+The ratio `entities_embedded / entities_total` is a per-root, per-process-lifetime embed-attempt
+success rate — **not** a per-file coverage fraction and **not** a corpus-wide coverage snapshot.
+After restart, it reads 0/0 even if Qdrant holds millions of valid entity points. A re-indexed file
+adds to both numerator and denominator regardless of whether its vectors already existed.
 
 ## Scope
 

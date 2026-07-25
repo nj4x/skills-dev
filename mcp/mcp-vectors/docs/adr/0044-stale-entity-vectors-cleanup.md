@@ -2,18 +2,24 @@
 
 ## Status
 
-Approved — implementation has a known live defect: re-indexing any file erases all single-file
-entities' and stubs' vectors immediately after they are upserted, inverting the intended outcome and
-creating a net regression versus not shipping this ADR. The most promising remediation
-(set-difference deletion) was not selected at implementation time. No tracking issue exists; the
-defect is unowned.
+Approved — implementation (commit 41ac5a0) has a known live defect: re-indexing any file erases all
+single-file entities' and stubs' vectors immediately after they are upserted, inverting the intended
+outcome and creating a net regression versus not shipping this ADR. The lowest-risk remediation
+(disabling the delete entirely, option (e)) was not selected at implementation time. No tracking
+issue exists; the defect is unowned.
 
 ## Context
 
-When a file is re-indexed, `_purge_file_contributions()` deletes entities from SQLite whose only source was that file. However, their vectors remain orphaned in Qdrant's `mcp_vectors_entities` collection, creating:
-- **Coverage gaps**: community reports query Qdrant and miss orphaned entities.
-- **Dead data**: stale vectors accumulate and never get cleaned.
-- **Observability loss**: entity-graph reranking cannot find entities that were deleted.
+When a file is re-indexed, `_purge_file_contributions()` deletes entities from SQLite whose only source was that file. However, their vectors remain orphaned in Qdrant's `mcp_vectors_entities` collection. An orphan is a Qdrant point with no corresponding SQLite row. This creates two real problems:
+- **False positives in entity search**: semantic search over `mcp_vectors_entities` returns orphaned
+  points; they appear in nearest-neighbour results for queries even though the entity no longer
+  exists in the graph. (ADR-0013's build-scoped join table mitigates this for community-report
+  targeting, but any direct entity-vector search is unfiltered.)
+- **Dead data accumulation**: stale vectors grow unbounded; there is no periodic sweep.
+
+Note: the original bullets ("coverage gaps", "observability loss") were inverted. Orphans are extra
+Qdrant points — they cause surplus data, not missing data. Deleting vectors cannot make deleted
+entities findable.
 
 The function `QdrantEntities.delete_by_entity_ids()` exists but is never called — it was stubbed as "reserved for future use." (Its docstring in `vectors/qdrant.py` still carries that "reserved for future use" wording even though it is now wired; the comment is stale.)
 
@@ -143,6 +149,14 @@ point survives.
 ## Known gaps
 
 - Delete-after-upsert overlap (above) — the dominant correctness issue.
+- Zero-entity re-index: `delete_by_entity_ids` is gated only on `deleted_ids` being non-empty
+  and `_qdrant_entities` being initialized (rag.py:841-842). The embed block is gated additionally
+  on `entity_map.entities` being truthy (rag.py:753). If a re-indexed file now yields zero entities,
+  the embed block is skipped (no re-upsert), but `deleted_ids` is non-empty (entities that existed
+  for this file before), so the delete block runs and permanently destroys all prior entity and stub
+  vectors for that file with no compensating write. This is a distinct regression from the
+  delete-after-upsert overlap; it affects files whose entity content has been removed or whose LLM
+  extraction returned empty on this pass.
 - `remove_document` / `delete_file_entities` path leaves orphaned vectors.
 - `extract_entities_from_file` performs no cleanup at all.
 - Delete failures are unobservable in practice (swallowed inside the Qdrant helper).
@@ -159,14 +173,16 @@ point survives.
   async Qdrant delete is never attempted — creating permanent orphans. No repair or recovery path.
   Same risk applies to any task cancellation between the SQLite COMMIT and the fire-and-forget
   async delete call.
-- `RegistryReconciler` startup purge: when a root is classified `SERVING_PURGED` or
-  `SERVING_REMAPPED`, `_apply_vector_phase` deletes from the chunk collection via
-  `vector_store.delete_root` and `_apply_graph_phase` drops the SQLite graph DB via
-  `graph_store.drop_root`. Neither phase calls `_qdrant_entities.delete_by_root_id`. Entity
-  vectors for the purged root become permanently unrecoverable — `root_id` is embedded in the
-  identity digest, so without the SQLite DB no re-extraction can overwrite them, and ADR-0013's
-  self-healing mechanism does not apply. Only `clear_index` triggers `delete_by_root_id`
-  (rag.py:1512), making the reconciliation path a silent permanent-orphan source.
+- `RegistryReconciler` startup purge/remap: `_apply_vector_phase` calls `vector_store.remap_root`
+  for `SERVING_REMAPPED` roots and `vector_store.delete_root` for `SERVING_PURGED` roots
+  (reconciliation.py:347-359); `_apply_graph_phase` calls `graph_store.drop_root` for both states
+  (:374-376). Neither phase calls `_qdrant_entities.delete_by_root_id`. Entity vectors for affected
+  roots are left orphaned in `mcp_vectors_entities`. For `SERVING_REMAPPED` roots this is permanent:
+  the canonical `root_id` changes, so the old root's entity digests can never be overwritten by
+  re-indexing under the new root. For `SERVING_PURGED` roots, orphans are recoverable if the root
+  is subsequently re-indexed (same `root_id` → same digests → upsert overwrites), but permanent if
+  the root is never re-indexed. Only `clear_index` triggers `delete_by_root_id` (rag.py:1512);
+  reconciliation is a silent orphan source for both states.
 
 ## Related
 

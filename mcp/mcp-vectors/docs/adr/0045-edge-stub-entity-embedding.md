@@ -11,6 +11,22 @@ During entity graph indexing, `replace_file_entity_map()` creates "edge-stub" en
 - **Orphaned records**: SQLite has entities with no corresponding Qdrant vectors.
 - **Hidden inconsistency**: stats show 100% "embedded" while stubs are silently missing.
 
+**What stubs actually are**: stubs arise from two edge sources with different stub populations:
+
+1. **AST parser (tree-sitter)**: emits `imports` edges with `source = file_path` (an absolute
+   filesystem path string) and `target = module_name` (e.g. `"os"`, `"numpy"`). Neither is an
+   extracted `Entity`, so both become stubs. The dominant stub population is therefore absolute
+   filesystem paths and unqualified module names, embedded as `"<abs path>: (no description)"` and
+   `"os: (no description)"`. These inject path and module noise into the entity vector space and
+   persist absolute filesystem paths in Qdrant payloads.
+
+2. **LLM relationship extractor**: emits edges whose source/target are semantic entity names that
+   may not appear in the extracted entity list. These produce meaningful stubs (domain concept names)
+   for which reranking resolution is the intended benefit.
+
+The stated reranking benefit applies to category 2 stubs. Category 1 stubs (the likely majority for
+code-heavy roots) dilute the entity vector space with filesystem paths and module strings.
+
 ## Decision
 
 Embed edge-stub entities into Qdrant alongside regular entities:

@@ -76,6 +76,15 @@ path or re-index detection exists.
   its type; if two extracted entities share a lowercased name, the edge gets the last-seen entity's
   type, which may yield a different `entity_id` — mis-attaching the edge or fabricating a spurious
   stub vector.
+- **`"unknown"` type fallback for edge endpoints**: endpoint type is resolved as
+  `edge.source_type or entity_type_map.get(name.lower()) or "unknown"` (graph_store.py:790-791).
+  When an AST parser sets `source_type=""` (e.g., for `imports` edges) and the endpoint name is not
+  in the entity map, the type defaults to `"unknown"`. Since type is identity-bearing, an entity
+  stubbed as `("Foo", "unknown", root)` has a different digest than the same name later extracted
+  with its real type `("Foo", "function", root)` — the stub and the entity coexist as separate
+  SQLite rows and Qdrant points, edges remain attached to the `"unknown"` stub, and
+  `get_entity_neighbors` on the real entity returns empty (no edges). The `"unknown"` stub is a
+  permanent orphan unless a full `clear_index` + re-index is performed.
 - **No Unicode normalization or casefolding depth**: names are not NFC/NFD normalized, so visually
   identical names can hash differently. Type case-folding uses Python's `.lower()` which is
   locale-naive and does not match SQL's `LOWER()` for non-ASCII; using `.casefold()` would be
