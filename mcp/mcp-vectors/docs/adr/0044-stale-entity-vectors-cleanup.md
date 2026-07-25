@@ -13,7 +13,7 @@ issue exists; the defect is unowned.
 When a file is re-indexed, `_purge_file_contributions()` deletes entities from SQLite whose only source was that file. However, their vectors remain orphaned in Qdrant's `mcp_vectors_entities` collection. An orphan is a Qdrant point with no corresponding SQLite row. This creates two real problems:
 - **False positives in entity search**: semantic search over `mcp_vectors_entities` returns orphaned
   points; they appear in nearest-neighbour results for queries even though the entity no longer
-  exists in the graph. (ADR-0013's build-scoped join table mitigates this for community-report
+  exists in the graph. (ADR-0010's build-scoped join table mitigates this for community-report
   targeting, but any direct entity-vector search is unfiltered.)
 - **Dead data accumulation**: stale vectors grow unbounded; there is no periodic sweep.
 
@@ -32,10 +32,14 @@ Wire `delete_by_entity_ids()` into the re-index cleanup path:
 3. **Async cleanup in `_extract_and_merge()`**: after graph update completes, call `await _qdrant_entities.delete_by_entity_ids(root_id, deleted_ids)`.
 4. **Best-effort**: cleanup failures do not block extraction.
 
-Benefits:
+Benefits claimed at design time (see Known defect for where these do not hold):
 - Keeps `GraphStore` synchronous (no async I/O).
 - Cleanup runs after the SQLite transaction has committed, so the delete set reflects durable state.
+  ⚠️ The ordering that matters — delete relative to embed upserts, not relative to the commit —
+  was not considered; see Known defect.
 - Non-fatal: a Qdrant outage cannot fail an index operation.
+  ⚠️ The caller's `try/except` in `_extract_and_merge` is dead code because `delete_by_entity_ids`
+  swallows all exceptions internally; see Consequences.
 
 ## Scope
 
@@ -167,6 +171,11 @@ point survives.
   (graph_store.py:499-504). A large single-file purge can exceed SQLITE_MAX_VARIABLE_NUMBER (999
   on installations before SQLite 3.32, 32766+ on 3.32+), aborting the entire transaction. The Qdrant
   request may also be rejected silently (swallowed by the internal exception handler).
+- Cross-file edge deletion: `_purge_file_contributions` at graph_store.py:493-498 issues a single
+  `DELETE FROM edge_contributions WHERE (source_id IN (...) OR target_id IN (...))` with no
+  `file_path` scope. Re-indexing file A removes edge contributions attributed to file B whenever an
+  endpoint entity's sole source was A. Those edges stay missing from B's perspective until B is
+  re-indexed, silently corrupting graph traversal for other files in the interim.
 - Graceful shutdown mid-extraction: `RAGPipeline.close()` cancels in-flight extraction tasks via
   `CancelledError` (a `BaseException`), which passes through all `except Exception` handlers in the
   embed and delete paths. This deterministically leaves the SQLite transaction committed while the

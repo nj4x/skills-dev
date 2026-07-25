@@ -2,7 +2,8 @@
 
 ## Status
 
-Approved — outcome currently negated on re-index by the ADR-0044 defect.
+Approved — implemented (commit 209a8da). Outcome currently negated on re-index by the ADR-0044
+defect.
 
 ## Context
 
@@ -110,5 +111,7 @@ stub vectors are upserted.
 ## Related
 
 - [[0043-entity-identity-centralization]]: stub IDs computed using centralized formula.
-- [[0044-stale-entity-vectors-cleanup]]: stale stubs cleaned via same deletion path.
+- [[0044-stale-entity-vectors-cleanup]]: stub IDs are in `deleted_ids`; the delete-after-upsert
+  defect means 0044 currently deletes the freshly re-created stub vectors this ADR writes, inverting
+  the intended interaction. The combined effect on re-index is a net loss of all single-file vectors.
 - [[0046-entity-embedding-coverage-metrics]]: stubs included in `entities_total` count.

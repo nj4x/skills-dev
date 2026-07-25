@@ -9,12 +9,23 @@ is required.
 ## Context
 
 The entity identity formula `SHA256(name.lower() | type | root_id)` is defined in three places across the codebase:
-1. `graph_store.py:_entity_id()` — canonical definition
-2. `entity_extractor.py:_merge_entities()` — inline sha256 with raw `entity.type` (no coercion)
-3. `rag.py` — imports private `_entity_id` from graph_store
+1. `graph_store.py:_entity_id()` — canonical storage definition; used by graph_store for SQLite rows
+2. `entity_extractor.py:_merge_entities()` — inline sha256 with raw `entity.type` used as a **local
+   in-memory dedup key only** (the dict is not persisted; `entity.type` is declared `str` and for
+   all values the parser produces the difference with graph_store's coercion is latent, not observed)
+3. `rag.py` — imports private `_entity_id` from graph_store for Qdrant embedding
+
+Note: the `_merge_entities` hash was never persisted as a storage identity; the realized divergence
+was between graph_store (SQLite row key) and rag.py (Qdrant point derivation). Both imported
+`_entity_id` but rag.py coerced `None→""` before hashing, while graph_store did not apply type
+normalization. This creates a latent hazard where any entity with a falsy or mixed-case type could
+yield different IDs across the extraction and storage layers.
 
 This creates two problems:
-- **Divergent identity across subsystems**: `entity_extractor._merge_entities` hashed `entity.type` verbatim (including `None` as the literal string `"None"`), while rag.py coerced `None→""` before hashing. The same entity thus received different IDs in different layers — its vector was indexed under a digest no SQLite row carried, making it permanently unreachable by entity-graph targeting.
+- **Latent identity divergence**: if `entity.type` is falsy or non-lowercase, the hash in the
+  dedup dict differs from the graph_store digest, meaning deduplication and storage could land on
+  different keys. With current extractors this doesn't occur in practice, but the code's correctness
+  depends on a type-coercion convention that is unstated and unenforced.
 - **Seam leakage**: `_entity_id` is private but imported across modules, making it fragile.
 
 ## Decision
@@ -55,6 +66,14 @@ path or re-index detection exists.
 
 ## Known limitations (not addressed)
 
+- **Second identity layer in Qdrant storage**: the actual Qdrant point ID is derived by
+  `_make_entity_point_id(entity_id, root_id)` at qdrant.py:1209-1212, which applies a second
+  MD5-based transformation: `uuid(md5(f"{entity_id}|{root_id}".encode()))`. This formula is
+  defined in `qdrant.py`, outside `graph_store`, and re-mixes `root_id` (which is already in the
+  SHA256 digest). ADR-0043 centralizes the `entity_id` formula but not this second layer. The
+  `delete_by_entity_ids` and `upsert` paths both call `_make_entity_point_id` identically, so
+  correctness holds — but the constraint is undocumented. Any future change to the Qdrant point ID
+  formula without updating both call sites would break delete targeting silently.
 - **Name case-folding collisions**: `entity_id()` lowercases `name`, so `HTTP` and `Http` of the
   same type collapse to one identity while callers persist whatever raw casing arrived first.
   Whichever entity is written last wins the stored display name. This is deliberate (it merges

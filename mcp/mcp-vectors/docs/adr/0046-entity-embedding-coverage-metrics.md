@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved — implemented (commits 37e007f). Counters are internal-only; `get_graph_stats()` does not
+Approved — implemented (commit 37e007f). Counters are internal-only; `get_graph_stats()` does not
 serialize them. Not exposed via any MCP tool surface.
 
 ## Context
@@ -68,9 +68,10 @@ entities"** — both present identically.
 ## Consequences
 
 ⚠️ **Internal only, not queryable**: the three fields live on the `GraphificationStats` dataclass
-but `get_graph_stats()` does not serialize them (it emits `entities_found` and
-`entities_embed_failed` only). No MCP tool surface exposes coverage; the values are reachable only
-by in-process inspection. The original "explicit and queryable" claim was false.
+but `get_graph_stats()` does not serialize them — it emits 11 keys including `entities_found` and
+`entities_embed_failed` but not the three new counters (rag.py:1361-1372). No MCP tool surface
+exposes coverage; the values are reachable only by in-process inspection. The original "explicit
+and queryable" claim was false.
 ⚠️ **Per-process and volatile**: counters are in-memory, reset to zero on server restart, and are
 never reconciled against Qdrant. After a restart, coverage reads as 0/0 while any real gap in
 Qdrant persists — so a low `entities_embedded` means "little embedded since boot", not "little
