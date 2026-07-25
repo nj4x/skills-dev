@@ -32,7 +32,7 @@ from .errors import (
 from .extraction_cache import ExtractionCache
 from .git_resolver import GitResolution, GitResolver
 from .gitignore import GitignoreMatcher
-from .graph_store import GraphStore, GraphSnapshot
+from .graph_store import GraphStore, GraphSnapshot, _entity_id
 from .lm_studio import LMStudioClient
 from .locks import PathLockConflict, PathLockManager
 from .paths import PathPolicy
@@ -154,6 +154,7 @@ class GraphificationStats:
     files_pending_extraction: int = 0     # files queued but not yet done
     chunks_extracted: int = 0
     entities_found: int = 0
+    entities_embed_failed: int = 0
     batches_sent: int = 0
     extraction_started_at: Optional[float] = None
     last_extraction_completed_at: Optional[float] = None
@@ -748,28 +749,58 @@ class RAGPipeline:
             if getattr(self, "_qdrant_entities", None) is not None and entity_map.entities:
                 embed_sem = asyncio.Semaphore(self.config.entity_extraction_concurrency)
 
-                async def _embed_entity(entity) -> None:
-                    text = _entity_embedding_text(
-                        entity.name,
-                        getattr(entity, "description", None),
-                    )
-                    async with embed_sem:
-                        emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
-                    await self._qdrant_entities.upsert(
-                        entity_id=entity.entity_id,
-                        root_id=root_id_for_graph,
-                        name=entity.name,
-                        type_=getattr(entity, "type", "") or "",
-                        embedding=emb,
-                    )
+                seen_sigs: set[str] = set()
+                embed_failures = 0
 
-                try:
-                    await asyncio.gather(*[_embed_entity(e) for e in entity_map.entities])
-                except Exception as emb_exc:
+                async def _embed_entity(entity) -> None:
+                    nonlocal embed_failures
+                    try:
+                        etype = getattr(entity, "type", "") or ""
+                        eid = _entity_id(entity.name, etype, root_id_for_graph)
+                        text = _entity_embedding_text(
+                            entity.name,
+                            getattr(entity, "description", None),
+                        )
+                        async with embed_sem:
+                            emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
+                        await self._qdrant_entities.upsert(
+                            entity_id=eid,
+                            root_id=root_id_for_graph,
+                            name=entity.name,
+                            type_=etype,
+                            embedding=emb,
+                        )
+                    except Exception as exc:
+                        embed_failures += 1
+                        sig = type(exc).__name__
+                        if sig not in seen_sigs:
+                            seen_sigs.add(sig)
+                            # Guard the diagnostic path itself: it must never raise
+                            # (and thereby cancel sibling embeds via gather).
+                            try:
+                                attr_keys = sorted(getattr(entity, "__dict__", {}).keys())
+                                logger.warning(
+                                    "Entity embedding upsert failed for %s | "
+                                    "entity=%s type=%s attrs=%s",
+                                    sanitize_for_log(file_path.name),
+                                    sanitize_for_log(str(getattr(entity, "name", "<unknown>"))),
+                                    type(entity).__name__,
+                                    attr_keys,
+                                    exc_info=True,
+                                )
+                            except Exception:
+                                pass
+
+                await asyncio.gather(*[_embed_entity(e) for e in entity_map.entities])
+
+                if embed_failures:
                     logger.warning(
-                        f"Entity embedding upsert failed for "
-                        f"{sanitize_for_log(file_path.name)}: {emb_exc}"
+                        "Entity embedding: %d/%d failures for %s",
+                        embed_failures,
+                        len(entity_map.entities),
+                        sanitize_for_log(file_path.name),
                     )
+                    stats.entities_embed_failed += embed_failures
             self.schedule_detection(root_id_for_graph)
             stats.files_pending_extraction -= 1
             stats.files_extracted += 1
@@ -1263,6 +1294,7 @@ class RAGPipeline:
             "files_pending_extraction": stats.files_pending_extraction,
             "chunks_extracted": stats.chunks_extracted,
             "entities_found": stats.entities_found,
+            "entities_embed_failed": stats.entities_embed_failed,
             "community_build_phase": stats.community_build_phase,
             "community_last_built_at": _ts(stats.community_last_built_at),
             "community_build_duration_s": stats.community_build_duration_s,
