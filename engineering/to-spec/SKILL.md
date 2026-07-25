@@ -7,7 +7,7 @@ The issue tracker and triage label vocabulary should have been provided to you �
 
 ## Process
 
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Read `docs/agents/domain.md` for the domain doc layout. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching. If `.data/requirements/` exists, read any relevant requirements docs (FS, SRS, API definitions) for the feature you're speccing. When a spec item traces to a formal requirement, tag it inline with the requirement ID in parentheses — e.g. "As a user, I want … (REQ-1234)" — so the IDs flow through to tickets.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. Read `docs/agents/domain.md` for the domain doc layout. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching. If `.data/requirements/` exists, read any relevant requirements docs (FS, SRS, API definitions) for the feature you're speccing. When a spec item traces to a formal requirement, tag it inline with the requirement ID in parentheses — e.g. "As a user, I want … (REQ-1234)" — so the IDs flow through to tickets. Search source code conceptually and cross-file; search docs and requirements as a document corpus; for architecture-level questions start with a global search before reading individual files.
 
 2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better — the ideal number is one.
 

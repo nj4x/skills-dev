@@ -11,7 +11,7 @@ The issue tracker and triage label vocabulary should have been provided to you â
 Work from whatever is in the conversation. Fetch referenced specs or issue numbers in full. If `.data/requirements/` exists, read any relevant requirements docs for context. Track which requirement IDs each ticket will satisfy â€” inline `(ID)` tags in the source spec map straight onto the ticket's `Requirements:` field.
 
 ### 2. Explore the codebase (optional)
-If not already done, explore to understand current state. Read `docs/agents/domain.md` for the domain doc layout. Use domain glossary vocabulary, respect ADRs. Look for prefactor opportunities.
+If not already done, explore to understand current state. Read `docs/agents/domain.md` for the domain doc layout. Use domain glossary vocabulary, respect ADRs. Look for prefactor opportunities. Search source code conceptually and cross-file; search docs and requirements as a document corpus; for architecture-level questions start with a global search before reading individual files.
 
 ### 3. Draft vertical slices
 
