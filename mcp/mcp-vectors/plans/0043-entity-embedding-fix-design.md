@@ -37,8 +37,10 @@ Four interconnected architectural decisions to fix recurring entity embedding fa
 
 ## Testing
 
-- All 559 existing tests pass post-implementation
-- No new test files added (existing test coverage sufficient)
+- 562 tests collected at the time of this writing (count changes as suite evolves)
+- No new test files added; the wired cleanup path (`delete_by_entity_ids`), stub embedding path,
+  and coverage counters have **no test coverage** — the suite passes because none of this behavior
+  is exercised in tests
 - Mock signatures updated to reflect 3-tuple returns
 
 ## Commits
@@ -68,9 +70,15 @@ Four interconnected architectural decisions to fix recurring entity embedding fa
 - All four ADRs: method name corrected to `extract_entities_from_file`; wikilinks fixed; Alternatives considered added to 0043 and 0046; Scope sections added to all four.
 - ADR-0044: cross-file concurrency window, unchunked batch sizes, silent failures in `delete_by_entity_ids` — all documented.
 
-### Remaining minor issues (not blocking)
+### Resolved in subsequent critic pass (post-approval)
 
-- ADR-0044 Known gaps: SQL description is slightly imprecise (`edge_contributions` delete binds ~2N params; entity/edge deletes are per-ID loops). Substance correct.
-- ADR-0044 Related: attribution inverted — 0045 introduced the stub list (second element); 0044 added `deleted_ids` (third).
+- ADR-0044 Related: attribution inverted — fixed; 0045 introduced the stub list (second element), 0044 added `deleted_ids` (third).
+- ADR-0044 Known gaps: added RegistryReconciler purge path as permanent-orphan source; added option (e) "disable the delete entirely" as zero-risk remediation.
+- ADR-0044 Related: added ADR-0013 conflict note documenting the design tension.
+- Manifest: corrected stale test count and removed false "existing coverage sufficient" claim.
+
+### Residual (tracked but not blocking)
+
 - ADR-0046 Related: 0044 described as "independent… purely observational", mildly contradicting the Consequences entry that says vectors erased by 0044's defect are counted as embedded.
 - ADR-0043 Known limitations: does not name the `"unknown"` vs `""` type fallback divergence between graph_store.py and entity_extractor.py for unresolved edge endpoints (consequence already covered in prose).
+- Directory split: ADRs 0043-0046 are at `mcp/mcp-vectors/docs/adr/` while the repo uses root `docs/adr/` (single-context repo, no CONTEXT-MAP.md). Move is a housekeeping decision deferred to the user.

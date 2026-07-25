@@ -90,6 +90,13 @@ re-index, the version advances before nearly every async delete fires, so a vers
 suppress essentially all cleanup rather than make deletion safe. Would require per-entity
 versioning to be viable.
 
+**(e) Disable the delete entirely** (remove the `delete_by_entity_ids` call from
+`_extract_and_merge`): eliminates the regression for single-file and stub vectors on re-index,
+restoring the state prior to this ADR. Orphans from genuine entity removal (all source files gone)
+would remain in Qdrant until the next full `clear_index` — consistent with ADR-0013's Tier 2
+approach. This is the least-risk remediation if the re-index path's correctness is the priority;
+the "stale vectors accumulate" consequence is the same as pre-ADR-0044 state.
+
 None of the immediate remediations fully close the window. A safe design requires either
 per-entity versioning, a persistent tombstone table with async drain, or a reconciliation sweep
 that detects and removes Qdrant orphans independently of the re-index path.
@@ -152,8 +159,25 @@ point survives.
   async Qdrant delete is never attempted — creating permanent orphans. No repair or recovery path.
   Same risk applies to any task cancellation between the SQLite COMMIT and the fire-and-forget
   async delete call.
+- `RegistryReconciler` startup purge: when a root is classified `SERVING_PURGED` or
+  `SERVING_REMAPPED`, `_apply_vector_phase` deletes from the chunk collection via
+  `vector_store.delete_root` and `_apply_graph_phase` drops the SQLite graph DB via
+  `graph_store.drop_root`. Neither phase calls `_qdrant_entities.delete_by_root_id`. Entity
+  vectors for the purged root become permanently unrecoverable — `root_id` is embedded in the
+  identity digest, so without the SQLite DB no re-extraction can overwrite them, and ADR-0013's
+  self-healing mechanism does not apply. Only `clear_index` triggers `delete_by_root_id`
+  (rag.py:1512), making the reconciliation path a silent permanent-orphan source.
 
 ## Related
 
 - [[0043-entity-identity-centralization]]: depends on centralized identity for targeted deletion.
-- [[0045-edge-stub-entity-embedding]]: tuple expansion adds third return value.
+- [[0045-edge-stub-entity-embedding]]: introduced the stubs list (second return value of
+  `replace_file_entity_map`); this ADR added `deleted_ids` as the third.
+- [[0013-two-tier-entity-cleanup-on-removal]] (root `docs/adr/`): ADR-0013 explicitly considered
+  and rejected per-entity Qdrant deletion from the file-removal path, arguing orphans are
+  "provably harmless and self-healing" via deterministic IDs. This ADR's mechanism implements
+  exactly the pattern ADR-0013 rejected, applied at the re-index path instead of `remove_document`.
+  The two approaches are in direct tension: ADR-0013's self-healing argument holds for entities
+  that survive re-index (deterministic ID means the re-embed overwrites the orphan), but breaks for
+  entities truly removed from all files (where the orphan persists until `clear_index`). This ADR
+  targets the latter case; its delete-after-upsert defect causes a regression for the former.
