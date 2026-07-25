@@ -1,0 +1,80 @@
+{
+  "mcpServers": {
+    "drawio": {
+      "command": "npx",
+      "args": ["@drawio/mcp"]
+    },
+    "aws-documentation-mcp-server": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_DOCUMENTATION_PARTITION": "aws",
+        "MCP_USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      },
+      "disabled": false,
+      "autoApprove": []
+    },
+    "mcp-vectors": {
+      "disabled": true,
+      "timeout": 600,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/skills-dev/mcp/mcp-vectors",
+        "mcp-vectors"
+      ],
+      "env": {
+        "EMBEDDING_MODEL": "text-embedding-nomic-embed-text-v1.5",
+        "LM_STUDIO_URL": "http://localhost:1234/v1",
+        "QDRANT_URL": "http://localhost:6333",
+        "WATCH_DIR": "/<your dir to watch>",
+        "PYTHONUNBUFFERED": "1"
+      }
+    },
+    "mcp-wiki": {
+      "disabled": true,
+      "timeout": 600,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "<path to>/mcp-wiki",
+        "python",
+        "server.py"
+      ],
+      "env": {
+        "DOWNLOADS_DIR": "/tmp",
+        "JIRA_ENDPOINT": "https://jira.sec.samsung.net/rest/api",
+        "JIRA_TOKEN": "jira-token",
+        "CONFLUENCE_ENDPOINT": "https://confluence.sec.samsung.net/rest/api",
+        "CONFLUENCE_TOKEN": "confluence-token"
+      }
+    },
+    "mcp-mail": {
+      "disabled": true,
+      "timeout": 600,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "<path to>/mcp-mail",
+        "python",
+        "server.py"
+      ],
+      "env": {
+        "EXCHANGE_USERNAME": "<your-username>",
+        "EXCHANGE_SERVER": "<ews-hostname>",
+        "EXCHANGE_EMAIL": "<your-email@example.com>",
+        "EXCHANGE_PASSWORD": "your_password",
+        "MAIL_ALLOW_HARD_DELETE": "false",
+        "MAIL_BULK_CAP": "50",
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}
