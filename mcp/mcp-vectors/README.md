@@ -36,23 +36,16 @@ Use this server for conceptual, cross-file, exploratory retrieval and synthesis.
 
 ### Qdrant
 
-For persistent storage, create a local directory for Qdrant data and run:
+For persistent storage, set `QDRANT_URL=http://localhost:6333` when starting the server. If Qdrant is not already running and Docker is available, the server starts it automatically and stores data in `~/.mcp-vectors/qdrant`. Set `QDRANT_DOCKER_AUTOSTART=false` to disable this behavior and manage Qdrant manually.
 
-```bash
-mkdir -p ~/.mcp-vectors/qdrant-storage
-docker run --rm -p 6333:6333 -p 6334:6334 \
-  -v "$HOME/.mcp-vectors/qdrant-storage:/qdrant/storage" \
-  qdrant/qdrant
-```
-
-Set `QDRANT_URL=http://localhost:6333` when starting the server. Without it, the index is in memory and disappears on shutdown.
+Without `QDRANT_URL`, the index is held in memory and disappears on shutdown.
 
 ## Install and run
 
 From this repository:
 
 ```bash
-cd /Users/roman/projects/skills-dev/mcp/mcp-vectors
+cd mcp/mcp-vectors
 uv sync
 uv run mcp-vectors
 ```
@@ -71,7 +64,7 @@ Add an MCP server entry that runs the package from its installed location:
       "args": [
         "run",
         "--directory",
-        "/Users/roman/projects/skills-dev/mcp/mcp-vectors",
+        "/path/to/skills-dev/mcp/mcp-vectors",
         "mcp-vectors"
       ],
       "env": {
@@ -82,7 +75,7 @@ Add an MCP server entry that runs the package from its installed location:
 }
 ```
 
-Change the absolute path if this repository is cloned elsewhere. Configure the entry in the scope appropriate for the client that will launch it.
+Replace `/path/to/skills-dev` with the actual path where this repository is cloned. Configure the entry in the scope appropriate for the client that will launch it.
 
 ## GraphRAG
 
@@ -123,6 +116,7 @@ Set `ENTITY_RERANK_ALPHA` above `0.0` to blend graph proximity into ordinary sem
 | `EMBEDDING_MODEL` | `auto` | Embedding model name or auto-detect |
 | `LLM_MODEL` | `auto` | Chat model name or auto-detect |
 | `QDRANT_URL` | unset | Qdrant URL; unset uses in-memory storage |
+| `QDRANT_DOCKER_AUTOSTART` | `true` | Auto-start Qdrant via Docker when `QDRANT_URL` points to localhost and Qdrant is not reachable |
 | `QDRANT_COLLECTION` | `mcp_vectors` | Document-vector collection name |
 | `WATCH_DIR` | unset | Comma-separated directories to watch; overrides launch-directory detection |
 | `WATCH_ENABLED` | `true` | Enable active file watching and startup auto-maintain |
@@ -185,7 +179,7 @@ Run `uv run mcp-vectors --help` to inspect the server's transport options. MCP c
 ## Development
 
 ```bash
-cd /Users/roman/projects/skills-dev/mcp/mcp-vectors
+cd mcp/mcp-vectors
 uv sync --extra dev
 uv run python -m compileall server.py vectors
 uv run --extra dev pytest
@@ -202,9 +196,10 @@ uv run --extra dev pytest
 
 ### Qdrant connection failed
 
-- Verify the Qdrant container or process is running.
-- Verify `QDRANT_URL`.
-- Unset `QDRANT_URL` to use in-memory storage for a temporary session.
+- If `QDRANT_URL` points to localhost, the server tries to auto-start Qdrant via Docker. Ensure Docker is running or start Qdrant manually.
+- Verify `QDRANT_URL` is set correctly.
+- Set `QDRANT_DOCKER_AUTOSTART=false` if you manage Qdrant yourself.
+- Unset `QDRANT_URL` entirely to use in-memory storage for a temporary session.
 
 ### Search returns no results
 

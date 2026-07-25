@@ -5,6 +5,16 @@ description: Test arbitrary local MCP (stdio) servers end-to-end — launch mcp-
 
 # test-mcp
 
+## Prerequisites
+
+This skill requires `mcp-wrapper` to be installed and on PATH. It is a separate tool not included in this repository — install it before using this skill:
+
+```bash
+which mcp-wrapper   # verify it is available
+```
+
+If `mcp-wrapper` is not found, obtain and install it from its source, then verify `which mcp-wrapper` returns a path before proceeding.
+
 ## Overview
 
 This skill drives a black-box test of an arbitrary local MCP (stdio) server. It:
