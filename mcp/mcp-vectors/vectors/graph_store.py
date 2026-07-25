@@ -662,9 +662,10 @@ class GraphStore:
 
         Accepts any object with .entities and .edges attributes (duck typing).
         After bulk insert rebuilds degree counts and marks communities dirty.
-        Delegates to replace_file_entity_map. Returns graph_version.
+        Delegates to replace_file_entity_map. Returns graph_version (ignores stubs).
         """
-        return self.replace_file_entity_map(entity_map, root_id, file_path)
+        version, _ = self.replace_file_entity_map(entity_map, root_id, file_path)
+        return version
 
     def _rebuild_materialized_edges(self, conn: sqlite3.Connection, root_id: str) -> None:
         """Rebuild materialized edges from edge_contributions by aggregating."""
@@ -696,7 +697,7 @@ class GraphStore:
                  row["combined_desc"] or "", row["total_weight"], root_id),
             )
 
-    def replace_file_entity_map(self, entity_map, root_id: str, file_path: str) -> int:
+    def replace_file_entity_map(self, entity_map, root_id: str, file_path: str) -> tuple[int, list[dict]]:
         """
         Full transactional atomic replace of entities/edges for a file.
 
@@ -708,7 +709,9 @@ class GraphStore:
         5. Rebuild materialized edges
         6. rebuild_degree
         7. Increment graph_version, set communities_dirty
-        8. Return new graph_version
+        8. Return (new_graph_version, list_of_stub_dicts)
+
+        Each stub dict is {"id": entity_id, "name": str, "type": str} for async embedding.
         """
         self._ensure_schema(root_id)
         conn = self._connect(root_id)
@@ -722,6 +725,7 @@ class GraphStore:
 
                     # Process entities
                     entity_name_to_id = {}
+                    stubs: list[dict] = []
                     for entity in entity_map.entities:
                         eid = entity_id(entity.name, entity.type, root_id)
                         entity_name_to_id[entity.name.lower()] = eid
@@ -797,6 +801,7 @@ class GraphStore:
                                 (source_id, edge.source, edge.source.lower(), source_type, "",
                                  root_id, json.dumps([file_path]), json.dumps([])),
                             )
+                            stubs.append({"id": source_id, "name": edge.source, "type": source_type})
 
                         # Stub missing target
                         if not conn.execute("SELECT 1 FROM entities WHERE id=?", (target_id,)).fetchone():
@@ -809,6 +814,7 @@ class GraphStore:
                                 (target_id, edge.target, edge.target.lower(), target_type, "",
                                  root_id, json.dumps([file_path]), json.dumps([])),
                             )
+                            stubs.append({"id": target_id, "name": edge.target, "type": target_type})
 
                         # Insert edge_contributions
                         weight = getattr(edge, "weight", 1.0)
@@ -865,7 +871,7 @@ class GraphStore:
                     new_version = version_row["graph_version"] if version_row else 0
 
                     conn.execute("COMMIT")
-                    return new_version
+                    return new_version, stubs
 
                 except Exception:
                     conn.execute("ROLLBACK")

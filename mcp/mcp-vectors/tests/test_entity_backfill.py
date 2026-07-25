@@ -81,7 +81,8 @@ def test_extract_and_merge_calls_update_chunk_entities():
             # Stub annotate_chunks to avoid real logic but mark side-effect
             with patch("vectors.rag.annotate_chunks") as mock_annotate:
                 # Stub asyncio.to_thread so _graph_store.replace_file_entity_map doesn't block
-                with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
+            # Must return (version, stubs) tuple
+                with patch("asyncio.to_thread", new=AsyncMock(return_value=(1, []))):
                     # Stub _schedule_community_rebuild
                     pipeline.schedule_community_rebuild = MagicMock()
 
@@ -120,7 +121,7 @@ def test_extract_and_merge_backfill_failure_does_not_propagate():
             MockExtractor.return_value = mock_extractor_instance
 
             with patch("vectors.rag.annotate_chunks"):
-                with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
+                with patch("asyncio.to_thread", new=AsyncMock(return_value=(1, []))):
                     pipeline.schedule_community_rebuild = MagicMock()
 
                     # Must NOT raise — failure is swallowed with a warning
@@ -155,7 +156,7 @@ def test_extract_and_merge_stats_updated_after_backfill():
             MockExtractor.return_value = mock_extractor_instance
 
             with patch("vectors.rag.annotate_chunks"):
-                with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
+                with patch("asyncio.to_thread", new=AsyncMock(return_value=(1, []))):
                     pipeline.schedule_community_rebuild = MagicMock()
 
                     await pipeline._extract_and_merge(

@@ -730,7 +730,7 @@ class RAGPipeline:
                 str(file_path), doc, root_id_for_graph, chunk_semaphore
             )
             annotate_chunks(doc, entity_map)
-            await asyncio.to_thread(
+            version, stubs = await asyncio.to_thread(
                 self._graph_store.replace_file_entity_map,
                 entity_map, root_id_for_graph, path_key,
             )
@@ -793,6 +793,43 @@ class RAGPipeline:
                                 pass
 
                 await asyncio.gather(*[_embed_entity(e) for e in entity_map.entities])
+
+                # Embed edge-stub entities (synthetic entities created for edge endpoints)
+                if stubs:
+                    async def _embed_stub(stub_dict) -> None:
+                        nonlocal embed_failures
+                        try:
+                            stub_id = stub_dict["id"]
+                            stub_name = stub_dict["name"]
+                            stub_type = stub_dict["type"] or ""
+                            text = _entity_embedding_text(stub_name, None)
+                            async with embed_sem:
+                                emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
+                            await self._qdrant_entities.upsert(
+                                entity_id=stub_id,
+                                root_id=root_id_for_graph,
+                                name=stub_name,
+                                type_=stub_type,
+                                embedding=emb,
+                            )
+                        except Exception as exc:
+                            embed_failures += 1
+                            sig = type(exc).__name__
+                            if sig not in seen_sigs:
+                                seen_sigs.add(sig)
+                                try:
+                                    logger.warning(
+                                        "Edge-stub embedding upsert failed for %s | "
+                                        "stub=%s type=%s",
+                                        sanitize_for_log(file_path.name),
+                                        sanitize_for_log(stub_name),
+                                        stub_type,
+                                        exc_info=exc,
+                                    )
+                                except Exception:
+                                    pass
+
+                    await asyncio.gather(*[_embed_stub(s) for s in stubs])
 
                 if embed_failures:
                     logger.warning(

@@ -84,7 +84,7 @@ async def _drive(pipeline, entities, file_path, root_id="root_id"):
         inst.extract_file = AsyncMock(return_value=entity_map)
         MockExtractor.return_value = inst
         with patch("vectors.rag.annotate_chunks"):
-            with patch("asyncio.to_thread", new=AsyncMock(return_value=None)):
+            with patch("asyncio.to_thread", new=AsyncMock(return_value=(1, []))):
                 await pipeline._extract_and_merge(
                     file_path, _make_doc(), root_id, "path_key"
                 )
