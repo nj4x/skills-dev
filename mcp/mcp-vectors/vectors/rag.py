@@ -144,6 +144,7 @@ class RAGResponse:
     formatted_results: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     filtering_mode: str = "metadata"
+    confidence: Optional[dict] = None
 
 
 @dataclass
@@ -1166,10 +1167,16 @@ class RAGPipeline:
                 extensions=extensions,
                 file_types=file_types,
             )
-            if not search_results:
-                return RAGResponse(True, query, results=[], total_results=0)
-
             _root_id = PathPolicy.path_key(root_path) if root_path else None
+            if not search_results:
+                return RAGResponse(
+                    True,
+                    query,
+                    results=[],
+                    total_results=0,
+                    confidence=self._compute_confidence(_root_id) if _root_id is not None else None,
+                )
+
             search_results = await self._maybe_rerank_by_entity_graph(search_results, query, _root_id)
 
             files_dict: dict[str, SearchResultWithSummary] = {}
@@ -1223,6 +1230,7 @@ class RAGPipeline:
                 total_results=len(sorted_files),
                 formatted_results=formatted,
                 filtering_mode="metadata_with_component_safe_post_filter" if base_dirs else "metadata",
+                confidence=self._compute_confidence(_root_id) if _root_id is not None else None,
             )
         except Exception as e:
             logger.error(f"Search failed: {e}")
