@@ -2,8 +2,11 @@
 
 ## Status
 
-Approved — implementation defective; remediation (delete-before-embed reorder) is the recommended
-interim fix. No tracking issue exists at the time of writing.
+Approved — implementation has a known live defect: re-indexing any file erases all single-file
+entities' and stubs' vectors immediately after they are upserted, inverting the intended outcome and
+creating a net regression versus not shipping this ADR. The most promising remediation
+(set-difference deletion) was not selected at implementation time. No tracking issue exists; the
+defect is unowned.
 
 ## Context
 
@@ -53,50 +56,70 @@ In `_extract_and_merge()` the ordering is: embed entities → embed stubs → `d
 Because the delete runs *after* the upserts and the ID sets overlap, re-indexing a file deletes the
 vectors that were just written for it.
 
-Reproduced empirically: indexing the same file twice returns `deleted_ids` containing exactly the
-IDs that were re-inserted and re-embedded on that same run. Net effect for any single-file entity
-or stub after a re-index: **no vector at all**, which is the inverse of the intended outcome.
+This can be derived from the code: `_purge_file_contributions()` returns all entities whose only
+source file was the re-indexed file (graph_store.py:481-482, 506-524); `replace_file_entity_map()`
+immediately re-inserts matching entities and creates stubs with identical IDs (rag.py:762-774); and
+`_extract_and_merge()` calls `delete_by_entity_ids` after upserts complete (rag.py:842). The
+three operations preserve the overlap by design.
 
 The hidden assumption behind the original decision — that `deleted_ids` is disjoint from the
 entities re-created in the same transaction — is false. The ADR's claim that "cleanup happens after
 SQLite commit ensures atomicity" addressed the wrong ordering; the ordering that matters is
 cleanup relative to the **embed upserts**, not relative to the commit.
 
-This defect is accepted as known and unfixed at the time of writing. Remediation is either
-(a) subtracting the re-inserted entity + stub IDs from `deleted_entity_ids` inside
-`replace_file_entity_map`, or (b) moving the `delete_by_entity_ids` call ahead of the embed gathers.
+This defect is accepted as known and unfixed at the time of writing. Proposed remediations:
 
-Neither remediation closes the cross-file concurrency window: `deleted_ids` is a transaction-time
-snapshot from file A's SQLite write, but the Qdrant delete fires asynchronously after any number of
-concurrent `_extract_and_merge` tasks (rag.py fires one `asyncio.ensure_future` per file with no
-cross-file concurrency limit). If file B concurrently re-creates an entity whose sole prior source
-was file A, A's later `delete_by_entity_ids` call removes B's fresh vector — a live SQLite entity
-with no Qdrant point. A genuinely safe fix requires either (c) re-checking SQLite existence
-immediately before the Qdrant delete (to skip IDs still present), or (d) gating deletion on
-`graph_version` at delete time. Remediation (a) narrows but does not close this window; remediation
-(b) does not address it at all.
+**(a) Set-difference deletion** (compute `deleted_ids − re-inserted_ids` in `replace_file_entity_map`):
+the narrowest viable option for same-file re-index. Narrows (but does not close) the cross-file window.
+
+**(b) Delete before embed**: reorder the calls so deletes run before the embed gathers. Makes same-file
+re-index harmless at the cost of a redundant delete+write per surviving entity. Does not address the
+cross-file concurrency window. Also leaves unobservable divergence if the process crashes or shuts down
+between the SQLite COMMIT and the fire-and-forget Qdrant delete.
+
+**(c) Re-check SQLite existence immediately before Qdrant delete**: skip IDs that have been
+re-inserted since the transaction. This is itself a TOCTOU race — the path lock is released before
+the background `_extract_and_merge` task fires (rag.py:608, released at :687; task fires at :687),
+so nothing spans both stores. An entity can be re-inserted between the check and the delete.
+Narrows the window; does not close it.
+
+**(d) Gate deletion on `graph_version` at delete time**: unworkable. `graph_version` is a single
+per-root counter in the meta table (graph_store.py:117-120) with PK `root_id`, bumped by every
+`replace_file_entity_map` call (:867-870). It has zero per-entity granularity. Under concurrent
+re-index, the version advances before nearly every async delete fires, so a version gate would
+suppress essentially all cleanup rather than make deletion safe. Would require per-entity
+versioning to be viable.
+
+None of the immediate remediations fully close the window. A safe design requires either
+per-entity versioning, a persistent tombstone table with async drain, or a reconciliation sweep
+that detects and removes Qdrant orphans independently of the re-index path.
 
 ## Alternatives considered
 
-- **Set-difference deletion** (compute `deleted_ids − re-inserted_ids` in `replace_file_entity_map`):
-  the narrowest correct fix, keeps a single write path. Rejected only because it was not identified
-  before implementation; it is now the recommended remediation.
-- **Delete before embed**: trivially reorders the existing calls and makes overlap harmless, since
-  re-inserted entities are simply re-upserted afterwards. Costs a redundant delete+write per
-  surviving entity.
+See "Known defect" section for detailed evaluation of remediations (a)-(d). At a higher level:
+
 - **Periodic reconciliation sweep** (walk SQLite ids vs. Qdrant point ids per root, delete the
-  difference): self-healing and covers file deletion and crash-interrupted runs too, but needs a
-  scheduler, a full scan per root, and gives unbounded staleness between sweeps.
+  difference): self-healing, covers file deletion and crash-interrupted runs, and subsumes the
+  entire delete-on-re-index mechanism. Rejected for the overhead of a scheduler and a full scan
+  per root per reconciliation cycle, and unbounded staleness between sweeps.
 - **Tombstone table** (record deleted IDs in SQLite, drain asynchronously with retry): survives
-  process restart and makes failed deletes recoverable, at the cost of a new table, a drain worker,
-  and extra write amplification on every re-index.
+  process restart and makes failed deletes recoverable. Requires a new table, a drain worker, and
+  extra write amplification on every re-index. More complex than the current best-effort delete-on-re-index,
+  but fundamentally safer (no TOCTOU or concurrency window).
+- **Per-entity versioning**: attach a generation counter to each entity ID in Qdrant's payload,
+  compare at delete time to skip IDs whose version has advanced since the deletion set was captured.
+  Requires schema changes and version bumping on every re-insert. Would close the concurrency window
+  but is higher overhead than current.
 
 ## Consequences
 
-⚠️ **Partial cleanup (known defect)**: on re-index, entities and stubs whose sole source is the same
-file have their newly written vectors deleted immediately after upsert — see "Known defect" above.
-Entities that genuinely disappear *are* removed, so the mechanism does remove true orphans; it just
-over-deletes live ones.
+⚠️ **Net regression for single-file entities and stubs (known defect)**: re-indexing a file deletes
+the vectors of every entity/stub whose sole source is that file, even those re-inserted moments
+earlier in the same transaction — see "Known defect" above. The net outcome is zero Qdrant vectors
+where there were stale-but-present vectors before shipping this ADR, and stale vectors elsewhere
+remain unfixed. This is a regression; the mechanism does remove true orphans from multi-file
+entities and global orphans from file deletion, but at the cost of erasing live single-file vectors
+on every re-index.
 ⚠️ **Best-effort with silent failures**: `QdrantEntities.delete_by_entity_ids` catches every
 exception internally, logs a generic best-effort warning without file context, and returns `None`.
 The caller's `try/except` in `_extract_and_merge` is therefore dead code and its file-path-scoped
@@ -110,18 +133,19 @@ ops in the pipeline); `GraphStore` acquires no async dependency.
 this behavior is never invoked in tests. A regression test should re-index an unchanged file and
 assert `deleted_ids` is disjoint from the returned entity/stub IDs and that the entity's Qdrant
 point survives.
-
 ## Known gaps
 
 - Delete-after-upsert overlap (above) — the dominant correctness issue.
 - `remove_document` / `delete_file_entities` path leaves orphaned vectors.
 - `extract_entities_from_file` performs no cleanup at all.
 - Delete failures are unobservable in practice (swallowed inside the Qdrant helper).
-- Both `delete_by_entity_ids` (qdrant.py) and `_purge_file_contributions` (graph_store.py) issue
-  unchunked batch operations: all IDs in a single Qdrant `PointIdsList` and all IDs in a single SQL
-  `DELETE ... WHERE id IN (...)`. A large single-file purge can exceed SQLITE_MAX_VARIABLE_NUMBER,
-  aborting the entire re-index transaction, or produce an oversized Qdrant request that is rejected
-  silently (swallowed by the internal exception handler).
+- `delete_by_entity_ids` (qdrant.py:1380-1391) sends all entity IDs in a single unbatched
+  `PointIdsList` to Qdrant. `_purge_file_contributions` (graph_store.py:495-498) issues a single
+  unchunked SQL `DELETE FROM edge_contributions WHERE (source_id IN (...) OR target_id IN (...))`,
+  binding 2N+1 parameters where N is the entity count. Entities are deleted one at a time
+  (graph_store.py:499-504). A large single-file purge can exceed SQLITE_MAX_VARIABLE_NUMBER (999
+  on installations before SQLite 3.32, 32766+ on 3.32+), aborting the entire transaction. The Qdrant
+  request may also be rejected silently (swallowed by the internal exception handler).
 
 ## Related
 

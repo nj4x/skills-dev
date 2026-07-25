@@ -2,7 +2,9 @@
 
 ## Status
 
-Approved
+Approved — implemented (commit 085d9da). Breaking identity change: all pre-existing digests are
+invalidated. No migration path or re-index detection exists; a full per-root `clear_index` + re-index
+is required.
 
 ## Context
 
@@ -74,6 +76,16 @@ path or re-index detection exists.
   its type; if two extracted entities share a lowercased name, the edge gets the last-seen entity's
   type, which may yield a different `entity_id` — mis-attaching the edge or fabricating a spurious
   stub vector.
+- **Unresolved edge-endpoint type-fallback divergence**: the centralization did not extend to the
+  type default for unresolved edge endpoints. `graph_store.py:790-791` defaults unresolved types to
+  `"unknown"` while `entity_extractor.py:470` defaults to `""`. The same edge endpoint name therefore
+  yields different `entity_id`s depending on which layer inserts it first. The "consistent type
+  handling" consequence is incomplete; the entity identity formula is centralized but not the
+  type-defaulting policy.
+- **No Unicode normalization or casefolding depth**: names are not NFC/NFD normalized, so visually
+  identical names can hash differently. Type case-folding uses Python's `.lower()` which is
+  locale-naive and does not match SQL's `LOWER()` for non-ASCII; using `.casefold()` would be
+  more robust but still locale-dependent.
 
 ## Alternatives considered
 
@@ -91,3 +103,5 @@ path or re-index detection exists.
 
 - [[0044-stale-entity-vectors-cleanup]]: depends on centralized identity for deletion targeting.
 - [[0045-edge-stub-entity-embedding]]: depends on consistent identity for stub creation.
+- [[0046-entity-embedding-coverage-metrics]]: exposed via the same graph_store module; shares the
+  entity identity and type-coercion assumptions.

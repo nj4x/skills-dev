@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved
+Approved — outcome currently negated on re-index by the ADR-0044 defect.
 
 ## Context
 

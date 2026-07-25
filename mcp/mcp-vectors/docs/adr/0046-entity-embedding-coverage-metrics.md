@@ -2,7 +2,8 @@
 
 ## Status
 
-Approved
+Approved — implemented (commits 37e007f). Counters are internal-only; `get_graph_stats()` does not
+serialize them. Not exposed via any MCP tool surface.
 
 ## Context
 
@@ -28,7 +29,9 @@ class GraphificationStats:
 
 - `entity_embedding_enabled`: set to `True` when `_qdrant_entities` is not None **and**
   `entity_map.entities` is non-empty. It is therefore an "embedding actually ran for this file"
-  flag, not the "embedding is configured" flag its name suggests.
+  flag, not the "embedding is configured" flag its name suggests. The inline comment in `rag.py`
+  currently says `# whether _qdrant_entities is initialized`, which is incomplete; see Consequences
+  for the documented stale comment caveat.
 - `entities_embedded`: incremented for each successful entity/stub upsert (independent counter, not
   derived from the failure count).
 - `entities_total`: `len(entity_map.entities) + len(stubs)` accumulated per file.
@@ -85,9 +88,10 @@ section documents. The code comment is stale.
   expose through the MCP surface so coverage is observable externally. Deferred — the counters are
   per-process and would show only partial data after restart, which could mislead callers; a
   persistent coverage store would be needed for meaningful external exposure.
-- **Rename `entity_embedding_enabled` to `entity_embedding_ran`**: would correctly describe the
-  "ran for this file" semantics versus the "is configured" semantics the current name implies. Not
-  done to avoid churn on a newly added field; deferred.
+- **Rename `entity_embedding_enabled` to `entity_embedding_ran`**: Deferred. `entity_embedding_ran`
+  better describes the actual semantics (set only when embedding has executed, not merely configured),
+  and past tense makes explicit that the field is retrospective. Not yet adopted to avoid churn;
+  would be bundled with a prospective external-exposure change to `get_graph_stats()`.
 - **Derive `entities_embedded` as `entities_total − entities_embed_failed`**: simpler, no extra
   counter. Rejected because the two closures count against a shared `embed_failures` variable but
   the denominator logic differs per branch; an independent counter is unambiguous.
@@ -96,4 +100,6 @@ section documents. The code comment is stale.
 
 - [[0043-entity-identity-centralization]]: used for consistent entity identity.
 - [[0045-edge-stub-entity-embedding]]: stubs included in `entities_total` and `entities_embedded`.
-- [[0044-stale-entity-vectors-cleanup]]: independent of stub/stale cleanup; purely observational.
+- [[0044-stale-entity-vectors-cleanup]]: vectors deleted by the cleanup defect are counted as
+  successfully embedded in `entities_embedded` — the gap between `entities_total` and
+  `entities_embedded` therefore understates the actual coverage deficit.
