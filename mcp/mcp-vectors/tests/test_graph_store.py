@@ -613,7 +613,7 @@ def test_replace_file_entity_map_returns_version(tmp_path):
         edges_data=[],
     )
 
-    version, _ = gs.replace_file_entity_map(em, ROOT, "/file.py")
+    version, _, _ = gs.replace_file_entity_map(em, ROOT, "/file.py")
     assert isinstance(version, int)
     assert version > 0
 
@@ -662,7 +662,7 @@ def test_cas_deadlock_replace_file_resets_committed_build_id(tmp_path):
     )
 
     # Step 1: first index
-    v0, _ = gs.replace_file_entity_map(em, ROOT, "/a.py")
+    v0, _, _ = gs.replace_file_entity_map(em, ROOT, "/a.py")
     assert v0 > 0
 
     # Step 2: commit communities
@@ -670,7 +670,7 @@ def test_cas_deadlock_replace_file_resets_committed_build_id(tmp_path):
     assert ok is True, "First CAS must succeed"
 
     # Step 3: re-index the same file — this must bump graph_version AND clear committed_build_id
-    v1, _ = gs.replace_file_entity_map(em, ROOT, "/a.py")
+    v1, _, _ = gs.replace_file_entity_map(em, ROOT, "/a.py")
     assert v1 > v0, "graph_version must increment on re-index"
 
     # Step 4: CAS for the new version must succeed (committed_build_id should now be NULL)
@@ -687,7 +687,7 @@ def test_cas_deadlock_delete_file_resets_committed_build_id(tmp_path):
         edges_data=[],
     )
 
-    v0, _ = gs.replace_file_entity_map(em, ROOT, "/b.py")
+    v0, _, _ = gs.replace_file_entity_map(em, ROOT, "/b.py")
     gs.replace_file_entity_map(
         _make_entity_map(entities_data=[{"name": "Z", "type": "function"}], edges_data=[]),
         ROOT, "/c.py",
@@ -716,7 +716,7 @@ def test_toctou_cas_only_one_concurrent_caller_wins(tmp_path):
         entities_data=[{"name": "A", "type": "function"}],
         edges_data=[],
     )
-    version, _ = gs.replace_file_entity_map(em, ROOT, "/a.py")
+    version, _, _ = gs.replace_file_entity_map(em, ROOT, "/a.py")
 
     results = []
     barrier = threading.Barrier(2)

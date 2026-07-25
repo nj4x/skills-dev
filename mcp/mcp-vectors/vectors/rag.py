@@ -730,7 +730,7 @@ class RAGPipeline:
                 str(file_path), doc, root_id_for_graph, chunk_semaphore
             )
             annotate_chunks(doc, entity_map)
-            version, stubs = await asyncio.to_thread(
+            version, stubs, deleted_ids = await asyncio.to_thread(
                 self._graph_store.replace_file_entity_map,
                 entity_map, root_id_for_graph, path_key,
             )
@@ -831,7 +831,18 @@ class RAGPipeline:
 
                     await asyncio.gather(*[_embed_stub(s) for s in stubs])
 
-                if embed_failures:
+            # Clean up stale vectors from re-indexed files
+            if deleted_ids and getattr(self, "_qdrant_entities", None) is not None:
+                try:
+                    await self._qdrant_entities.delete_by_entity_ids(root_id_for_graph, deleted_ids)
+                except Exception as exc:
+                    logger.warning(
+                        "Stale entity vector cleanup failed for %s: %s",
+                        sanitize_for_log(file_path.name),
+                        exc,
+                    )
+
+            if getattr(self, "_qdrant_entities", None) is not None and entity_map.entities and embed_failures:
                     logger.warning(
                         "Entity embedding: %d/%d failures for %s",
                         embed_failures,

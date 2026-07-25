@@ -434,12 +434,14 @@ class GraphStore:
         # The CREATE TABLE IF NOT EXISTS in _DDL handles creation; no column migrations needed.
         pass
 
-    def _purge_file_contributions(self, conn: sqlite3.Connection, root_id: str, file_path: str) -> None:
+    def _purge_file_contributions(self, conn: sqlite3.Connection, root_id: str, file_path: str) -> list[str]:
         """Remove all prior contributions from file_path within an open transaction.
 
         Handles edge_contributions (non-sentinel), entity_chunks, and entity file_paths
         (deleting entities whose only source was this file). Called inside BEGIN IMMEDIATE
         so ROLLBACK on exception leaves everything unchanged.
+
+        Returns list of deleted entity IDs (for async Qdrant cleanup by the caller).
         """
         # Remove non-sentinel edge contributions
         conn.execute(
@@ -500,6 +502,8 @@ class GraphStore:
                     (eid, eid),
                 )
                 conn.execute("DELETE FROM entities WHERE id = ?", (eid,))
+
+        return delete_ids
 
     # ------------------------------------------------------------------
     # Entity operations
@@ -662,9 +666,9 @@ class GraphStore:
 
         Accepts any object with .entities and .edges attributes (duck typing).
         After bulk insert rebuilds degree counts and marks communities dirty.
-        Delegates to replace_file_entity_map. Returns graph_version (ignores stubs).
+        Delegates to replace_file_entity_map. Returns graph_version (ignores stubs and deleted IDs).
         """
-        version, _ = self.replace_file_entity_map(entity_map, root_id, file_path)
+        version, _, _ = self.replace_file_entity_map(entity_map, root_id, file_path)
         return version
 
     def _rebuild_materialized_edges(self, conn: sqlite3.Connection, root_id: str) -> None:
@@ -697,21 +701,22 @@ class GraphStore:
                  row["combined_desc"] or "", row["total_weight"], root_id),
             )
 
-    def replace_file_entity_map(self, entity_map, root_id: str, file_path: str) -> tuple[int, list[dict]]:
+    def replace_file_entity_map(self, entity_map, root_id: str, file_path: str) -> tuple[int, list[dict], list[str]]:
         """
         Full transactional atomic replace of entities/edges for a file.
 
         In a single BEGIN IMMEDIATE transaction:
-        1. Remove prior non-sentinel contributions for this file
+        1. Remove prior non-sentinel contributions for this file (capture deleted entity IDs)
         2. For each entity: compute entity_id, merge into entities (add file_path if not present, merge chunk_ids)
         3. Stub missing edge endpoints
         4. Insert edge_contributions for each edge
         5. Rebuild materialized edges
         6. rebuild_degree
         7. Increment graph_version, set communities_dirty
-        8. Return (new_graph_version, list_of_stub_dicts)
+        8. Return (new_graph_version, list_of_stub_dicts, list_of_deleted_entity_ids)
 
         Each stub dict is {"id": entity_id, "name": str, "type": str} for async embedding.
+        Deleted entity IDs are for async Qdrant cleanup by the caller.
         """
         self._ensure_schema(root_id)
         conn = self._connect(root_id)
@@ -721,7 +726,7 @@ class GraphStore:
                 conn.execute("BEGIN IMMEDIATE")
                 try:
                     # Purge all prior contributions from this file (edges, entity_chunks, entity trim)
-                    self._purge_file_contributions(conn, root_id, file_path)
+                    deleted_entity_ids = self._purge_file_contributions(conn, root_id, file_path)
 
                     # Process entities
                     entity_name_to_id = {}
@@ -871,7 +876,7 @@ class GraphStore:
                     new_version = version_row["graph_version"] if version_row else 0
 
                     conn.execute("COMMIT")
-                    return new_version, stubs
+                    return new_version, stubs, deleted_entity_ids
 
                 except Exception:
                     conn.execute("ROLLBACK")
