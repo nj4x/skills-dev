@@ -904,9 +904,6 @@ async def search_code(
         )
         if not response.success:
             return {"success": False, "error": response.error, "status": status}
-        from vectors.paths import PathPolicy as _PathPolicy
-        root_id = _PathPolicy.path_key(root)
-        confidence = pipeline._compute_confidence(root_id)
         return {
             "success": True,
             "query": query,
@@ -924,7 +921,7 @@ async def search_code(
                 for result in response.results
             ],
             "filtering_mode": response.filtering_mode,
-            "confidence": confidence,
+            "confidence": response.confidence,
         }
     except Exception as e:
         await ctx.error(f"Code search failed: {e}")

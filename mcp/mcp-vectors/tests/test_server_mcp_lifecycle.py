@@ -692,8 +692,6 @@ def test_index_files_catches_root_resolution_error_for_file_path():
     assert src.count("RootResolutionError") >= 2, (
         "index_files must catch RootResolutionError in both the file and directory branches"
     )
-
-
 def test_index_codebase_catches_root_resolution_error():
     """index_codebase must catch RootResolutionError and return a structured
     error dict instead of propagating the exception to the caller."""
@@ -712,3 +710,65 @@ def test_index_codebase_catches_root_resolution_error():
         # The return dict literal uses the key; check the response shape.
         '"success"' in src
     ), "index_codebase error path must set success=False"
+
+
+# ---------------------------------------------------------------------------
+# search_code seam-closure tests (ADR-0042)
+# ---------------------------------------------------------------------------
+
+
+def test_search_code_source_has_no_private_confidence_call():
+    """search_code source must not contain _compute_confidence or PathPolicy imports.
+
+    ADR-0042: confidence computation belongs inside RAGPipeline.search(); the MCP handler
+    must not reach past the public interface. This seam-regression test (AST guard) pins
+    that boundary so a future change cannot silently reintroduce the private-method call.
+    """
+    src = _server_function_source("search_code")
+    assert "response.confidence" in src, (
+        "search_code must read confidence from response.confidence (ADR-0042)"
+    )
+    assert "_compute_confidence" not in src, (
+        "search_code still calls _compute_confidence directly; should read response.confidence"
+    )
+    assert "PathPolicy" not in src, (
+        "search_code still imports PathPolicy; root_id derivation belongs inside the pipeline"
+    )
+
+
+def test_search_code_handler_surfaces_pipeline_confidence():
+    """search_code handler surfaces pipeline's RAGResponse.confidence and never calls _compute_confidence."""
+    async def _run():
+        from unittest.mock import AsyncMock, MagicMock
+        from server import search_code
+        from vectors.rag import RAGResponse
+
+        ctx = MagicMock()
+        ctx.error = AsyncMock()
+        app_ctx = MagicMock()
+        ctx.request_context.lifespan_context = app_ctx
+        pipeline = MagicMock()
+        app_ctx.pipeline = pipeline
+
+        expected_confidence = {"level": "full", "reason": "graph_ready"}
+        pipeline.get_indexing_status = AsyncMock(return_value={"status": "indexed"})
+        pipeline.search = AsyncMock(
+            return_value=RAGResponse(
+                success=True,
+                query="query",
+                results=[],
+                total_results=0,
+                formatted_results=[],
+                confidence=expected_confidence,
+            )
+        )
+
+        result = await search_code(root_path="/tmp", query="query", ctx=ctx)
+
+        assert result["success"] is True
+        assert result["confidence"] == expected_confidence
+        assert not pipeline._compute_confidence.called, (
+            "_compute_confidence must not be called from the MCP handler"
+        )
+
+    asyncio.run(_run())
