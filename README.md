@@ -62,44 +62,117 @@ See [Borrowed Skills](#borrowed-skills) for the full attribution table with modi
 
 ### `~/.claude/CLAUDE.md`
 
+The root is minimal — one universal instruction plus `@import` pointers to intent-grouped satellite files in `~/.claude/docs/agents/`.
+
 ```markdown
 When reporting information to me, be extremely concise and sacrifice grammar for sake of concision.
 
-## code review
+## Code Review
+
+Scope defaults, branch handling, and the autonomous fix-and-commit workflow for reviews.
+@docs/agents/code-review.md
+
+## Task Execution, Planning & Research
+
+Deliver-first discipline, multi-phase fan-out, and autonomous-loop behavior.
+@docs/agents/task-execution.md
+
+## Search Strategy
+
+When to use fd/rg vs mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety.
+@docs/agents/search-strategy.md
+
+## Testing, Committing & Logging
+
+Test-suite/lint discipline, commit staging, real test data and dependency wiring (app-level factories), and file-only logging.
+@docs/agents/testing.md
+
+## Token Optimization
+
+The RTK token-killer CLI proxy command reference.
+@RTK.md
+```
+
+#### `~/.claude/docs/agents/code-review.md`
+
+```markdown
+# Code Review Workflow
+
+Scope defaults, branch handling, and autonomous fix implementation for code reviews.
 
 Code reviews default to **committed** scope, not the working tree. Confirm scope (committed vs working-tree) before starting and pass `--scope` explicitly.
 
-Review workflows are gated on non-`main` branches: if on `main`, say so immediately and propose a feature branch rather than halting silently mid-review.
+On non-`main` branches, proceed directly to review. On `main`: if `--scope` is committed, automatically check out a feature branch first, then proceed; if `--scope` is working-tree, review the uncommitted changes in the current branch — say so immediately rather than halting silently mid-review.
 
-Review the latest changes (if `--scope` is "committed" and we are on `main`, automatically check out a feature branch first; if `--scope` is "working-tree" review uncommitted changes in current branch only). Identify all Major and Critical findings, then autonomously: (1) implement every fix, (2) write regression tests for each, (3) run the full test suite, (4) if any test fails, debug and re-run until 100% pass, (5) commit with a structured summary listing each finding and its fix. Only stop to ask if a fix requires a genuine product decision; otherwise resolve ambiguity by reading the codebase and specs.
+Identify all Major and Critical findings, then autonomously: (1) implement every fix, (2) write regression tests for each, (3) run the full test suite, (4) if any test fails, debug and re-run until 100% pass, (5) commit with a structured summary listing each finding and its fix. Only stop to ask if a fix requires a genuine product decision; otherwise resolve ambiguity by reading the codebase and specs.
 
 When the user asks to merge after code review, merge the working branch into main.
+```
 
-## task execution
+#### `~/.claude/docs/agents/task-execution.md`
 
-Decompose any multi-file or multi-phase task into independent sub-phases and fan them out to separate sub-agents, each instructed to implement its module, write and pass its own tests, and avoid touching shared files. After all agents report back, run a reconciliation pass — check entity fields, event counts, and API signatures are consistent across every module, fix any mismatches in lockstep, run the full suite, and commit only when all tests pass with zero regressions.
+```markdown
+# Task Execution, Planning & Research
+
+Deliver-first discipline for plans/research, multi-phase fan-out, and autonomous-loop behavior.
+
+## Delivering plans and research
+
+Deliver plan or research text first; wait for user approval before reading files or making edits.
+
+## Fan-out execution
+
+Fan out any multi-file or multi-phase task into independent sub-phases, each to a separate sub-agent, instructed to implement its module, write and pass its own tests, and avoid touching shared files. After all agents report back, run a reconciliation pass — check entity fields, event counts, and API signatures are consistent across every module, fix any mismatches in lockstep, run the full suite, and commit only when all tests pass with zero regressions.
+
+## Autonomous loops
 
 When the user requests an autonomous loop (debug, fix-and-verify, requirements-to-SRS sync), proceed without pausing for manual approval and persist intermediate research/findings to disk as you go.
+```
 
-## Planning & Research
+#### `~/.claude/docs/agents/search-strategy.md`
 
-Deliver plan or research text first; wait for user approval before exploring the codebase, inspecting files, or making edits.
+```markdown
+# Search Strategy
 
-Use `fd`, `rg`, and `Read` for exact, bounded, single-site lookups: locating a known symbol, literal, filename, or known file. Use `mcp-vectors` for conceptual, cross-file, semantic, entity-graph, and architecture-level retrieval.
+Choosing between fd/rg and mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety.
 
-Known symbol, *locate it*: `rg`/`fd`. Known symbol, *relationship question* (who calls it, what it touches, blast radius, inheritance): `get_entity_callers` / `get_entity_neighbors` — prefer these over grepping for usages, since the graph resolves aliased imports and cross-file edges that `rg` misses.
+For exact, single-site lookups (known symbol, literal, filename): `fd`/`rg`/`Read`. For a *blast-radius question* on a known symbol (who calls it, what it touches, inheritance): `get_entity_callers` / `get_entity_neighbors` — prefer these over grepping for usages, since the graph resolves aliased imports and cross-file edges that `rg` misses. For conceptual, cross-file, or architecture-level retrieval: the mcp-vectors tools below.
 
-## Testing
+| Tool | Use for |
+|---|---|
+| `search_code` | Conceptual or cross-file code retrieval. |
+| `search_documents` | Non-code documentation, configuration, and requirements retrieval. |
+| `search_entities` | A named or partially known entity. |
+| `get_entity_neighbors` | Graph connections from a known entity. |
+| `get_entity_callers` | Callers of a known entity. |
+| `search_global` | Architecture-level questions; prefer when persisted community reports exist. Falls back to vector search if reports are missing or dirty. |
+
+**Entity-graph tools** (`search_entities`, `get_entity_neighbors`, `get_entity_callers`) are cheap single calls — use them inline. Run `search_global` via Explore or general-purpose sub-agents, in parallel with applicable `fd` or `rg` searches.
+
+## Task-shaped triggers for the entity graph
+
+- Before changing a function/class signature or renaming: `get_entity_callers` first.
+- During code review, for each modified public entity: check blast radius via `get_entity_callers`.
+- When asked "how does X relate to / affect Y" or tracing a dependency chain: `get_entity_neighbors` (depth 2) before reading files.
+- When planning multi-file work: start with `search_entities` on the central concepts to get the file map.
+
+Assume the entity graph exists for indexed roots and just try the call — a failed call costs one tool call. If the target root is not indexed, fall back to `rg` and `fd`; offer indexing when the search is substantial.
+
+For worktree paths, use filesystem tools directly; restrict `mcp-vectors` to the canonical repository root.
+```
+
+#### `~/.claude/docs/agents/testing.md`
+
+```markdown
+# Testing, Committing & Logging
+
+Test-suite discipline, commit staging, test data conventions, and logging defaults.
 
 Always run the full test suite AND lint after code changes, then commit/push when the user requests it.
 
-When committing, run `git status` first and stage ALL changes — modified files alongside renames and new files — before creating the commit. Do not commit a partial set and leave unstaged modifications behind.
-
-## Code Conventions
+When committing, run `git status` first and stage ALL changes — modified files alongside renames and new files — before creating the commit.
 
 Never invent test IDs or fake production-context stubs/adapters. Use real implementations and real requirement IDs; when wiring dependencies, use the app-level factory interface (e.g. DataProviderFactory) rather than concrete providers.
-
-## Logging Conventions
 
 Logging should be file-only (no console output) unless explicitly requested otherwise.
 ```
@@ -246,7 +319,7 @@ The following 26 skills were adapted from upstream open-source skill repositorie
 | `to-spec` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-spec` | Condensed the spec template; added formal-requirements tracing (REQ-ID inline tags), `docs/agents/domain.md` and `.data/requirements/` wiring; added headless detection, staging with artifact-type frontmatter, critic invocation, and auto-publish on approval (ADR-0034/0035/0037/0039). | ~65% |
 | `implement` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `implement` | Added isolated-subagent code-review flow, issue/spec status transitions, and requirement-ID propagation into commits/PRs (doubled in size). | ~50% |
 | `grilling` (learning) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grilling` | Added ADR-capture phase and an automatic post-grilling `/critic` review handoff (manifest + verdict). | ~55% |
-| `grill-with-docs` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grill-with-docs` | Changed delegated invocation from `/grilling` to `/grill-me` (the local grilling skill remains at directory `grilling`); added ADR collection and `/critic` audit flow. | ~60% |
+| `grill-with-docs` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grill-with-docs` | Delegates to `/grilling`; added ADR collection and `/critic` audit flow. | ~60% |
 | `to-tickets` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-tickets` | Heavily condensed and rewritten; added requirements-tracing (`Requirements:` field), local-file tracker path, `/implement` frontier guidance; added headless detection, staging with artifact-type frontmatter, manifest, critic invocation, and auto-publish on approval (ADR-0034/0037/0039/0040). | ~75% |
 | `pi-web-search` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `pi-web-search` | Verbatim adoption. | ~0% |
 | `research-prompt` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `research-prompt` | Verbatim adoption. | ~0% |

@@ -12,7 +12,3 @@ When changing a multi-turn skill, preserve its dependency contracts rather than 
 - `engineering/to-tickets` → `engineering/setup-skills`: same dependency as `to-spec`.
 - `engineering/to-tickets` → `engineering/implement`: Step 5 guidance recommends `/implement` for working the ticket frontier one slice at a time.
 - `session/handoff`: optionally includes a "suggested skills" section to guide the fresh agent.
-
-## Known broken reference
-
-`engineering/improve-codebase-architecture` and `engineering/grill-with-docs` invoke `/grill-me`, but the installed skill's frontmatter `name` is `grilling` (directory `learning/grilling`). No skill named `grill-me` exists, so those `/grill-me` calls resolve to nothing. Fix those two `SKILL.md` files to invoke `/grilling`.
