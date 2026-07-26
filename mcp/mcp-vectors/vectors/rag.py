@@ -1816,6 +1816,7 @@ class RAGPipeline:
         root_id: str,
         communities_version: int,
         committed_build_id: str,
+        is_dirty: bool,
         limit: int,
     ) -> Optional[dict]:
         """Attempt entity-targeted community summarization.
@@ -1857,6 +1858,12 @@ class RAGPipeline:
         all_community_ids: list[str] = await asyncio.to_thread(
             self._graph_store.get_committed_community_ids, root_id, committed_build_id
         )
+        targeted_community_ids = targeted_community_ids & set(all_community_ids)
+        if not targeted_community_ids:
+            _targeting_logger.debug(
+                "targeting: no communities remain after intersection with committed build, falling through"
+            )
+            return None
         total = len(all_community_ids)
         cap = int(total * self.config.community_cap_ratio)
         if len(targeted_community_ids) > cap:
@@ -1880,32 +1887,6 @@ class RAGPipeline:
 
         if self._communities is None:
             return None
-        all_fresh = await self._communities.all_points_exist(
-            root_id=root_id,
-            graph_version=communities_version,
-            build_id=committed_build_id,
-            community_ids=targeted_list,
-        )
-
-        if not all_fresh:
-            _targeting_logger.debug(
-                "targeting: not all %d community reports are fresh yet, returning rebuilding",
-                len(targeted_list),
-            )
-            _targeting_logger.debug(
-                "targeting: entity-targeting fallback is scoped to root_id=%r", root_id
-            )
-            fallback = await self.search_with_response(query, limit, base_dirs=[root_id])
-            return {
-                "success": True,
-                "mode": "rebuilding",
-                "incomplete": True,
-                "root_id": root_id,
-                "graph_version": communities_version,
-                "warning": "Targeted community reports are being generated; returning vector search fallback",
-                "fallback_results": fallback,
-                "confidence": self._compute_confidence(root_id),
-            }
 
         results = await self._communities.search_filtered(
             root_id=root_id,
@@ -1917,6 +1898,23 @@ class RAGPipeline:
         )
 
         if not results:
+            if is_dirty:
+                _targeting_logger.debug(
+                    "targeting: no reports found for %d communities, is_dirty=True, "
+                    "returning chunk fallback scoped to root_id=%r",
+                    len(targeted_list), root_id,
+                )
+                fallback = await self.search_with_response(query, limit, base_dirs=[root_id])
+                return {
+                    "success": True,
+                    "mode": "rebuilding",
+                    "incomplete": True,
+                    "root_id": root_id,
+                    "graph_version": communities_version,
+                    "warning": "Targeted community reports are being generated; returning vector search fallback",
+                    "fallback_results": fallback,
+                    "confidence": self._compute_confidence(root_id),
+                }
             return None
 
         synthesis_context = "\n\n".join(
@@ -1934,7 +1932,7 @@ class RAGPipeline:
         )
         return {
             "success": True,
-            "mode": "ready",
+            "mode": "rebuilding" if is_dirty else "ready",
             "incomplete": True,
             "root_id": root_id,
             "graph_version": communities_version,
@@ -1980,23 +1978,34 @@ class RAGPipeline:
             )
 
         # --- Detection phase: cluster structure must exist before reporting. ---
-        if is_dirty or not committed_build_id:
+        if not committed_build_id:
             self.schedule_detection(root_id)
             return await _rebuilding(
                 "Communities are being rebuilt; returning vector search fallback"
             )
+        if is_dirty:
+            self.schedule_detection(root_id)
+        if communities_version is None:
+            return {
+                "success": False,
+                "error": {
+                    "code": "meta_integrity_error",
+                    "message": "communities_version is None despite a committed build ID — meta table integrity violation",
+                },
+            }
 
         # --- Entity-targeted path (ADR-0009–0021): try to serve only the
         #     communities relevant to the query, avoiding an O(N) full-build stall.
         #     Falls through to full summarization on zero-match or cap exceeded. ---
         query_vector = await self.lm_client.get_embedding(_truncate_for_embed(query))
-        if getattr(self, "_qdrant_entities", None) is not None and communities_version is not None:
+        if getattr(self, "_qdrant_entities", None) is not None:
             targeting_result = await self._try_entity_targeting(
                 query=query,
                 query_vector=query_vector,
                 root_id=root_id,
                 communities_version=communities_version,
                 committed_build_id=committed_build_id,
+                is_dirty=is_dirty,
                 limit=limit,
             )
             if targeting_result is not None:
@@ -2080,6 +2089,7 @@ class RAGPipeline:
         return {
             "success": True,
             "mode": "rebuilding",
+            "incomplete": False,
             "root_id": root_id,
             "graph_version": graph_version or 0,
             "warning": warning,

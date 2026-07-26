@@ -1,14 +1,20 @@
 """
-Tests for RAGPipeline.search_global (Phase 2D).
+Tests for RAGPipeline.search_global (Phase 2D / ADR-0053).
 
 Covers:
 - feature_disabled -> error code "feature_disabled"
 - root not indexed -> error code "root_not_indexed"
-- dirty root -> mode "rebuilding" with fallback_results
+- no committed_build_id -> hard Gate 1 returns rebuilding (incomplete=False)
+- dirty root with committed_build_id -> schedules detection, continues to targeting
 - CollectionMissingError -> mode "rebuilding"
 - fresh generation -> mode "ready" with community_results + synthesis
 - community_results sorted by score desc then community_id
-- no committed_build_id -> triggers rebuild
+- meta_integrity_error guard (committed_build_id set, communities_version None)
+- targeting: partial synthesis when is_dirty=True -> mode "rebuilding" + incomplete=True
+- targeting: non-dirty zero results -> None -> full-search falls through, no chunk fallback
+- targeting: cap exceeded falls through
+- targeting: root-scoped chunk fallback when is_dirty=True and search_filtered empty
+- targeting: empty intersection with committed build -> falls through
 """
 from __future__ import annotations
 
@@ -113,18 +119,18 @@ def test_search_global_root_not_indexed():
 
 
 # ---------------------------------------------------------------------------
-# 3. dirty root -> mode "rebuilding" with fallback_results
+# 3. no committed_build_id -> hard Gate 1 returns rebuilding
 # ---------------------------------------------------------------------------
 
 
-def test_search_global_dirty_root_returns_fallback():
-    """Dirty communities trigger rebuild + return vector fallback."""
+def test_search_global_no_build_id_hard_gate():
+    """No committed_build_id (dirty or not) → hard gate schedules detection + returns rebuilding."""
 
     async def _run():
         pipeline = _make_pipeline()
         pipeline._graph_store.has_root.return_value = True
-        pipeline._graph_store.get_committed_generation.return_value = (1, "build-abc")
-        pipeline._graph_store.get_graph_version.return_value = 2
+        pipeline._graph_store.get_committed_generation.return_value = (0, None)
+        pipeline._graph_store.get_graph_version.return_value = 1
         pipeline._graph_store.are_communities_dirty.return_value = True
 
         fallback_payload = {
@@ -135,7 +141,6 @@ def test_search_global_dirty_root_returns_fallback():
         schedule_calls = []
 
         with patch("vectors.rag.ENTITY_EXTRACTION", True):
-            # Dirty detection state now schedules the (cheap) detection phase.
             pipeline.schedule_detection = lambda rid: schedule_calls.append(rid)
             result = await pipeline.search_global("query", "/some/root", limit=5)
 
@@ -184,7 +189,7 @@ def test_search_global_collection_missing_returns_fallback():
         schedule_calls = []
 
         with patch("vectors.rag.ENTITY_EXTRACTION", True):
-            pipeline.schedule_reports = lambda rid: schedule_calls.append(rid)
+            pipeline.schedule_reports = lambda rid, target_clusters=None: schedule_calls.append(rid)
             result = await pipeline.search_global("query", "/some/root", limit=5)
 
         assert result["success"] is True
@@ -280,7 +285,7 @@ def test_search_global_community_results_sorted():
 
 
 # ---------------------------------------------------------------------------
-# 7. no committed_build_id -> triggers rebuild even if not dirty
+# 7. no committed_build_id (non-dirty) -> triggers rebuild
 # ---------------------------------------------------------------------------
 
 
@@ -310,12 +315,12 @@ def test_search_global_no_build_id_triggers_rebuild():
 
 
 # ---------------------------------------------------------------------------
-# 8. Targeting path — fresh reports → returns ready result with incomplete=True
+# 8. Targeting path — reports exist → mode depends on is_dirty
 # ---------------------------------------------------------------------------
 
 
-def test_targeting_returns_ready_when_reports_are_fresh():
-    """When entity search hits communities and all points exist → targeting returns ready."""
+def test_targeting_returns_ready_when_not_dirty_and_reports_exist():
+    """When is_dirty=False, search_filtered returns results → targeting returns ready."""
 
     async def _run():
         pipeline = _make_pipeline_with_targeting()
@@ -339,9 +344,6 @@ def test_targeting_returns_ready_when_reports_are_fresh():
             return_value=["c" + str(i) for i in range(10)]
         )
 
-        # All targeted points exist in Qdrant
-        pipeline._communities.all_points_exist = AsyncMock(return_value=True)
-
         community_hits = [
             {"community_id": "c1", "title": "T1", "summary": "S1", "score": 0.95}
         ]
@@ -358,10 +360,9 @@ def test_targeting_returns_ready_when_reports_are_fresh():
 
         assert result["success"] is True
         assert result["mode"] == "ready"
-        assert result["incomplete"] is True  # targeting always returns incomplete=True
+        assert result["incomplete"] is True
         assert result["synthesis"] == "targeted synthesis"
         assert len(result["community_results"]) == 1
-        # schedule_reports must have been called with the targeted cluster list
         assert any(tc is not None and "c1" in tc for _, tc in schedule_calls)
 
     asyncio.run(_run())
@@ -463,19 +464,19 @@ def test_targeting_falls_through_when_cap_exceeded():
         assert result["mode"] in ("ready", "rebuilding")
         # schedule_reports called without target (full sweep)
         assert any(tc is None for _, tc in schedule_calls)
-        # targeted path's all_points_exist must NOT have been called (fell through)
-        pipeline._communities.assert_not_called()  # search_filtered not called
+        # search_filtered not called (cap exceeded before reaching it)
+        pipeline._communities.search_filtered.assert_not_called()
 
     asyncio.run(_run())
 
 
 # ---------------------------------------------------------------------------
-# 11. Targeting — not all reports fresh → returns rebuilding with fallback
+# 11. Targeting — is_dirty=False, search_filtered empty → None → full search
 # ---------------------------------------------------------------------------
 
 
-def test_targeting_returns_rebuilding_when_not_all_reports_fresh():
-    """If targeted reports not yet generated, returns mode=rebuilding with fallback."""
+def test_targeting_nondirty_empty_search_falls_through():
+    """is_dirty=False, search_filtered returns empty → targeting returns None → full community search."""
 
     async def _run():
         pipeline = _make_pipeline_with_targeting()
@@ -483,6 +484,12 @@ def test_targeting_returns_rebuilding_when_not_all_reports_fresh():
         pipeline._graph_store.get_committed_generation.return_value = (1, "build-fresh")
         pipeline._graph_store.get_graph_version.return_value = 1
         pipeline._graph_store.are_communities_dirty.return_value = False
+        pipeline._graph_store.report_build_status.return_value = ReportBuildStatus(
+            committed_build_id="build-fresh",
+            dirty=False,
+            claimed_build_id=None,
+            claim_expires_at=None,
+        )
 
         pipeline.lm_client.get_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3, 0.4])
 
@@ -494,12 +501,112 @@ def test_targeting_returns_rebuilding_when_not_all_reports_fresh():
             return_value=["c" + str(i) for i in range(10)]
         )
 
-        # Reports not yet generated for this community
-        pipeline._communities.all_points_exist = AsyncMock(return_value=False)
+        # search_filtered returns empty → is_dirty=False → targeting returns None
+        pipeline._communities.search_filtered = AsyncMock(return_value=[])
 
-        fallback_payload = {"success": True, "query": "q", "response": "fb", "sources": []}
-        pipeline.search_with_response = AsyncMock(return_value=fallback_payload)
+        # Full community search returns results
+        community_hits = [{"community_id": "c2", "title": "T", "summary": "S", "score": 0.7}]
+        pipeline._communities.search = AsyncMock(return_value=community_hits)
+        pipeline.lm_client.generate_response = AsyncMock(return_value="full synthesis")
 
+        pipeline.schedule_reports = MagicMock()
+        pipeline.search_with_response = AsyncMock(return_value={})
+
+        with patch("vectors.rag.ENTITY_EXTRACTION", True):
+            result = await pipeline.search_global("query", "/root", limit=5)
+
+        # Targeting returned None → full community search ran → mode ready
+        assert result["success"] is True
+        assert result["mode"] == "ready"
+        # search was called (full path)
+        pipeline._communities.search.assert_called_once()
+        # chunk fallback must not have been invoked
+        pipeline.search_with_response.assert_not_called()
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 12. Gate 1 — dirty with committed_build_id → schedules detection, proceeds to targeting
+# ---------------------------------------------------------------------------
+
+
+def test_gate1_dirty_with_committed_build_proceeds_to_targeting():
+    """Dirty repo with committed_build_id: detection scheduled, targeting proceeds."""
+
+    async def _run():
+        pipeline = _make_pipeline_with_targeting()
+        pipeline._graph_store.has_root.return_value = True
+        pipeline._graph_store.get_committed_generation.return_value = (2, "build-prior")
+        pipeline._graph_store.get_graph_version.return_value = 3
+        pipeline._graph_store.are_communities_dirty.return_value = True
+
+        pipeline.lm_client.get_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3, 0.4])
+
+        pipeline._qdrant_entities.search = AsyncMock(
+            return_value=[{"entity_id": "e1", "name": "Foo", "type": "func", "score": 0.9}]
+        )
+        pipeline._graph_store.get_community_ids_for_entities = MagicMock(return_value={"c1"})
+        pipeline._graph_store.get_committed_community_ids = MagicMock(
+            return_value=["c" + str(i) for i in range(10)]
+        )
+
+        community_hits = [
+            {"community_id": "c1", "title": "T1", "summary": "S1", "score": 0.9}
+        ]
+        pipeline._communities.search_filtered = AsyncMock(return_value=community_hits)
+        pipeline.lm_client.generate_response = AsyncMock(return_value="dirty synthesis")
+
+        schedule_detection_calls: list = []
+        pipeline.schedule_detection = lambda rid: schedule_detection_calls.append(rid)
+        pipeline.schedule_reports = MagicMock()
+
+        with patch("vectors.rag.ENTITY_EXTRACTION", True):
+            result = await pipeline.search_global("query", "/root", limit=5)
+
+        # Detection was scheduled (dirty)
+        assert len(schedule_detection_calls) == 1
+        # Targeting ran and returned results (mode=rebuilding because is_dirty=True)
+        assert result["success"] is True
+        assert result["mode"] == "rebuilding"
+        assert result["incomplete"] is True
+        assert result["synthesis"] == "dirty synthesis"
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 13. Partial synthesis — is_dirty=True, search_filtered returns reports
+# ---------------------------------------------------------------------------
+
+
+def test_targeting_partial_synthesis_dirty():
+    """is_dirty=True and search_filtered returns some reports → mode=rebuilding + synthesis."""
+
+    async def _run():
+        pipeline = _make_pipeline_with_targeting()
+        pipeline._graph_store.has_root.return_value = True
+        pipeline._graph_store.get_committed_generation.return_value = (1, "build-old")
+        pipeline._graph_store.get_graph_version.return_value = 2
+        pipeline._graph_store.are_communities_dirty.return_value = True
+
+        pipeline.lm_client.get_embedding = AsyncMock(return_value=[0.1, 0.2, 0.3, 0.4])
+
+        pipeline._qdrant_entities.search = AsyncMock(
+            return_value=[{"entity_id": "e1", "name": "Bar", "type": "class", "score": 0.8}]
+        )
+        pipeline._graph_store.get_community_ids_for_entities = MagicMock(return_value={"c2"})
+        pipeline._graph_store.get_committed_community_ids = MagicMock(
+            return_value=["c" + str(i) for i in range(10)]
+        )
+
+        community_hits = [
+            {"community_id": "c2", "title": "T2", "summary": "S2", "score": 0.85}
+        ]
+        pipeline._communities.search_filtered = AsyncMock(return_value=community_hits)
+        pipeline.lm_client.generate_response = AsyncMock(return_value="partial synthesis")
+
+        pipeline.schedule_detection = MagicMock()
         pipeline.schedule_reports = MagicMock()
 
         with patch("vectors.rag.ENTITY_EXTRACTION", True):
@@ -508,46 +615,50 @@ def test_targeting_returns_rebuilding_when_not_all_reports_fresh():
         assert result["success"] is True
         assert result["mode"] == "rebuilding"
         assert result["incomplete"] is True
-        assert "targeted" in result["warning"].lower()
-        assert result["fallback_results"] == fallback_payload
+        assert result["synthesis"] == "partial synthesis"
+        assert len(result["community_results"]) == 1
+        # No chunk fallback — community_results present
+        assert "fallback_results" not in result
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 14. Root-scoped fallback — is_dirty=True, search_filtered returns empty
+# ---------------------------------------------------------------------------
 
 
 def test_entity_targeting_fallback_respects_root_scope():
     """Entity-targeting fallback must scope results to target root, not cross-root.
 
-    Regression test for: line 1895 in _try_entity_targeting called
-    search_with_response with base_dirs=None, causing cross-root leakage.
-    The fix scopes to base_dirs=[root_id].
+    Regression: targeting fallback must use base_dirs=[root_id] (not None).
+    Verifies the is_dirty=True + empty search_filtered path returns a scoped fallback.
     """
     async def _run():
-        pipeline = _make_pipeline()
+        pipeline = _make_pipeline_with_targeting()
         root_id = "/root-a"
         root_path = "/root-a"
 
-        # Setup: committed generation exists, entities will match
         pipeline._graph_store.has_root = MagicMock(return_value=True)
         pipeline._graph_store.get_committed_generation = MagicMock(
             return_value=(1, "build-123")
         )
-        pipeline._graph_store.are_communities_dirty = MagicMock(return_value=False)
-        pipeline._graph_store.get_graph_version = MagicMock(return_value=1)
+        pipeline._graph_store.are_communities_dirty = MagicMock(return_value=True)
+        pipeline._graph_store.get_graph_version = MagicMock(return_value=2)
         pipeline._graph_store.get_community_ids_for_entities = MagicMock(
             return_value={"community-1"}
         )
-
-        # Entity search hits, triggering targeting
-        pipeline._qdrant_entities = AsyncMock()
-        pipeline._qdrant_entities.search = AsyncMock(
-            return_value=[{"entity_id": "ent-1"}]
+        pipeline._graph_store.get_committed_community_ids = MagicMock(
+            return_value=["community-" + str(i) for i in range(10)]
         )
 
-        # Community reports NOT fresh yet → triggers fallback at line 1895
-        pipeline._communities = AsyncMock()
-        pipeline._communities.all_points_exist = AsyncMock(return_value=False)
+        pipeline._qdrant_entities.search = AsyncMock(
+            return_value=[{"entity_id": "ent-1", "name": "X", "type": "func", "score": 0.9}]
+        )
 
-        # Mock the vector fallback: return a result from root-a only
+        # search_filtered returns empty → is_dirty=True → scoped chunk fallback
+        pipeline._communities.search_filtered = AsyncMock(return_value=[])
+
         fallback_from_root_a = {
             "success": True,
             "query": "query",
@@ -558,6 +669,8 @@ def test_entity_targeting_fallback_respects_root_scope():
             "confidence": {},
         }
         pipeline.search_with_response = AsyncMock(return_value=fallback_from_root_a)
+        pipeline.schedule_detection = MagicMock()
+        pipeline.schedule_reports = MagicMock()
 
         with patch("vectors.rag.ENTITY_EXTRACTION", True):
             result = await pipeline.search_global("query", root_path, limit=5)
@@ -569,9 +682,34 @@ def test_entity_targeting_fallback_respects_root_scope():
             f"entity-targeting fallback must scope to root_id, got {call_kwargs.get('base_dirs')}"
         )
 
-        # Verify result is in rebuilding mode with fallback
+        # Result is rebuilding mode with fallback
         assert result["success"] is True
         assert result["mode"] == "rebuilding"
+        assert result["incomplete"] is True
         assert result["fallback_results"]["sources"][0]["file_path"].startswith("/root-a")
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 15. meta_integrity_error — committed_build_id set but communities_version None
+# ---------------------------------------------------------------------------
+
+
+def test_search_global_meta_integrity_error():
+    """communities_version None despite a committed build ID returns meta_integrity_error."""
+
+    async def _run():
+        pipeline = _make_pipeline()
+        pipeline._graph_store.has_root.return_value = True
+        pipeline._graph_store.get_committed_generation.return_value = (None, "build-123")
+        pipeline._graph_store.get_graph_version.return_value = 1
+        pipeline._graph_store.are_communities_dirty.return_value = False
+
+        with patch("vectors.rag.ENTITY_EXTRACTION", True):
+            result = await pipeline.search_global("query", "/root")
+
+        assert result["success"] is False
+        assert result["error"]["code"] == "meta_integrity_error"
 
     asyncio.run(_run())
