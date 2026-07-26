@@ -144,17 +144,29 @@ When the user requests an autonomous loop (debug, fix-and-verify, requirements-t
 ```markdown
 # Search Strategy
 
-Choosing between fd/rg and mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety.
-
-For exact, single-site lookups (known symbol, literal, filename): `fd`/`rg`/`Read`. For conceptual, cross-file, entity-graph, or architecture-level retrieval: `search_root`.
+For exact, single-site lookups (known symbol, literal, filename): `fd`/`rg`/`Read`. For conceptual, cross-file, or architecture-level retrieval: `mcp-vectors` via `search_root`, which fans out across chunks (code+docs), entities (symbol graph), and communities (architecture) in one call.
 
 | Tool | Use for |
 |---|---|
-| `search_root` | Conceptual/cross-file code, entity graph (callers, neighbors), and architecture — all in one call. Not for exact symbol/string lookups. |
+| `fd` / `rg` / `Read` | Exact symbol, literal, or filename lookup. |
+| `search_root` | Conceptual, cross-file, exploratory retrieval — semantic, entity-graph, and architecture-level in one call. |
+| `index_codebase` | Index a root before first `search_root` call; re-index after large structural changes. |
+| `clear_index` | Remove stale Qdrant entries for a path (preview without `confirm=true`). |
 
-`search_root` fans out across three channels (chunks, entities, communities) in parallel and returns per-channel results. Ensure the root is indexed first (`index_codebase`). If the target root is not indexed, fall back to `rg` and `fd`; offer indexing when the search is substantial.
+`search_root` is not for exact symbol/string literals — use `rg`/`fd` instead. Not for cross-root document search — run `index_codebase` on each root first, then call `search_root` per root.
 
-For worktree paths, use filesystem tools directly; restrict `mcp-vectors` to the canonical repository root.
+## Pre-condition gate
+
+`search_root` requires the root to be indexed. Pass `dry_run=true` to `index_codebase` to check status without indexing. A missing index causes a tool error — fall back to `rg`/`fd` and offer indexing when the search is substantial.
+
+## Task-shaped triggers
+
+- Before changing a function/class signature: `search_root` for callers/usages first.
+- During code review, for each modified public entity: blast-radius check via `search_root`.
+- When asked "how does X relate to Y": `search_root` on both concepts before reading files.
+- When planning multi-file work: `search_root` on central concepts to get the file map.
+
+Never index or search any path under `.claude/worktrees/` with `mcp-vectors`; use filesystem tools directly for worktree-specific inspection.
 ```
 
 #### `~/.claude/docs/agents/testing.md`

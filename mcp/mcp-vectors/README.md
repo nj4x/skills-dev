@@ -94,7 +94,7 @@ The graph pipeline then:
 1. Detects hierarchical entity communities using Leiden when available, with a NetworkX fallback.
 2. Generates LLM-backed reports summarizing each community.
 3. Embeds those reports in a dedicated Qdrant collection.
-4. Uses the relevant reports for repository-level answers through `search_global`.
+4. Uses the relevant reports for repository-level answers through the `communities` channel of `search_root`.
 
 Graph capabilities are surfaced through the `entities` and `communities` channels of `search_root`:
 
@@ -184,8 +184,8 @@ uv run --extra dev pytest
 
 ### Search returns no results
 
-- Run `get_indexing_status` for the target root.
-- If it returns `not_found`, call `index_codebase` or `index_files`.
+- Call `index_codebase` with `dry_run=true` to check whether the root is indexed.
+- If it is not indexed, call `index_codebase` without `dry_run` to index it.
 - For exploratory search, lower `min_score`.
 
 ### GraphRAG tools report that the feature is disabled
