@@ -146,27 +146,13 @@ When the user requests an autonomous loop (debug, fix-and-verify, requirements-t
 
 Choosing between fd/rg and mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety.
 
-For exact, single-site lookups (known symbol, literal, filename): `fd`/`rg`/`Read`. For a *blast-radius question* on a known symbol (who calls it, what it touches, inheritance): `get_entity_callers` / `get_entity_neighbors` — prefer these over grepping for usages, since the graph resolves aliased imports and cross-file edges that `rg` misses. For conceptual, cross-file, or architecture-level retrieval: the mcp-vectors tools below.
+For exact, single-site lookups (known symbol, literal, filename): `fd`/`rg`/`Read`. For conceptual, cross-file, entity-graph, or architecture-level retrieval: `search_root`.
 
 | Tool | Use for |
 |---|---|
-| `search_code` | Conceptual or cross-file code retrieval. |
-| `search_documents` | Non-code documentation, configuration, and requirements retrieval. |
-| `search_entities` | A named or partially known entity. |
-| `get_entity_neighbors` | Graph connections from a known entity. |
-| `get_entity_callers` | Callers of a known entity. |
-| `search_global` | Architecture-level questions; prefer when persisted community reports exist. Falls back to vector search if reports are missing or dirty. |
+| `search_root` | Conceptual/cross-file code, entity graph (callers, neighbors), and architecture — all in one call. Not for exact symbol/string lookups. |
 
-**Entity-graph tools** (`search_entities`, `get_entity_neighbors`, `get_entity_callers`) are cheap single calls — use them inline. Run `search_global` via Explore or general-purpose sub-agents, in parallel with applicable `fd` or `rg` searches.
-
-## Task-shaped triggers for the entity graph
-
-- Before changing a function/class signature or renaming: `get_entity_callers` first.
-- During code review, for each modified public entity: check blast radius via `get_entity_callers`.
-- When asked "how does X relate to / affect Y" or tracing a dependency chain: `get_entity_neighbors` (depth 2) before reading files.
-- When planning multi-file work: start with `search_entities` on the central concepts to get the file map.
-
-Assume the entity graph exists for indexed roots and just try the call — a failed call costs one tool call. If the target root is not indexed, fall back to `rg` and `fd`; offer indexing when the search is substantial.
+`search_root` fans out across three channels (chunks, entities, communities) in parallel and returns per-channel results. Ensure the root is indexed first (`index_codebase`). If the target root is not indexed, fall back to `rg` and `fd`; offer indexing when the search is substantial.
 
 For worktree paths, use filesystem tools directly; restrict `mcp-vectors` to the canonical repository root.
 ```

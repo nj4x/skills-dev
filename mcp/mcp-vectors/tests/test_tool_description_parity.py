@@ -8,7 +8,7 @@ calls, no mock setup.
 Four assertions:
 
 1. test_targeted_tools_present_in_claude_md
-   All four named tools appear somewhere in CLAUDE.md (presence check).
+   The named tool (search_root) appears somewhere in CLAUDE.md (presence check).
 
 2. test_no_orphaned_tool_names_in_claude_md
    Every backtick-quoted snake_case identifier in the Pre-conditions section
@@ -41,14 +41,7 @@ CLAUDE_MD = Path(__file__).resolve().parents[3] / "CLAUDE.md"
 
 # The four tools that must be documented in CLAUDE.md and must carry the
 # "Not for … use …" contrast in both server.py and CLAUDE.md.
-TARGETED_TOOLS = frozenset(
-    {
-        "search_global",
-        "get_entity_callers",
-        "get_entity_neighbors",
-        "search_entities",
-    }
-)
+TARGETED_TOOLS = frozenset({"search_root"})
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -101,7 +94,7 @@ def _extract_preconditions_section(content: str) -> str:
 
 
 def test_targeted_tools_present_in_claude_md() -> None:
-    """Assertion 1: All four targeted tools appear by name in the project CLAUDE.md."""
+    """Assertion 1: All targeted tools appear by name in the project CLAUDE.md."""
     content = _read_claude_md()
     missing = [t for t in sorted(TARGETED_TOOLS) if t not in content]
     assert not missing, (

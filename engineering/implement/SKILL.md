@@ -10,7 +10,7 @@ Use /tdd where possible, at pre-agreed seams.
 
 Run typechecking regularly, single test files regularly, and the full test suite once at the end.
 
-Once done, spawn a subagent (via the Agent tool) and invoke /code-review inside it to review the work in an isolated context. After review is complete and all Major/Critical findings are fixed, update the issue/spec statuses:
+Once done, invoke the `code-review` skill (via the Skill tool) to review the work. Do NOT use the Agent tool with subagent_type to do this — use `Skill("code-review")` directly. After review is complete and all Major/Critical findings are fixed, update the issue/spec statuses:
 
 - For each completed issue/ticket in `.scratch/`, update `Status:` from `ready-for-agent` to `done`.
 - Update the spec's `Status:` from `ready-for-agent` to `done` (only after all acceptance criteria are verified).

@@ -1,6 +1,9 @@
 """
 Regression test for get_community_report missing are_communities_dirty check.
 
+NOTE: get_community_report is deprecated (pending deletion per ADR-0052). These tests
+cover the underlying handler logic which remains importable until the deletion PR.
+
 Issue: get_community_report did not check if communities were dirty before attempting
 to retrieve a community by ID. This caused "community_not_found" errors when communities
 were in the process of being rebuilt, even when the tool should have returned a

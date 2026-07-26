@@ -6,15 +6,15 @@ It is designed for private, local retrieval over documents and codebases. Index 
 
 ## Features
 
+- **Unified search**: `search_root` fans out across chunks (code + docs), entities (symbol graph with callers/neighbors), and communities (architecture synthesis) in one call — 3 exposed tools total.
 - **Semantic search**: retrieve documents and code by meaning rather than exact keywords.
-- **Codebase workflow**: `index_codebase`, `search_code`, and `get_indexing_status` provide root-scoped retrieval suitable for coding agents.
+- **Codebase workflow**: `index_codebase` and `search_root` provide root-scoped retrieval suitable for coding agents.
 - **Safe indexing**: a re-index replaces existing chunks only after parsing, embedding, and upsert succeed.
 - **Git-aware scanning**: honors `.gitignore` by default and skips excluded binary, cache, and secret-like paths.
-- **Secret safeguards**: audit existing indexed payloads without exposing values, then explicitly purge exact paths from Qdrant.
 - **Bounded operations**: large Qdrant scans report when their result is partial or truncated.
 - **File watching**: optionally reconcile and watch an already-indexed launch directory or explicit `WATCH_DIR` paths.
 - **Same-host mutation locks**: coordinate indexing and cleanup through `/tmp/mcp-vectors-locks`.
-- **GraphRAG**: optionally extract entities and relationships, detect communities, generate community reports, and use them for repository-level synthesis and graph-aware reranking.
+- **GraphRAG**: optionally extract entities and relationships, detect communities, generate community reports, and surface them through the `entities` and `communities` channels of `search_root`.
 
 ## When to use semantic search
 
@@ -96,15 +96,12 @@ The graph pipeline then:
 3. Embeds those reports in a dedicated Qdrant collection.
 4. Uses the relevant reports for repository-level answers through `search_global`.
 
-Graph-specific tools include:
+Graph capabilities are surfaced through the `entities` and `communities` channels of `search_root`:
 
-- `search_entities` — case-insensitive substring lookup of code symbols by name (not semantic search); use to locate a symbol before calling the graph traversal tools.
-- `get_entity_callers` — exact-name reverse call-graph lookup; returns functions/methods that call a given entity.
-- `get_entity_neighbors` — BFS traversal of graph edges (imports, calls, inherits, defines, references, related) from a named entity up to a configurable hop depth.
-- `list_communities` and `get_community_report` — inspect detected entity communities; may return `mode:"rebuilding"` on first use or after graph changes.
-- `search_global` — architecture-level synthesis over community reports; prefer over `search_code`/`search_documents` for big-picture questions.
+- **`entities` channel** — semantic entity search (ANN or substring fallback) plus automatic enrichment: callers and neighbors are fetched and attached for the top matched entities.
+- **`communities` channel** — architecture-level synthesis over community reports; answers big-picture questions about how a repository is organized.
 
-All entity and community tools require `ENTITY_EXTRACTION=true` and an indexed entity graph for the target root.
+All graph channels require `ENTITY_EXTRACTION=true` and an indexed entity graph for the target root. When disabled, the channels return empty results and `search_root` still succeeds via the `chunks` channel.
 
 Set `ENTITY_RERANK_ALPHA` above `0.0` to blend graph proximity into ordinary semantic-search ranking. `MAX_GLEANINGS` controls extra LLM extraction passes; `MAX_CHUNKS_PER_EXTRACT` limits chunks processed per extraction request.
 
@@ -141,37 +138,21 @@ Set `ENTITY_RERANK_ALPHA` above `0.0` to blend graph proximity into ordinary sem
 | `ENTITY_RERANK_ALPHA` | `0.0` | Graph-proximity weight for semantic search reranking; `0.0` disables it |
 | `MAX_GLEANINGS` | `0` | Additional LLM extraction passes per chunk |
 | `MAX_CHUNKS_PER_EXTRACT` | `100` | Maximum chunks processed by one extraction request |
+| `SEARCH_ROOT_TIMEOUT_SECONDS` | `60` | Per-call timeout for `search_root` fan-out across all three channels; invalid or zero values default to 60 |
 
 ## Core tools
 
-### Indexing and status
+Three exposed tools:
 
-- `index_files` indexes explicit files or directories with replace-safe behavior.
-- `index_codebase` indexes a root and reports the next safe action for already-indexed roots. Pass `dry_run=true` to preview what would be indexed without mutation.
-- `get_indexing_status` reports a root's index status, metadata version, secret-audit warning, and recommended next step.
-- `list_indexed_files` lists indexed files through a bounded Qdrant scan.
-
-### Search
-
-- `search_documents` — semantic search across **all** indexed documents (no root scoping); filter with `base_dirs`, `extensions`, or `file_types`. Use for conceptual retrieval over docs, config, or mixed content.
-- `search_code` — semantic code search scoped to a single indexed root (`root_path` required). Use for meaning-based code retrieval within one project.
-- `search_global` — architecture-level synthesis over GraphRAG community reports (`ENTITY_EXTRACTION=true` required). Prefer over `search_code`/`search_documents` for big-picture questions about how a repository is organized.
-
-### Cleanup
-
-- `clear_index` previews removal by exact file or component-safe directory path, then requires the preview's exact file and chunk counts for confirmation.
-
-### Secret audit
-
-- `audit_indexed_secrets` reports paths and rule IDs for potential indexed secrets, without returning secret values.
-- `purge_indexed_secret_files` removes only the supplied exact indexed paths after explicit confirmation.
+- **`index_codebase`** — index a project root. Pass `dry_run=true` to check status without indexing. If the root is already indexed, returns `indexed=false`; use `force=true` to re-index.
+- **`search_root`** — search semantically across chunks (code + docs), entities (symbol graph with callers/neighbors), and communities (architecture). Returns per-channel results; top-level `success` is true if at least one channel succeeds. Not for exact symbol/string lookups — use ripgrep/fd instead.
+- **`clear_index`** — preview then confirm removal of indexed data for a path from Qdrant (never touches the filesystem).
 
 Run `uv run mcp-vectors --help` to inspect the server's transport options. MCP clients expose tool schemas and parameter descriptions when connected.
 
 ## Safety notes
 
-- Secret-like paths are skipped prospectively; that does not remove data indexed before the rule existed.
-- Use `audit_indexed_secrets`, then `purge_indexed_secret_files`, to clean existing indexed secret-like files.
+- Secret-like paths are skipped prospectively during indexing; that does not remove data indexed before the rule existed. Secret remediation is out-of-band.
 - Cleanup tools only change Qdrant data; they never delete local files.
 - `/tmp/mcp-vectors-locks` coordinates processes on the same host only. A remote Qdrant collection shared across hosts needs external coordination.
 - PDFs remain excluded by default for safety and performance, even though PDF parsing support exists.

@@ -3,6 +3,9 @@ Tests for the server-level request-ID lifecycle decorator and ContextVar.
 
 Scope: server.py only — _mcp_op, _mcp_request_id, _tool, _LocalTimestampFormatter.
 No live MCP server, Qdrant, or LM Studio is required.
+
+NOTE: Some tests in this file import deprecated functions (e.g. search_code) that are
+pending deletion per ADR-0052. They remain valid until the deletion PR lands.
 """
 
 from __future__ import annotations

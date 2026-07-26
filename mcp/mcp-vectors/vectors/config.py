@@ -211,6 +211,9 @@ class Config:
         payload = f"v2|git-root-enforcement|auto-purge={self.auto_purge_non_git_roots}|{"|".join(canonical)}"
         return hashlib.sha256(payload.encode()).hexdigest()
 
+    # search_root channel timeout (seconds); validated > 0 at startup, defaults to 60
+    search_root_timeout_seconds: int = 60      # SEARCH_ROOT_TIMEOUT_SECONDS
+
     # LLM provider selection
     llm_provider: str = "lm_studio"           # LLM_PROVIDER: "lm_studio" | "anthproxy"
     anthproxy_url: str = "http://127.0.0.1:8082"  # ANTHPROXY_URL
@@ -259,6 +262,7 @@ def get_config() -> Config:
         entity_extraction_concurrency=int(os.getenv("ENTITY_EXTRACTION_CONCURRENCY", "4")),
         targeting_log_full_query=_parse_bool(os.getenv("TARGETING_LOG_FULL_QUERY"), default=False),
         query_log_max_chars=int(os.getenv("QUERY_LOG_MAX_CHARS", "64")),
+        search_root_timeout_seconds=int(os.getenv("SEARCH_ROOT_TIMEOUT_SECONDS") or "60") or 60,
     )
 
 

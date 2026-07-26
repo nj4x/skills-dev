@@ -6,11 +6,8 @@ This project centers on `mcp/mcp-vectors`, so semantic search is available and c
 
 **For exact, single-site lookups** (known filename, known symbol name, literal string): use `fd`, `rg`, and `Read`.
 
-**For conceptual, cross-file, or exploratory retrieval** (looking for code that does X, understanding architecture): use `mcp-vectors` tools (`search_code`, `search_entities`, `get_entity_neighbors`, `get_entity_callers`, `search_global`).
+**For conceptual, cross-file, or exploratory retrieval** (looking for code that does X, understanding architecture): use `mcp-vectors` — specifically `search_root`, which fans out across chunks, entities, and communities in a single call.
 
 ## Pre-conditions (mandatory workflow gates)
 
-- **`get_entity_callers`**: Before modifying a public function, method, or class signature, always call `get_entity_callers` first to identify all impacted call sites. Not for locating a specific symbol — use `search_entities` or `search_code` for that.
-- **`get_entity_neighbors`**: Before answering "how does X relate to Y" or tracing a dependency chain, always call `get_entity_neighbors` (depth 2) before reading files. Not for finding a symbol by name — use `search_entities` first.
-- **`search_entities`**: Before calling `get_entity_callers` or `get_entity_neighbors`, always call `search_entities` first to confirm the exact entity name. Not for conceptual or semantic retrieval — use `search_code` for that.
-- **`search_global`**: Before making architecture-level claims about repository organization, always call `search_global` first. Not for locating a specific symbol or file — use `search_entities` or `search_code` for that.
+- **`search_root`**: Before calling, ensure the root is indexed (`index_codebase`). Use this for semantic, entity-graph, and architecture-level questions all at once. Not for exact symbol/string literals — use ripgrep/fd instead; not for cross-root document search — use `index_codebase` to add other roots.

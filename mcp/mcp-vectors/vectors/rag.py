@@ -540,6 +540,31 @@ class RAGPipeline:
             raise KeyError(f"root_not_indexed:{root_path}")
         return self._graph_store.find_entities(query, root_id, limit=limit)
 
+    async def search_entities_semantic(self, root_path: str, query: str, limit: int = 10) -> list[dict]:
+        """Semantic ANN search over entity embeddings with substring-match fallback.
+
+        Returns a list of entity dicts (keys: entity_id, name, type, score where
+        available). Falls back to find_entities when embeddings are unavailable.
+        Returns [] when ENTITY_EXTRACTION is disabled.
+        """
+        if not ENTITY_EXTRACTION:
+            return []
+        root_id = PathPolicy.path_key(root_path)
+        _qe = getattr(self, "_qdrant_entities", None)
+        if _qe is not None:
+            try:
+                query_embedding = await self.lm_client.get_embedding(_truncate_for_embed(query))
+                hits = await _qe.search(root_id=root_id, query_embedding=query_embedding, limit=limit)
+                if hits:
+                    return hits
+            except Exception as exc:
+                logger.debug("search_entities_semantic ANN failed, using substring fallback: %s", exc)
+        # Substring fallback
+        try:
+            return self.find_entities(root_path, query, limit=limit)
+        except (KeyError, RuntimeError):
+            return []
+
     def get_neighbors(
         self,
         root_path: str,

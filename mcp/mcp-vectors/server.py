@@ -481,24 +481,16 @@ mcp = FastMCP(
     name="mcp-vectors",
     instructions="""Local semantic search over indexed documents and codebases.
 
-Use semantic search for conceptual, cross-file, exploratory retrieval or synthesis. Exact search/read tools remain better for exact symbols, literals, and line-by-line inspection.
+Three exposed tools: index_codebase, search_root, clear_index.
 
-Safe workflow:
-1. Use get_indexing_status or list_indexed_files to inspect index state.
-2. Use index_codebase/index_files to index target paths.
-3. Use search_code for codebase searches or search_documents for general document search.
-4. Use audit_indexed_secrets before cleanup; purge requires exact paths and confirmation.
+Use semantic search for conceptual, cross-file, exploratory retrieval or synthesis. Exact search/read tools remain better for exact symbols, literals, and line-by-line inspection — not for exact symbol/string lookups, use ripgrep/fd instead.
+
+Workflow:
+1. Use index_codebase to index a project root (pass dry_run=true to check status without indexing).
+2. Use search_root to search — it fans out across chunks (code + docs), entities (symbol graph), and communities (architecture) in one call.
+3. Use clear_index to remove stale entries.
 
 Destructive operations are explicit. clear_index previews unless confirm=true and expected counts match.
-
-Choosing a search tool:
-- Exact symbol/string/filename → ripgrep/fd (outside this server).
-- Conceptual code in one indexed root → search_code.
-- Docs, config, requirements, mixed corpus → search_documents.
-- Known symbol's callers or relationships → get_entity_callers / get_entity_neighbors.
-- Locate a symbol by name in the graph → search_entities.
-- Repo-wide architecture / "how is this organized" → search_global (+ list_communities / get_community_report).
-Graph/entity tools require ENTITY_EXTRACTION=true and an indexed entity graph for the root.
 """,
     lifespan=app_lifespan,
 )
@@ -607,7 +599,7 @@ def _tool(**kwargs):
 # Tools
 # ====================
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def index_files(
     paths: Annotated[list[str], Field(description="Non-empty list of file or directory paths to index", min_length=1)],
     ctx: Context,
@@ -673,7 +665,7 @@ async def index_files(
         decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def search_documents(
     query: Annotated[str, Field(description="Non-empty semantic search query", min_length=1)],
     ctx: Context,
@@ -738,7 +730,7 @@ async def search_documents(
         return {"success": False, "error": str(e)}
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def list_indexed_files(
     ctx: Context,
     skip: Annotated[int, Field(description="Number of files to skip", ge=0)] = 0,
@@ -785,7 +777,7 @@ async def clear_index(
             decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def audit_indexed_secrets(
     ctx: Context,
     include_content_scan: Annotated[bool, Field(description="Scan bounded chunk text for secret-like signals; never returns values")] = False,
@@ -800,7 +792,7 @@ async def audit_indexed_secrets(
         return {"success": False, "error": str(e)}
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def purge_indexed_secret_files(
     file_paths: Annotated[list[str], Field(description="Exact secret-like file paths to remove from Qdrant only", min_length=1)],
     ctx: Context,
@@ -828,7 +820,7 @@ async def index_codebase(
     dry_run: Annotated[bool, Field(description="Return plan without indexing")] = False,
     respect_gitignore: Annotated[bool, Field(description="Skip files/dirs matched by .gitignore or .git/info/exclude")] = True,
 ) -> dict:
-    """Bring an entire project root into the index so search_code and the graph tools can use it — the first step before search_code. Pass dry_run=true to preview status+plan without indexing. If the root already appears indexed it returns indexed=false with a message unless force=true triggers a replace-safe re-index."""
+    """Bring an entire project root into the index so search_root can use it — the first step before searching. Pass dry_run=true to preview status+plan without indexing. If the root already appears indexed it returns indexed=false with a message unless force=true triggers a replace-safe re-index."""
     if not dry_run and not increment_operations():
         return _operation_rejected()
     try:
@@ -870,7 +862,7 @@ async def index_codebase(
             decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def search_code(
     root_path: Annotated[str, Field(description="Indexed codebase root to search", min_length=1)],
     query: Annotated[str, Field(description="Non-empty semantic code search query", min_length=1)],
@@ -928,7 +920,7 @@ async def search_code(
         return {"success": False, "error": str(e)}
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def get_indexing_status(
     ctx: Context,
     root_path: Annotated[Optional[str], Field(description="Optional root path to inspect")] = None,
@@ -951,7 +943,7 @@ async def get_indexing_status(
         return {"success": False, "error": str(e)}
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def get_stats(ctx: Context) -> dict:
     """Check overall server health and configuration; use get_indexing_status for per-root coverage."""
     try:
@@ -978,7 +970,7 @@ async def get_stats(ctx: Context) -> dict:
 # ====================
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def get_entity_callers(
     root_path: Annotated[str, Field(description="Absolute path of the indexed codebase root (same value passed to search_code/index_codebase)", min_length=1)],
     entity_name: Annotated[str, Field(description="Function or entity name to look up callers for", min_length=1)],
@@ -1010,7 +1002,7 @@ async def get_entity_callers(
         decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def get_entity_neighbors(
     root_path: Annotated[str, Field(description="Absolute path of the indexed codebase root (same value passed to search_code/index_codebase)", min_length=1)],
     entity_name: Annotated[str, Field(description="Entity name to look up neighbors for", min_length=1)],
@@ -1044,7 +1036,7 @@ async def get_entity_neighbors(
         decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def search_entities(
     root_path: Annotated[str, Field(description="Absolute path of the indexed codebase root (same value passed to search_code/index_codebase)", min_length=1)],
     query: Annotated[str, Field(description="Entity name query (case-insensitive substring match)", min_length=1)],
@@ -1077,7 +1069,7 @@ async def search_entities(
         decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def search_global(
     root_path: Annotated[str, Field(description="Absolute path of the indexed root directory", min_length=1)],
     query: Annotated[str, Field(description="Search query for global community-level synthesis", min_length=1)],
@@ -1109,7 +1101,7 @@ async def search_global(
         decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def list_communities(
     root_path: Annotated[str, Field(description="Absolute path of the indexed root directory", min_length=1)],
     ctx: Context,
@@ -1135,7 +1127,7 @@ async def list_communities(
         decrement_operations()
 
 
-@_tool()
+# DEPRECATED — pending deletion per ADR-0052
 async def get_community_report(
     root_path: Annotated[str, Field(description="Absolute path of the indexed root directory", min_length=1)],
     community_id: Annotated[str, Field(description="Community ID to retrieve report for", min_length=1)],
@@ -1157,6 +1149,166 @@ async def get_community_report(
         await ctx.error(f"Get community report failed: {e}")
         return {"mode": "error", "error": {"code": "internal_error", "message": str(e)}}
     finally:
+        decrement_operations()
+
+
+# ====================
+# search_root — unified 3-channel search
+# ====================
+
+# Number of top matched entities to enrich with callers+neighbors.
+_ENTITY_ENRICH_LIMIT = 5
+
+
+@_tool()
+async def search_root(
+    root_path: Annotated[str, Field(description="Absolute path of the indexed codebase root", min_length=1)],
+    query: Annotated[str, Field(description="Semantic search query — not for exact symbol/string lookups, use ripgrep/fd instead", min_length=1)],
+    ctx: Context,
+    limit: Annotated[int, Field(description="Max results per channel (1-100); total envelope is up to 3×limit", ge=1, le=100)] = 10,
+    min_score: Annotated[float, Field(description="Minimum relevance score", ge=0.0, le=1.0)] = 0.35,
+) -> dict:
+    """Search an indexed root across all three channels — chunks (code + docs), entities (symbol graph with callers/neighbors), and communities (architecture) — in one call. Returns per-channel results each with a success flag. Top-level success is true if at least one channel succeeds. Not for exact symbol/string lookups — use ripgrep/fd instead; not for cross-root document search — use index_codebase to add other roots then call search_root on each."""
+    if not query.strip():
+        return {"success": False, "error": {"code": "empty_query", "message": "Query must not be empty"}}
+
+    try:
+        resolved_root = str(resolve_path(root_path))
+    except Exception as e:
+        return {"success": False, "error": {"code": "invalid_root_path", "message": str(e)}}
+    if not resolved_root:
+        return {"success": False, "error": {"code": "invalid_root_path", "message": "root_path could not be resolved"}}
+
+    if not increment_operations():
+        return _operation_rejected()
+
+    _outcome = OUTCOME_ERROR
+    try:
+        app_ctx: AppContext = ctx.request_context.lifespan_context
+        pipeline = app_ctx.pipeline
+        timeout = app_ctx.config.search_root_timeout_seconds
+        session_id = _metrics_session_id(ctx)
+
+        async def _chunks_channel() -> dict:
+            try:
+                response = await pipeline.search(
+                    query=query,
+                    limit=limit,
+                    min_score=min_score,
+                    base_dirs=[resolved_root],
+                )
+                if not response.success:
+                    r: dict = {"success": False, "error": response.error}
+                else:
+                    r = {
+                        "success": True,
+                        "results": [
+                            {
+                                "file_path": item.file_path,
+                                "file_name": item.file_name,
+                                "score": item.score,
+                                "chunks": item.chunks,
+                            }
+                            for item in response.results
+                        ],
+                        "total_results": response.total_results,
+                    }
+            except Exception as e:
+                r = {"success": False, "error": str(e)}
+            record_tool_call(
+                "search_root/chunks", session_id, resolved_root,
+                OUTCOME_SUCCESS if r.get("success") else OUTCOME_ERROR,
+            )
+            return r
+
+        async def _entities_channel() -> dict:
+            if not ENTITY_EXTRACTION:
+                return {"success": True, "results": [], "warning": "ENTITY_EXTRACTION disabled"}
+            try:
+                loop = asyncio.get_running_loop()
+                matched = await pipeline.search_entities_semantic(resolved_root, query, limit)
+                enrich_n = min(limit, _ENTITY_ENRICH_LIMIT)
+                enriched = []
+                for entity in matched[:enrich_n]:
+                    eid = entity.get("entity_id") or entity.get("name", "")
+                    try:
+                        callers, neighbors_result = await asyncio.gather(
+                            loop.run_in_executor(None, pipeline.get_callers, resolved_root, eid),
+                            loop.run_in_executor(None, pipeline.get_neighbors, resolved_root, eid),
+                            return_exceptions=True,
+                        )
+                        callers_list = callers if isinstance(callers, list) else []
+                        neighbors_list = (
+                            neighbors_result.get("neighbors", [])
+                            if isinstance(neighbors_result, dict)
+                            else []
+                        )
+                    except Exception:
+                        callers_list = []
+                        neighbors_list = []
+                    enriched.append({**entity, "callers": callers_list, "neighbors": neighbors_list})
+                enriched.extend(matched[enrich_n:])
+                r: dict = {"success": True, "results": enriched}
+            except Exception as e:
+                r = {"success": False, "error": str(e)}
+            record_tool_call(
+                "search_root/entities", session_id, resolved_root,
+                OUTCOME_SUCCESS if r.get("success") else OUTCOME_ERROR,
+            )
+            return r
+
+        async def _communities_channel() -> dict:
+            if not ENTITY_EXTRACTION:
+                return {"success": True, "results": [], "warning": "ENTITY_EXTRACTION disabled"}
+            try:
+                result = await pipeline.search_global(query=query, root_path=resolved_root, limit=limit)
+                r: dict = {"success": result.get("success", True), "results": result}
+            except Exception as e:
+                r = {"success": False, "error": str(e)}
+            record_tool_call(
+                "search_root/communities", session_id, resolved_root,
+                OUTCOME_SUCCESS if r.get("success") else OUTCOME_ERROR,
+            )
+            return r
+
+        tasks = {
+            "chunks": asyncio.ensure_future(_chunks_channel()),
+            "entities": asyncio.ensure_future(_entities_channel()),
+            "communities": asyncio.ensure_future(_communities_channel()),
+        }
+        done, pending = await asyncio.wait(list(tasks.values()), timeout=timeout)
+
+        # Cancel timed-out tasks
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        channel_results: dict[str, dict] = {}
+        task_to_channel = {v: k for k, v in tasks.items()}
+        for task in tasks.values():
+            channel = task_to_channel[task]
+            if task in done:
+                try:
+                    channel_results[channel] = task.result()
+                except Exception as e:
+                    channel_results[channel] = {"success": False, "error": str(e)}
+            else:
+                channel_results[channel] = {"success": False, "error": "timeout"}
+
+        any_success = any(v.get("success") for v in channel_results.values())
+        _outcome = OUTCOME_SUCCESS if any_success else OUTCOME_ERROR
+        return {
+            "success": any_success,
+            "query": query,
+            "root_path": resolved_root,
+            **channel_results,
+        }
+    except Exception as e:
+        await ctx.error(f"search_root failed: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        record_tool_call("search_root", _metrics_session_id(ctx), resolved_root, _outcome)
         decrement_operations()
 
 

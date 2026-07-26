@@ -41,9 +41,6 @@ Single-context repo with root `CONTEXT.md`, `docs/adr/`, and `.data/requirements
 
 ## Pre-conditions
 
-Entity-graph tools require the codebase to be indexed first (`index_codebase`).
+`search_root` requires the codebase to be indexed first (`index_codebase`).
 
-- `get_entity_callers` — Before changing a function or class signature, always call this first to identify impacted call sites. Not for discovering what a symbol does — use `get_entity_neighbors` or `search_code` instead.
-- `get_entity_neighbors` — Before answering "how does X relate to Y" or tracing a dependency chain, call this (depth 2) before reading files. Not for finding a symbol by approximate name — use `search_entities` first, then `get_entity_neighbors`.
-- `search_entities` — Before calling `get_entity_callers` or `get_entity_neighbors`, always call this to confirm the exact entity name. Not for conceptual or semantic retrieval — use `search_code` for that.
-- `search_global` — Before making architecture-level claims about repository organization, always call this first. Not for locating a specific symbol or file — use `search_entities` or `search_code` instead.
+- `search_root` — Use this when you need to search a codebase root semantically, by entity name, and architecturally all at once. Not for exact symbol/string literals — use ripgrep/fd instead; not for cross-root document search — use `index_codebase` to add other roots.
