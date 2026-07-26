@@ -46,7 +46,9 @@ Initialize the file to `[]` only when it does not already exist. After each REVI
 ```json
 { "id": "ID-001", "group": "A", "claim": "...", "evidence": "...", "severity": "major", "fix": "...", "status": "open", "introduced_pass": null }
 ```
-Assign new IDs sequentially. Match repeats by ID when present, otherwise by normalized claim text; update evidence and severity. Mark an existing issue `fixed` only when a later REVIEW_STEP no longer returns its claim. Never write the ledger after GENERATE_STEP. In guided mode, ask the user before marking an issue `accepted`; in auto mode, never mark an issue accepted.
+Assign new IDs sequentially. Match repeats by ID when present, otherwise by normalized claim text; update evidence and severity. Compare only groups active in the current pass when resolving omissions: mark an open issue `fixed` when its owning group ran and no longer returns the claim; leave it unchanged when that group was skipped (for example, Group F after iteration 0). Never upsert issue findings or change issue `status` after GENERATE_STEP — only REVIEW_STEP resolves findings. GENERATE_STEP writes are limited to construct records and confirmed acceptance proposals, per Post-GENERATE_STEP.
+
+The revision agent may propose that an issue be accepted by appending `ACCEPTED: [ID] [reason]`. Extract these annotations alongside `INTRODUCED:`. In guided mode, ask the user to confirm each proposal before setting `status: accepted`; rejected proposals remain open. In auto mode, ignore acceptance proposals and keep those issues open.
 
 Maintain `major_count_in_ledger` after every REVIEW_STEP. On pass 2+, set `halt_convergence_guard = true` when the current count of open major issues is greater than or equal to the previous pass's count. Bind this value into repeat's STOP_CONDITIONS as described below.
 
@@ -126,7 +128,7 @@ Invoke the Agent tool with:
 
   **IMPORTANT**: You have Write and Edit tool access. Read the spec at `<spec_file_path>`. Retain the `artifact-type: spec` frontmatter block at the top of the file — it must not be removed. Apply the critic's fixes by editing the file in place using the Edit tool. Do NOT return revised spec text in your response.
 
-  Return the spec file path as the first line. Then emit zero or more `INTRODUCED: [name]` lines for constructs introduced in this revision; no other output.
+  Return the spec file path as the first line. Then emit zero or more `INTRODUCED: [name]` or `ACCEPTED: [ID] [reason]` lines; no other output.
   [ELSE IF artifact_type == tickets]
   You are a ticket author's assistant. Revise the staged ticket files and manifest to address the critic's feedback.
 
@@ -134,7 +136,7 @@ Invoke the Agent tool with:
 
   After all edits, run post-edit validation and assert: (a) every manifest path refers to an existing, readable file; (b) every `Blocked by` reference in every ticket resolves to a slug present in the manifest; (c) no staged ticket file is absent from the manifest; (d) the `Blocked by` graph is acyclic and no ticket blocks itself. If any assertion fails, write a `dirty` marker file at `.scratch/.../dirty` (derive staging dir as the parent directory of the manifest), report the specific inconsistency, and stop rather than returning.
 
-  Return the manifest file path as the first line. Then emit zero or more `INTRODUCED: [name]` lines for constructs introduced in this revision; no other output.
+  Return the manifest file path as the first line. Then emit zero or more `INTRODUCED: [name]` or `ACCEPTED: [ID] [reason]` lines; no other output.
   [ELSE]
   You are a software implementation planner. Revise the current plan to address the critic's feedback.
   You may use the Agent tool to spawn sub-agents for major parallel revision tasks if useful, but MUST return a single coherent revised plan text as your final output.
@@ -179,21 +181,21 @@ Invoke the Agent tool with:
   SUGGESTED FIXES:
   [insert suggested fixes that correspond to the listed major issues only]
 
-  If you introduce new functions, classes, configuration keys, or machinery, append one line per construct: `INTRODUCED: [name]`. For `spec` and `tickets`, emit these only after the required path on the first line. For plan and design-review, append them after the artifact or manifest.
+  If you introduce new functions, classes, configuration keys, or machinery, append one line per construct: `INTRODUCED: [name]`. If a major should remain unchanged because the artifact deliberately accepts its risk, append `ACCEPTED: [ID] [reason]`; acceptance requires user confirmation in guided mode and is unavailable in auto mode. For `spec` and `tickets`, emit annotations only after the required path on the first line. For plan and design-review, append them after the artifact or manifest.
   Note: the [design|plan] will not be approved until all major issues are resolved. Minor improvements may still be noted on approval.
   ```
 
-**Post-GENERATE_STEP (guided mode, i.e. when MODE != auto):** 
+**Post-GENERATE_STEP (every mode):**
 
 For design review (`is_design_review == true`): the agent has edited ADR files in place. The `artifact_text` is just the manifest (ADR file paths). Store it as-is; no need to extract revised content since it's already in the files.
 
-For `artifact_type == spec`: extract `INTRODUCED:` lines, then take the first remaining non-empty line as the returned path. Verify it matches `spec_file_path` and the file exists and is non-empty; if not, write the `dirty` marker (`.scratch/.../dirty` — staging dir = parent of `spec_file_path`) and hard-abort. Store that path as `artifact_text` — the review content will be re-read from `spec_file_path` in the next REVIEW_STEP.
+For `artifact_type == spec`: extract annotation lines, then take the first remaining non-empty line as the returned path. Verify it matches `spec_file_path` and the file exists and is non-empty; if not, write the `dirty` marker (`.scratch/.../dirty` — staging dir = parent of `spec_file_path`) and hard-abort. Store that path as `artifact_text` — the review content will be re-read from `spec_file_path` in the next REVIEW_STEP.
 
-For `artifact_type == tickets`: extract `INTRODUCED:` lines, then take the first remaining non-empty line as the returned path. Verify the manifest file exists; if not, hard-abort. Store that path as `artifact_text` — the manifest and all ticket bodies will be re-assembled in the next REVIEW_STEP.
+For `artifact_type == tickets`: extract annotation lines, then take the first remaining non-empty line as the returned path. Verify it matches `manifest_path` and the manifest exists; if not, hard-abort. Store that path as `artifact_text` — the manifest and all ticket bodies will be re-assembled in the next REVIEW_STEP.
 
 For plan review: extract and strip the `FLAGGED_DECISIONS` block from the agent text using this deterministic rule: the block is the last line (and everything from it to EOF) whose text begins with the literal `FLAGGED_DECISIONS:`. Strip that suffix from `artifact_text` before storing it.
 
-For every artifact type, extract each `INTRODUCED: [name]` annotation from the revision response before path validation or storing `artifact_text`. Add the construct name to the ledger with `introduced_pass = iteration + 1`; retain the annotation in an edited artifact only when it is semantically appropriate to that artifact.
+For every artifact type, extract `INTRODUCED: [name]` and `ACCEPTED: [ID] [reason]` annotations before path validation or storing `artifact_text`. Record introduced constructs with `introduced_pass = iteration + 1`. Process acceptance proposals using the ledger protocol above. Strip all annotations from plan text and manifests before storing them.
 
 Parse the stripped JSON using the same temp-file harness as REVIEW_STEP:
 ```bash
@@ -265,21 +267,19 @@ Invoke the Agent tool with:
   ```
   You are a parallel critic coordinator. The orchestrator has resolved the active groups; spawn exactly those groups IN A SINGLE MESSAGE so they run in parallel: `<active_groups>` (design-review: A/B/C; spec: A/B/C/D on iteration > 0, A/B/C/D/F on iteration 0 when Group F pre-flight succeeds; tickets: A/B/C/D/E on iteration > 0, A/B/C/D/E/F on iteration 0 when Group F pre-flight succeeds; plan: A/B/C/D/E). Each sub-agent reviews the full artifact through its assigned lenses only. After all sub-agents respond, merge their verdicts and return a single JSON result.
 
-  Each sub-agent MUST return a raw JSON object (no markdown fences, no preamble) with exactly these fields:
-  - "verdict": "approve" or "revise"
-  - "severity": "none" (no issues), "minor" (small improvements only), or "major" (significant problems)
-  - "top_issues": array of concise strings (empty array if none)
-  - "suggested_fixes": array of concise strings (empty array if none)
+  Append the SHARED REVIEW CONTRACT verbatim to every group prompt. It is the single output and severity contract for all groups:
 
-  Prefix each top issue with your group and its own severity: `[<group>][major|minor] <claim> — <evidence>`. Preserve these prefixes in the merged output so the orchestrator can persist the issue ledger and send only major findings to the revision agent.
+  SHARED REVIEW CONTRACT:
+  - Return only raw JSON with exactly `verdict`, `severity`, `top_issues`, and `suggested_fixes`.
+  - Approve when no major issue remains. Use `none` when ready as-is, `minor` for optional improvements, and `major` for significant problems.
+  - Prefix each issue `[<group>][major|minor] <claim> — <evidence>`.
+  - Every major must cite an artifact quote, a `file:line` citation for present-code findings, or a concrete failure scenario tied to the affected artifact section. Speculative concerns are capped at minor.
+  - Use empty issue/fix arrays when none. Do not invent concerns.
 
-  APPROVAL RULE for each sub-agent: set "verdict" to "approve" when no major issues remain in its assigned lenses. "severity": "none" if ready as-is; "minor" if optional improvements only; "major" if significant problems. Do NOT invent concerns — only flag real, task-relevant gaps.
-
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-
-  [IF iteration >= 2 AND critic_induced_constructs is non-empty]
+  [IF iteration >= 1 AND critic_induced_constructs is non-empty]
   CRITIC-INDUCED CONSTRUCTS (findings about these are capped at `minor` severity after pass 2):
   [insert each ledger construct as "- <name> (introduced pass <introduced_pass>)"]
+  Findings whose claim matches a listed construct are capped at `minor`.
   [END IF]
 
   ---
@@ -290,8 +290,7 @@ Invoke the Agent tool with:
   You are an adversarial reviewer focused on COMPLETENESS and SCOPE. Evaluate ONLY:
   - Scope creep / under-scoping: does the [plan|design] do more than needed or miss steps clearly required for the task?
   - Simplicity: is there a simpler approach with fewer moving parts or fewer assumptions?
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
 
   GROUP B — Consistency & Coherence:
@@ -299,8 +298,7 @@ Invoke the Agent tool with:
   - Hidden assumptions: what does this assume about the environment, existing code, dependencies, or user behavior that is not explicitly stated or verified?
   - Consistency and contradictions: does the [plan|design] contradict itself or make incompatible choices?
   - Trade-off justification: are decisions justified with stated reasons and considered alternatives?
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
 
   GROUP C — Edge Cases & Robustness:
@@ -309,8 +307,7 @@ Invoke the Agent tool with:
   [IF artifact_type == plan]
   - Failure modes and rollback: what happens when each step fails? Is there a rollback path? Are there irreversible operations with no guard?
   [END IF]
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
 
   [IF artifact_type == plan]
@@ -318,15 +315,13 @@ Invoke the Agent tool with:
   You are an adversarial reviewer focused on EXECUTION ORDER and VERIFICATION. Evaluate ONLY:
   - Ordering and sequencing: are there steps that must happen before others but are not ordered that way? Could parallelism cause race conditions or conflicts?
   - Testability and verification: how will the implementer know each step succeeded? Are there missing verification steps or acceptance criteria?
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
 
   GROUP E — Operational Concerns:
   You are an adversarial reviewer focused on OPERATIONAL CONCERNS. Evaluate ONLY:
   - Operational concerns: where relevant, are logging, monitoring, configuration, migration, and rollout addressed? If this plan has no operational surface, approve immediately with severity "none".
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
   [END IF]
 
@@ -335,8 +330,7 @@ Invoke the Agent tool with:
   You are an adversarial reviewer focused on REQUIREMENT TRACEABILITY (internal-consistency only). Evaluate ONLY:
   - Are requirement IDs (e.g. `REQ-XXXX`) used consistently *within the spec itself*? Every user story or implementation decision that cites an ID must resolve against the spec's own `Requirements:` mapping; the mapping must not cite IDs that no story covers, and no story may cite an ID absent from the mapping.
   - **Out of scope:** verifying that a REQ-ID exists in the external requirements corpus — only the draft spec file is passed to critic, so external corpus membership cannot be checked here.
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
   [END IF]
 
@@ -346,8 +340,7 @@ Invoke the Agent tool with:
   - Does each slice cut a complete vertical path (schema→API→UI→tests)?
   - Is each slice demoable and sized to fit in one fresh context window?
   - Is the blocking-edge topology acyclic, free of dangling `Blocked by` references, and correctly ordered (prefactors before dependents)?
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
 
   GROUP E — Cross-Artifact Contract Consistency:
@@ -358,8 +351,7 @@ Invoke the Agent tool with:
   - Duplicate ownership of entity creation, migration, or deletion.
   - Every `Blocked by` reference resolving to a slug present in the manifest.
   Each major finding must cite the ticket slug(s) and exact field/value discrepancy.
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
   [END IF]
 
@@ -370,8 +362,7 @@ Invoke the Agent tool with:
   - Do not flag intentionally new artifacts.
   - For an absent artifact, cite the search performed and the artifact quote that names it. A `file:line` citation is mandatory for findings about present code; absence findings instead require the failed search evidence.
   Search source code conceptually and cross-file, search docs and requirements as a document corpus, and for architecture-level questions start with a global search before reading individual files. Use `rg`, `fd`, and Read for exact or local lookups when semantic search is unavailable.
-  Every `major`-severity issue must cite evidence: an artifact quote, a `file:line` citation (for codebase findings), or a scenario articulation explaining which specific part of the artifact is affected. Speculative concerns without evidence are capped at `minor`.
-  Return ONLY raw JSON: { "verdict", "severity", "top_issues", "suggested_fixes" }
+  [APPEND SHARED REVIEW CONTRACT VERBATIM]
   [ARTIFACT]
   [END IF]
 
