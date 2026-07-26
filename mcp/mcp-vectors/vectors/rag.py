@@ -1637,7 +1637,7 @@ class RAGPipeline:
                 "secret_like_file_count": secret_audit["file_count"],
                 "scan_truncated": secret_audit["scan_truncated"],
             },
-            "next_action": "index_codebase" if metadata["file_count"] == 0 else "search_code",
+            "next_action": "index_codebase" if metadata["file_count"] == 0 else "search_root",
         }
         if root_path is None:
             active = self._active_root_filter()
@@ -1892,7 +1892,10 @@ class RAGPipeline:
                 "targeting: not all %d community reports are fresh yet, returning rebuilding",
                 len(targeted_list),
             )
-            fallback = await self.search_with_response(query, limit, base_dirs=None)
+            _targeting_logger.debug(
+                "targeting: entity-targeting fallback is scoped to root_id=%r", root_id
+            )
+            fallback = await self.search_with_response(query, limit, base_dirs=[root_id])
             return {
                 "success": True,
                 "mode": "rebuilding",

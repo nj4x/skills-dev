@@ -512,3 +512,66 @@ def test_targeting_returns_rebuilding_when_not_all_reports_fresh():
         assert result["fallback_results"] == fallback_payload
 
     asyncio.run(_run())
+
+
+def test_entity_targeting_fallback_respects_root_scope():
+    """Entity-targeting fallback must scope results to target root, not cross-root.
+
+    Regression test for: line 1895 in _try_entity_targeting called
+    search_with_response with base_dirs=None, causing cross-root leakage.
+    The fix scopes to base_dirs=[root_id].
+    """
+    async def _run():
+        pipeline = _make_pipeline()
+        root_id = "/root-a"
+        root_path = "/root-a"
+
+        # Setup: committed generation exists, entities will match
+        pipeline._graph_store.has_root = MagicMock(return_value=True)
+        pipeline._graph_store.get_committed_generation = MagicMock(
+            return_value=(1, "build-123")
+        )
+        pipeline._graph_store.are_communities_dirty = MagicMock(return_value=False)
+        pipeline._graph_store.get_graph_version = MagicMock(return_value=1)
+        pipeline._graph_store.get_community_ids_for_entities = MagicMock(
+            return_value={"community-1"}
+        )
+
+        # Entity search hits, triggering targeting
+        pipeline._qdrant_entities = AsyncMock()
+        pipeline._qdrant_entities.search = AsyncMock(
+            return_value=[{"entity_id": "ent-1"}]
+        )
+
+        # Community reports NOT fresh yet → triggers fallback at line 1895
+        pipeline._communities = AsyncMock()
+        pipeline._communities.all_points_exist = AsyncMock(return_value=False)
+
+        # Mock the vector fallback: return a result from root-a only
+        fallback_from_root_a = {
+            "success": True,
+            "query": "query",
+            "response": "answer",
+            "sources": [
+                {"file_path": "/root-a/module.py", "file_name": "module.py", "score": 0.9}
+            ],
+            "confidence": {},
+        }
+        pipeline.search_with_response = AsyncMock(return_value=fallback_from_root_a)
+
+        with patch("vectors.rag.ENTITY_EXTRACTION", True):
+            result = await pipeline.search_global("query", root_path, limit=5)
+
+        # Verify the fallback was called with scoped base_dirs
+        pipeline.search_with_response.assert_called_once()
+        call_kwargs = pipeline.search_with_response.call_args.kwargs
+        assert call_kwargs.get("base_dirs") == [root_id], (
+            f"entity-targeting fallback must scope to root_id, got {call_kwargs.get('base_dirs')}"
+        )
+
+        # Verify result is in rebuilding mode with fallback
+        assert result["success"] is True
+        assert result["mode"] == "rebuilding"
+        assert result["fallback_results"]["sources"][0]["file_path"].startswith("/root-a")
+
+    asyncio.run(_run())
