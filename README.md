@@ -75,31 +75,28 @@ The agent will symlink each skill directory to `~/.claude/skills/<name>` so they
 The root is minimal — one universal instruction plus plain path references to intent-grouped satellite files in `~/.claude/docs/agents/`.
 
 ```markdown
-When reporting information to me, be extremely concise and sacrifice grammar for sake of concision.
+## Main rules
+
+When reporting any information, be extremely concise and sacrifice grammar for sake of concision.
 
 ## Code Review
 
-Scope defaults, branch handling, and the autonomous fix-and-commit workflow for reviews.
-See `docs/agents/code-review.md`.
+Scope defaults, branch handling, and the autonomous fix-and-commit workflow for reviews. See `docs/agents/code-review.md`.
 
-## Task Execution, Planning & Research
+## Research, Planning, and Task Execution
 
-Deliver-first discipline, multi-phase fan-out, and autonomous-loop behavior.
-See `docs/agents/task-execution.md`.
+Deliver-first discipline, multi-phase fan-out, and autonomous-loop behavior. See `docs/agents/task-execution.md`.
 
 ## Search Strategy
 
-When to use fd/rg vs mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety.
-See `docs/agents/search-strategy.md`.
+When to use fd/rg vs mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety. See `docs/agents/search-strategy.md`.
 
 ## Testing, Committing & Logging
 
-Test-suite/lint discipline, commit staging, real test data and dependency wiring (app-level factories), and file-only logging.
-See `docs/agents/testing.md`.
+Test-suite/lint discipline, commit staging, real test data and dependency wiring (app-level factories), and file-only logging. See `docs/agents/testing.md`.
 
 ## Token Optimization
 
-The RTK token-killer CLI proxy command reference.
 See `RTK.md`.
 ```
 
@@ -108,11 +105,9 @@ See `RTK.md`.
 ```markdown
 # Code Review Workflow
 
-Scope defaults, branch handling, and autonomous fix implementation for code reviews.
+Code reviews default to **committed** scope. Confirm scope (committed vs working-tree) before starting and pass `--scope` explicitly.
 
-Code reviews default to **committed** scope, not the working tree. Confirm scope (committed vs working-tree) before starting and pass `--scope` explicitly.
-
-On non-`main` branches, proceed directly to review. On `main`: if `--scope` is committed, automatically check out a feature branch first, then proceed; if `--scope` is working-tree, review the uncommitted changes in the current branch — say so immediately rather than halting silently mid-review.
+On `main` with `--scope` committed: tell the user, automatically check out a feature branch, then review. On `main` with `--scope` working-tree: review uncommitted changes in place.
 
 Identify all Major and Critical findings, then autonomously: (1) implement every fix, (2) write regression tests for each, (3) run the full test suite, (4) if any test fails, debug and re-run until 100% pass, (5) commit with a structured summary listing each finding and its fix. Only stop to ask if a fix requires a genuine product decision; otherwise resolve ambiguity by reading the codebase and specs.
 
@@ -123,8 +118,6 @@ When the user asks to merge after code review, merge the working branch into mai
 
 ```markdown
 # Task Execution, Planning & Research
-
-Deliver-first discipline for plans/research, multi-phase fan-out, and autonomous-loop behavior.
 
 ## Delivering plans and research
 
@@ -144,17 +137,29 @@ When the user requests an autonomous loop (debug, fix-and-verify, requirements-t
 ```markdown
 # Search Strategy
 
-For exact, single-site lookups (known symbol, literal, filename): `fd`/`rg`/`Read`. For conceptual, cross-file, or architecture-level retrieval: `mcp-vectors` via `search_root`, which fans out across chunks (code+docs), entities (symbol graph), and communities (architecture) in one call.
-
 | Tool | Use for |
 |---|---|
-| `fd` / `rg` / `Read` | Exact symbol, literal, or filename lookup. |
+| `Bash(fd)` / `Bash(rg)` / `Read` | Exact symbol, literal, or filename lookup. |
 | `search_root` | Conceptual, cross-file, exploratory retrieval — semantic, entity-graph, and architecture-level in one call. |
 | `index_codebase` | Index a root before first `search_root` call; re-index after large structural changes. |
 | `clear_index` | Remove stale Qdrant entries for a path (preview without `confirm=true`). |
 
-`search_root` is not for exact symbol/string literals — use `rg`/`fd` instead. Not for cross-root document search — run `index_codebase` on each root first, then call `search_root` per root.
+`fd`/`rg` - Use -h for short descriptions and --help for more details.
 
+### `fd` finds entries in the filesystem
+
+Usage: fd [OPTIONS] [pattern] [path]...
+Arguments:
+  [pattern]  the search pattern (a regular expression, unless '--glob' is used; optional)
+  [path]...  the root directories for the filesystem search (optional)
+
+### `rg` recursively searches the current directory for lines matching a regex pattern
+
+Usage: rg [OPTIONS] PATTERN [PATH ...]
+Arguments:
+  <PATTERN>   A regular expression used for searching.
+  <PATH>...   A file or directory to search.
+  
 ## Pre-condition gate
 
 `search_root` requires the root to be indexed. Pass `dry_run=true` to `index_codebase` to check status without indexing. A missing index causes a tool error — fall back to `rg`/`fd` and offer indexing when the search is substantial.
@@ -174,13 +179,11 @@ Never index or search any path under `.claude/worktrees/` with `mcp-vectors`; us
 ```markdown
 # Testing, Committing & Logging
 
-Test-suite discipline, commit staging, test data conventions, and logging defaults.
-
 Always run the full test suite AND lint after code changes, then commit/push when the user requests it.
 
 When committing, run `git status` first and stage ALL changes — modified files alongside renames and new files — before creating the commit.
 
-Never invent test IDs or fake production-context stubs/adapters. Use real implementations and real requirement IDs; when wiring dependencies, use the app-level factory interface (e.g. DataProviderFactory) rather than concrete providers.
+Use real test IDs, real requirement IDs, and real implementations; wire dependencies through the app-level factory interface (e.g. DataProviderFactory) rather than concrete providers.
 
 Logging should be file-only (no console output) unless explicitly requested otherwise.
 ```
@@ -221,6 +224,8 @@ echo "[$MODEL] ${TOKENS_K} $BAR $PCT%"
 ```json
 "permissions": {
   "deny": [
+    "ReadMcpResourceDirTool",
+    "ReadMcpResourceTool",
     "EnterPlanMode",
     "ExitPlanMode",
     "DesignSync",
@@ -278,7 +283,7 @@ Registers the local `mcp-vectors` server (requires Qdrant running at `localhost:
       "mcp-vectors"
     ],
     "env": {
-      "LM_STUDIO_URL": "http://127.0.0.1:1234/v1",
+      "LM_STUDIO_URL": "http://127.0.0.1:1235/v1",
       "QDRANT_URL": "http://localhost:6333",
       "CHUNK_SIZE": "1200",
       "CHUNK_OVERLAP": "150",
