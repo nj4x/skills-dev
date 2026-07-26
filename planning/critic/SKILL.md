@@ -40,7 +40,7 @@ Critic-specific deltas on top of the repeat contract:
 
 ### Loop state and critic ledger
 
-After REVIEW_STEP resolves `artifact_type` and its artifact path on iteration 0, and before invoking the coordinator, derive `staging_dir` as the parent directory of `spec_file_path` or `manifest_path` for `spec` and `tickets`; for `plan` and `design-review`, derive it as the parent directory of `plan_file_path` (for a fresh headless plan, first derive `plan_file_path` as `~/.claude/plans/<CLAUDE_CODE_SESSION_ID>-plan.md`). Set `critic_ledger_path = <staging_dir>/critic-ledger.json`.
+After REVIEW_STEP resolves `artifact_type` and its artifact path on iteration 0, and before invoking the coordinator, derive `staging_dir` as the parent directory of `spec_file_path` or `manifest_path` for `spec` and `tickets`; for `plan` and `design-review`, derive it as the parent directory of `plan_file_path` (for a fresh headless plan, first derive `plan_file_path` as `~/.claude/plans/<CLAUDE_CODE_SESSION_ID>-plan.md`). Set `critic_ledger_path = <staging_dir>/critic-ledger-<CLAUDE_CODE_SESSION_ID>.json`.
 
 Initialize the file to `[]` only when it does not already exist. After each REVIEW_STEP, upsert each severity-prefixed issue into it using this record shape:
 ```json
@@ -56,7 +56,7 @@ Maintain `major_count_in_ledger` after every REVIEW_STEP. On pass 2+, set `halt_
 
 ## Step 1 — Session setup
 
-**1a.** Use Bash: `echo $CLAUDE_CODE_SESSION_ID`. Store for display only.
+**1a.** Use Bash: `echo $CLAUDE_CODE_SESSION_ID`. Store for display and for ledger-path derivation (see Loop state and critic ledger).
 
 **1b.** Print:
 ```
