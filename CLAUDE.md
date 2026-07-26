@@ -9,25 +9,25 @@ This is a documentation-first workspace for Claude Code skills. Most top-level c
 ## Detailed guidance
 
 How skills are structured, installed, and grouped into categories.
-@docs/agents/skill-authoring.md
+See `docs/agents/skill-authoring.md`.
 
 Cross-skill dependency contracts to preserve when editing multi-turn skills.
-@docs/agents/skill-dependencies.md
+See `docs/agents/skill-dependencies.md`.
 
 When to use `fd`/`rg` vs `mcp-vectors`, plus mandatory entity-graph pre-condition gates.
-@docs/agents/search-strategy.md
+See `docs/agents/search-strategy.md`.
 
 The `mcp/mcp-vectors` package: layout, dev commands, and Qdrant/SQLite storage model.
-@docs/agents/mcp-vectors.md
+See `docs/agents/mcp-vectors.md`.
 
 The `hooks/` say-cue system and when multi-turn skills must emit audio cues.
-@docs/agents/hooks.md
+See `docs/agents/hooks.md`.
 
 How issues are tracked as markdown files under `.scratch/<feature>/`.
-@docs/agents/issue-tracker.md
+See `docs/agents/issue-tracker.md`.
 
 Domain terminology and architecture decisions for this workspace.
-@docs/agents/domain.md
+See `docs/agents/domain.md`.
 
 ## Agent skills
 

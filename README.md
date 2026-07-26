@@ -72,7 +72,7 @@ The agent will symlink each skill directory to `~/.claude/skills/<name>` so they
 
 ### `~/.claude/CLAUDE.md`
 
-The root is minimal — one universal instruction plus `@import` pointers to intent-grouped satellite files in `~/.claude/docs/agents/`.
+The root is minimal — one universal instruction plus plain path references to intent-grouped satellite files in `~/.claude/docs/agents/`.
 
 ```markdown
 When reporting information to me, be extremely concise and sacrifice grammar for sake of concision.
@@ -80,27 +80,27 @@ When reporting information to me, be extremely concise and sacrifice grammar for
 ## Code Review
 
 Scope defaults, branch handling, and the autonomous fix-and-commit workflow for reviews.
-@docs/agents/code-review.md
+See `docs/agents/code-review.md`.
 
 ## Task Execution, Planning & Research
 
 Deliver-first discipline, multi-phase fan-out, and autonomous-loop behavior.
-@docs/agents/task-execution.md
+See `docs/agents/task-execution.md`.
 
 ## Search Strategy
 
 When to use fd/rg vs mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety.
-@docs/agents/search-strategy.md
+See `docs/agents/search-strategy.md`.
 
 ## Testing, Committing & Logging
 
 Test-suite/lint discipline, commit staging, real test data and dependency wiring (app-level factories), and file-only logging.
-@docs/agents/testing.md
+See `docs/agents/testing.md`.
 
 ## Token Optimization
 
 The RTK token-killer CLI proxy command reference.
-@RTK.md
+See `RTK.md`.
 ```
 
 #### `~/.claude/docs/agents/code-review.md`

@@ -7,7 +7,7 @@ disable-model-invocation: true
 
 # Refactor CLAUDE.md for Progressive Disclosure
 
-Refactor a CLAUDE.md file into a **minimal root** (only truly universal instructions) plus **intent-grouped satellite files** linked via `@import`. Ground every instruction against the actual codebase before refactoring. Run autonomously, stopping only at two decision gates: contradiction resolution (Gate 1) and redundancy/staleness confirmation (Gate 2).
+Refactor a CLAUDE.md file into a **minimal root** (only truly universal instructions) plus **intent-grouped satellite files** linked via plain path references. Ground every instruction against the actual codebase before refactoring. Run autonomously, stopping only at two decision gates: contradiction resolution (Gate 1) and redundancy/staleness confirmation (Gate 2).
 
 ## Parallelism
 
@@ -27,7 +27,7 @@ Edge cases to check before proceeding:
 
 - **Malformed file** (binary content, truncated, unreadable): stop and report the parse error.
 - **Thin file** (fewer than 10 distinct instructions): warn the user ("This CLAUDE.md has only N instructions; refactoring may not yield much value") then proceed.
-- **Already-refactored** (root is < 10 lines and already has `@import` lines): note in the summary report; still check for contradictions and staleness.
+- **Already-refactored** (root is < 10 lines and already has `See \`...\`` path references): note in the summary report; still check for contradictions and staleness.
 
 ## Step 1 — Extract all instructions
 
@@ -135,9 +135,9 @@ Output location mirrors the source file:
 Write in order:
 
 1. **Satellite files** (parallel) — `<source-dir>/docs/agents/<category>.md`, one per category, with a one-line summary at the top.
-2. **Root CLAUDE.md** (sequential, after satellites) — essentials only, with one `@import <relative-path>` line per satellite preceded by a one-line summary of its scope.
+2. **Root CLAUDE.md** (sequential, after satellites) — essentials only, with one `See \`<relative-path>\`.` line per satellite preceded by a one-line summary of its scope.
 
-Verification: every satellite must have a corresponding `@import` in the root. A satellite with no inbound import is an error — fix before continuing.
+Verification: every satellite must have a corresponding `See` reference in the root. A satellite with no inbound reference is an error — fix before continuing.
 
 Re-runs overwrite silently (Step 7 makes this recoverable). Edit the source CLAUDE.md and re-run — generated files are overwritten each run.
 
