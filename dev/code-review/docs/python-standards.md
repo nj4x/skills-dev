@@ -157,6 +157,8 @@ class Payload(BaseModel):
 
 ## 4. SQL / DB Access Patterns
 
+### 4a. Injection Safety (critical)
+
 - **Values: always `%s` parameters** — never f-strings, `%`-formatting, or `+` concatenation for values. String-interpolated values are SQL injection.
 - **Identifiers: `psycopg2.sql.Identifier(name)`** for dynamic table/column names. `sql.SQL(...)` is for **literal SQL fragments only**, not for values or untrusted identifiers.
 - **Repository pattern**: centralize queries in a module so query strings are defined once, not duplicated per call site.
@@ -190,6 +192,189 @@ class AuditRepository:
 
     def record(self, cur, operation: str, detail: dict) -> None:
         cur.execute(self._INSERT, (operation, Json(detail)))
+```
+
+---
+
+### 4b. Cursor Factory and Row Access
+
+**Choosing a cursor factory** — set once at the connection level, not per-cursor:
+
+| Need | Factory | Row access |
+|---|---|---|
+| Max speed, positional columns | `cursor()` (default) | `row[0]`, `row[1]` |
+| Both `row["col"]` AND `row[0]` | `DictCursor` | both work |
+| Direct `json.dumps(row)` without conversion | `RealDictCursor` | `row["col"]` only — `row[0]` raises `KeyError` |
+| Dot-access `row.col_name`, immutable, hashable | `NamedTupleCursor` | `row.col`, `row[0]`, `row._asdict()` |
+| Millions of rows, low RAM | Named server-side cursor | any of the above |
+
+```python
+# DO — set cursor_factory once at connection level
+import psycopg2, psycopg2.extras
+
+conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
+# all cursors on this connection are now RealDictCursor
+```
+
+**Critical: `RealDictCursor` rows do NOT support integer indexing.**
+
+```python
+# DON'T — integer indexing on a RealDictCursor row (KeyError, not IndexError)
+with get_conn() as conn:          # get_conn() uses RealDictCursor
+    with conn.cursor() as cur:
+        cur.execute("SELECT halted FROM amon_breaker_state WHERE id = 1")
+        row = cur.fetchone()
+return bool(row[0])               # ❌ KeyError: 0 — swallowed as "DB unreachable"
+
+# DO — access by column name
+return bool(row["halted"])        # ✓
+```
+
+**Two-column queries with the same aliased name collapse in `RealDictCursor`** — the second key overwrites the first. Always use explicit `AS` aliases when selecting multiple aggregates.
+
+```python
+# DON'T — both columns alias to "count", second overwrites first in RealDictRow
+cur.execute("SELECT COUNT(DISTINCT date), COUNT(*) FROM t WHERE x = %s", (v,))
+row = cur.fetchone()
+days, total = row[0], row[1]     # ❌ KeyError: 0; and only one key exists anyway
+
+# DO — explicit aliases + named access
+cur.execute(
+    "SELECT COUNT(DISTINCT date) AS days, COUNT(*) AS total FROM t WHERE x = %s",
+    (v,),
+)
+row = cur.fetchone()
+days, total = row["days"], row["total"]   # ✓
+```
+
+**Test mocks must return dict-like objects when testing code that uses `get_conn()`.**
+
+```python
+# DON'T — mock returns a tuple; column-name access raises TypeError (caught as fail-open)
+class _Cur:
+    def fetchone(self): return (None,)    # ❌ wrong shape; masks real bug in tests
+
+# DO — mock returns a dict matching real RealDictCursor output
+class _Cur:
+    def fetchone(self): return {"latest_cached_at": None}  # ✓
+```
+
+---
+
+### 4c. Error Handling for DB Operations
+
+- **Catch specific `psycopg2.errors.*` classes** (available since psycopg2 2.8) rather than broad `DatabaseError`. Error names match PostgreSQL condition names exactly.
+- **Always call `conn.rollback()`** after any exception before reusing the connection — after a DB error the connection is in aborted-transaction state and every subsequent command raises `InFailedSqlTransaction` until rollback.
+- **Log `exc.diag` fields for structured error metadata** (`constraint_name`, `table_name`, `column_name`, `pgcode`) instead of parsing the error string, which is not stable across PG versions.
+- **Retry strategy by exception class**: `OperationalError` (connection lost) → retry with backoff; `TransactionRollbackError` (serialization failure) → retry the entire transaction; `IntegrityError` subclasses → surface to caller, do not retry.
+
+```python
+import psycopg2.errors as pgerr
+
+try:
+    cur.execute("INSERT INTO t (id) VALUES (%s)", (dup_id,))
+    conn.commit()
+except pgerr.UniqueViolation:
+    conn.rollback()
+    # handle duplicate key — idempotent upsert or caller error
+except pgerr.ForeignKeyViolation as exc:
+    conn.rollback()
+    logger.warning("FK violation: constraint=%s", exc.diag.constraint_name)
+    raise
+except psycopg2.OperationalError:
+    conn.rollback()
+    # retry with backoff or re-raise
+    raise
+```
+
+```python
+# DON'T — catch broad Exception and swallow the connection state
+try:
+    cur.execute(...)
+except Exception:
+    pass                    # ❌ connection now in aborted state; next execute fails
+```
+
+---
+
+### 4d. Batch Inserts and RETURNING
+
+**Never use `executemany()` for bulk inserts** — it generates one round-trip per row, same as a loop of `execute()`. Benchmark on 32,500 rows: `executemany` ≈ 125 s, `execute_values` ≈ 1.5 s, `copy_expert` ≈ 0.46 s.
+
+```python
+# DO — execute_values for bulk inserts (~85x faster than single execute)
+from psycopg2.extras import execute_values
+
+execute_values(
+    cur,
+    "INSERT INTO order_proposals (symbol, qty, created_at) VALUES %s",
+    [(r.symbol, r.qty, r.created_at) for r in proposals],
+    page_size=500,
+)
+```
+
+```python
+# DO — execute_values with RETURNING to atomically retrieve generated IDs
+ids = execute_values(
+    cur,
+    "INSERT INTO t (a, b) VALUES %s RETURNING id",
+    rows,
+    fetch=True,
+)
+```
+
+```python
+# DO — RETURNING instead of a follow-up SELECT or MAX() query
+cur.execute(
+    "INSERT INTO monitoring_cycles (scan_window) VALUES (%s) RETURNING cycle_id",
+    (scan_window,),
+)
+cycle_id = cur.fetchone()["cycle_id"]   # single round-trip, atomic
+```
+
+```python
+# DON'T — follow-up SELECT to retrieve what was just inserted
+cur.execute("INSERT INTO t (a) VALUES (%s)", (val,))
+cur.execute("SELECT MAX(id) FROM t")    # ❌ race-prone, extra round-trip
+```
+
+```python
+# DO — copy_expert (COPY FROM STDIN) for maximum bulk ingest throughput
+import io, csv
+
+buf = io.StringIO()
+writer = csv.writer(buf)
+for row in data:
+    writer.writerow(row)
+buf.seek(0)
+cur.copy_expert("COPY t (a, b, c) FROM STDIN WITH CSV", buf)
+```
+
+---
+
+### 4e. Transaction Discipline
+
+- **Keep transactions short** — long-running transactions hold row locks and block autovacuum from reclaiming dead tuples.
+- **Commit as soon as a logical unit of work is complete** — psycopg2 starts a transaction on the first `execute()` call; a SELECT left open holds a snapshot and increases table bloat.
+- **Use savepoints for partial rollback** within a single transaction, rather than aborting the entire transaction on a risky sub-operation.
+- **Use `autocommit = True`** for DDL and PostgreSQL maintenance commands (`CREATE INDEX CONCURRENTLY`, `VACUUM`) which cannot run inside a transaction.
+
+```python
+# DO — savepoint for a risky sub-operation inside a larger transaction
+cur.execute("SAVEPOINT sp1")
+try:
+    cur.execute("INSERT INTO risky_table ...")
+    cur.execute("RELEASE SAVEPOINT sp1")
+except psycopg2.DatabaseError:
+    cur.execute("ROLLBACK TO SAVEPOINT sp1")
+    # outer transaction continues
+```
+
+```python
+# DO — autocommit for DDL
+conn.autocommit = True
+cur.execute("CREATE INDEX CONCURRENTLY idx_symbol ON orders (symbol)")
+conn.autocommit = False   # restore for subsequent transactional work
 ```
 
 ---
