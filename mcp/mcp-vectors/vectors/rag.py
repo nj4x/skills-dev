@@ -323,7 +323,11 @@ class RAGPipeline:
         reported as a benign skip.
         """
         try:
-            reconciler = RegistryReconciler(GRAPH_DB_DIR, self.config, self.vector_store, graph_store=self._graph_store)
+            reconciler = RegistryReconciler(
+                GRAPH_DB_DIR, self.config, self.vector_store,
+                graph_store=self._graph_store,
+                qdrant_entities=getattr(self, "_qdrant_entities", None),
+            )
             epoch = await reconciler.reconcile()
             self._reconciliation = epoch
             summary = reconciler.summary(epoch)
@@ -703,6 +707,120 @@ class RAGPipeline:
             logger.error(f"Failed to index {sanitize_for_log(str(file_path))}: {e}")
             return IndexResult(False, str(file_path), file_path.name, error=str(e))
 
+    async def _embed_entities_and_stubs(
+        self,
+        entities: list,
+        stubs: list[dict],
+        root_id: str,
+        file_name: str,
+        stats: GraphificationStats,
+    ) -> None:
+        """Embed entity vectors and edge-stub vectors into QdrantEntities; accumulate stats.
+
+        No-op when _qdrant_entities is not configured. Gates entity and stub embedding
+        independently so zero-entity files with stubs still get their stubs embedded.
+        """
+        if getattr(self, "_qdrant_entities", None) is None:
+            return
+        if getattr(self, "_closing", False):
+            return
+
+        stats.entity_embedding_enabled = True
+        embed_sem = asyncio.Semaphore(self.config.entity_extraction_concurrency)
+        seen_sigs: set[str] = set()
+        embed_failures = 0
+        embeds_succeeded = 0
+
+        async def _embed_entity(entity) -> None:
+            nonlocal embed_failures, embeds_succeeded
+            try:
+                etype = getattr(entity, "type", "") or ""
+                eid = entity_id(entity.name, etype, root_id)
+                text = _entity_embedding_text(
+                    entity.name,
+                    getattr(entity, "description", None),
+                )
+                async with embed_sem:
+                    emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
+                await self._qdrant_entities.upsert(
+                    entity_id=eid,
+                    root_id=root_id,
+                    name=entity.name,
+                    type_=etype,
+                    embedding=emb,
+                )
+                embeds_succeeded += 1
+            except Exception as exc:
+                embed_failures += 1
+                sig = type(exc).__name__
+                if sig not in seen_sigs:
+                    seen_sigs.add(sig)
+                    # Guard the diagnostic path itself: it must never raise
+                    # (and thereby cancel sibling embeds via gather).
+                    try:
+                        attr_keys = sorted(getattr(entity, "__dict__", {}).keys())
+                        logger.warning(
+                            "Entity embedding upsert failed for %s | "
+                            "entity=%s type=%s attrs=%s",
+                            sanitize_for_log(file_name),
+                            sanitize_for_log(str(getattr(entity, "name", "<unknown>"))),
+                            type(entity).__name__,
+                            attr_keys,
+                            exc_info=True,
+                        )
+                    except Exception:
+                        pass
+
+        async def _embed_stub(stub_dict) -> None:
+            nonlocal embed_failures, embeds_succeeded
+            try:
+                stub_name = stub_dict.get("name", "<unknown>")
+                stub_type = (stub_dict.get("type") or "")
+                stub_id = stub_dict["id"]
+                text = _entity_embedding_text(stub_name, None)
+                async with embed_sem:
+                    emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
+                await self._qdrant_entities.upsert(
+                    entity_id=stub_id,
+                    root_id=root_id,
+                    name=stub_name,
+                    type_=stub_type,
+                    embedding=emb,
+                )
+                embeds_succeeded += 1
+            except Exception as exc:
+                embed_failures += 1
+                sig = type(exc).__name__
+                if sig not in seen_sigs:
+                    seen_sigs.add(sig)
+                    try:
+                        logger.warning(
+                            "Edge-stub embedding upsert failed for %s | "
+                            "stub=%s type=%s",
+                            sanitize_for_log(file_name),
+                            sanitize_for_log(stub_name),
+                            stub_type,
+                            exc_info=exc,
+                        )
+                    except Exception:
+                        pass
+
+        if entities:
+            await asyncio.gather(*[_embed_entity(e) for e in entities])
+        if stubs:
+            await asyncio.gather(*[_embed_stub(s) for s in stubs])
+
+        if embed_failures:
+            logger.warning(
+                "Entity embedding: %d/%d failures for %s",
+                embed_failures,
+                len(entities) + len(stubs),
+                sanitize_for_log(file_name),
+            )
+            stats.entities_embed_failed += embed_failures
+        stats.entities_embedded += embeds_succeeded
+        stats.entities_total += len(entities) + len(stubs)
+
     async def _extract_and_merge(
         self,
         file_path: Path,
@@ -733,7 +851,7 @@ class RAGPipeline:
                 str(file_path), doc, root_id_for_graph, chunk_semaphore
             )
             annotate_chunks(doc, entity_map)
-            version, stubs, deleted_ids = await asyncio.to_thread(
+            _version, stubs, _deleted_ids = await asyncio.to_thread(
                 self._graph_store.replace_file_entity_map,
                 entity_map, root_id_for_graph, path_key,
             )
@@ -750,131 +868,21 @@ class RAGPipeline:
                 f"Background extracted {len(entity_map.entities)} entities from "
                 f"{sanitize_for_log(file_path.name)}"
             )
-            if getattr(self, "_qdrant_entities", None) is not None and entity_map.entities:
-                embed_sem = asyncio.Semaphore(self.config.entity_extraction_concurrency)
-                stats.entity_embedding_enabled = True
-
-                seen_sigs: set[str] = set()
-                embed_failures = 0
-                embeds_succeeded = 0
-
-                async def _embed_entity(entity) -> None:
-                    nonlocal embed_failures, embeds_succeeded
-                    try:
-                        etype = getattr(entity, "type", "") or ""
-                        eid = entity_id(entity.name, etype, root_id_for_graph)
-                        text = _entity_embedding_text(
-                            entity.name,
-                            getattr(entity, "description", None),
-                        )
-                        async with embed_sem:
-                            emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
-                        await self._qdrant_entities.upsert(
-                            entity_id=eid,
-                            root_id=root_id_for_graph,
-                            name=entity.name,
-                            type_=etype,
-                            embedding=emb,
-                        )
-                        embeds_succeeded += 1
-                    except Exception as exc:
-                        embed_failures += 1
-                        sig = type(exc).__name__
-                        if sig not in seen_sigs:
-                            seen_sigs.add(sig)
-                            # Guard the diagnostic path itself: it must never raise
-                            # (and thereby cancel sibling embeds via gather).
-                            try:
-                                attr_keys = sorted(getattr(entity, "__dict__", {}).keys())
-                                logger.warning(
-                                    "Entity embedding upsert failed for %s | "
-                                    "entity=%s type=%s attrs=%s",
-                                    sanitize_for_log(file_path.name),
-                                    sanitize_for_log(str(getattr(entity, "name", "<unknown>"))),
-                                    type(entity).__name__,
-                                    attr_keys,
-                                    exc_info=True,
-                                )
-                            except Exception:
-                                pass
-
-                await asyncio.gather(*[_embed_entity(e) for e in entity_map.entities])
-
-                # Embed edge-stub entities (synthetic entities created for edge endpoints)
-                if stubs:
-                    async def _embed_stub(stub_dict) -> None:
-                        nonlocal embed_failures, embeds_succeeded
-                        try:
-                            stub_id = stub_dict["id"]
-                            stub_name = stub_dict["name"]
-                            stub_type = stub_dict["type"] or ""
-                            text = _entity_embedding_text(stub_name, None)
-                            async with embed_sem:
-                                emb = await self.lm_client.get_embedding(_truncate_for_embed(text))
-                            await self._qdrant_entities.upsert(
-                                entity_id=stub_id,
-                                root_id=root_id_for_graph,
-                                name=stub_name,
-                                type_=stub_type,
-                                embedding=emb,
-                            )
-                            embeds_succeeded += 1
-                        except Exception as exc:
-                            embed_failures += 1
-                            sig = type(exc).__name__
-                            if sig not in seen_sigs:
-                                seen_sigs.add(sig)
-                                try:
-                                    logger.warning(
-                                        "Edge-stub embedding upsert failed for %s | "
-                                        "stub=%s type=%s",
-                                        sanitize_for_log(file_path.name),
-                                        sanitize_for_log(stub_name),
-                                        stub_type,
-                                        exc_info=exc,
-                                    )
-                                except Exception:
-                                    pass
-
-                    await asyncio.gather(*[_embed_stub(s) for s in stubs])
-
-            # Clean up stale vectors from re-indexed files
-            if deleted_ids and getattr(self, "_qdrant_entities", None) is not None:
-                try:
-                    await self._qdrant_entities.delete_by_entity_ids(root_id_for_graph, deleted_ids)
-                except Exception as exc:
-                    logger.warning(
-                        "Stale entity vector cleanup failed for %s: %s",
-                        sanitize_for_log(file_path.name),
-                        exc,
-                    )
-
-            if getattr(self, "_qdrant_entities", None) is not None and entity_map.entities and embed_failures:
-                    logger.warning(
-                        "Entity embedding: %d/%d failures for %s",
-                        embed_failures,
-                        len(entity_map.entities) + len(stubs),
-                        sanitize_for_log(file_path.name),
-                    )
-                    stats.entities_embed_failed += embed_failures
-                    stats.entities_embedded += embeds_succeeded
-                    stats.entities_total += len(entity_map.entities) + len(stubs)
-            elif getattr(self, "_qdrant_entities", None) is not None and entity_map.entities:
-                    # All embeds succeeded (no failures)
-                    stats.entities_embedded += embeds_succeeded
-                    stats.entities_total += len(entity_map.entities) + len(stubs)
+            await self._embed_entities_and_stubs(
+                entity_map.entities, stubs, root_id_for_graph, file_path.name, stats
+            )
             self.schedule_detection(root_id_for_graph)
-            stats.files_pending_extraction -= 1
             stats.files_extracted += 1
             stats.chunks_extracted += len(doc.chunks)
             stats.entities_found += len(entity_map.entities)
             stats.last_extraction_completed_at = time.time()
         except Exception as exc:
-            stats.files_pending_extraction -= 1
             logger.warning(
                 f"Background entity extraction failed for "
                 f"{sanitize_for_log(str(file_path))}: {exc}"
             )
+        finally:
+            stats.files_pending_extraction -= 1
 
     async def index_directory(
         self,
@@ -1364,6 +1372,9 @@ class RAGPipeline:
             "chunks_extracted": stats.chunks_extracted,
             "entities_found": stats.entities_found,
             "entities_embed_failed": stats.entities_embed_failed,
+            "entity_embedding_enabled": getattr(self, "_qdrant_entities", None) is not None,
+            "entities_embedded": stats.entities_embedded,
+            "entities_total": stats.entities_total,
             "community_build_phase": stats.community_build_phase,
             "community_last_built_at": _ts(stats.community_last_built_at),
             "community_build_duration_s": stats.community_build_duration_s,
@@ -1686,13 +1697,17 @@ class RAGPipeline:
                if self.config.llm_provider == "anthproxy" else {}),
         )
         chunk_semaphore = asyncio.Semaphore(2)
+        stats = self._get_or_create_stats(root_id)
         try:
             entity_map = await extractor.extract_file(
                 str(path), doc, root_id, chunk_semaphore
             )
             annotate_chunks(doc, entity_map)
-            await asyncio.to_thread(
+            _version, stubs, _deleted_ids = await asyncio.to_thread(
                 self._graph_store.replace_file_entity_map, entity_map, root_id, path_key
+            )
+            await self._embed_entities_and_stubs(
+                entity_map.entities, stubs, root_id, path.name, stats
             )
             self.schedule_detection(root_id)
         except Exception as e:

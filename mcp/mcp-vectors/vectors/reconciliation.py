@@ -20,12 +20,15 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .git_resolver import GitResolver
 from .graph_store import GraphStore
 from .paths import PathPolicy
 from .protocols import VectorStoreProtocol
+
+if TYPE_CHECKING:
+    from .qdrant import QdrantEntities
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +181,7 @@ class RegistryReconciler:
         vector_store: VectorStoreProtocol,
         *,
         graph_store: Optional[GraphStore] = None,
+        qdrant_entities: Optional["QdrantEntities"] = None,
         lease_seconds: int = DEFAULT_LEASE_SECONDS,
         now: Optional[Callable[[], float]] = None,
         resolver=GitResolver,
@@ -186,6 +190,7 @@ class RegistryReconciler:
         self._config = config
         self._vector_store = vector_store
         self._graph_store = graph_store
+        self._qdrant_entities = qdrant_entities
         self._lease_seconds = lease_seconds
         self._now = now or time.time
         self._resolver = resolver
@@ -353,6 +358,12 @@ class RegistryReconciler:
                     "reconciliation: remapped %d vectors %s -> %s",
                     moved, source_root, c.destination_root,
                 )
+                if self._qdrant_entities is not None:
+                    await self._qdrant_entities.delete_by_root_id(source_root)
+                    logger.warning(
+                        "reconciliation: deleted entity vectors for remapped root %s",
+                        source_root,
+                    )
                 # The destination canonical root is now active.
                 self._ensure_active(epoch, c.destination_root)
             elif c.serving_state == SERVING_PURGED:
@@ -361,6 +372,12 @@ class RegistryReconciler:
                     "reconciliation: purged %d vectors for non-git root %s",
                     removed, source_root,
                 )
+                if self._qdrant_entities is not None:
+                    await self._qdrant_entities.delete_by_root_id(source_root)
+                    logger.warning(
+                        "reconciliation: deleted entity vectors for purged root %s",
+                        source_root,
+                    )
             c.vector_phase = "committed"
         self._persist(epoch)
 
