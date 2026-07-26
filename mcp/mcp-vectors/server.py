@@ -1302,7 +1302,9 @@ async def search_root(
             "success": any_success,
             "query": query,
             "root_path": resolved_root,
-            **channel_results,
+            "entities": channel_results.get("entities", {"success": False, "error": "not run"}),
+            "communities": channel_results.get("communities", {"success": False, "error": "not run"}),
+            "chunks": channel_results.get("chunks", {"success": False, "error": "not run"}),
         }
     except Exception as e:
         await ctx.error(f"search_root failed: {e}")
