@@ -1,6 +1,7 @@
 ---
 name: handoff
 description: Compact the current conversation into a single, detailed handoff message — everything that happened, why it happened, and what's left — output in a code block so it can be copy-pasted into a fresh agent session. Use when hitting context limits, switching focus, ending a work session, or partitioning a task across fresh contexts.
+disable-model-invocation: true
 ---
 
 # Handoff

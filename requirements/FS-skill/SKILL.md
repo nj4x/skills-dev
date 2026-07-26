@@ -1,6 +1,8 @@
 ---
 name: FS-skill
-description: Assists with requirements engineering tasks including writing, reviewing, analyzing, generating, or modifying Feature Set (FS) requirements using EARS methodology. Use this skill when user asks to build, write, create, generate, analyze, review, or modify requirements, requirements documents, or feature set (FS) specifications from source documents. This skill produces EARS-formatted feature requirements. For creating SRS (Software Requirements Specification) documents from existing FS requirements, use the FS-to-SRS skill instead. This skill REQUIRES user confirmation at multiple checkpoints before completion.---
+description: Assists with requirements engineering tasks including writing, reviewing, analyzing, generating, or modifying Feature Set (FS) requirements using EARS methodology. Use this skill when user asks to build, write, create, generate, analyze, review, or modify requirements, requirements documents, or feature set (FS) specifications from source documents. This skill produces EARS-formatted feature requirements. For creating SRS (Software Requirements Specification) documents from existing FS requirements, use the FS-to-SRS skill instead. This skill REQUIRES user confirmation at multiple checkpoints before completion.
+disable-model-invocation: true
+---
 
 # FS Skill
 

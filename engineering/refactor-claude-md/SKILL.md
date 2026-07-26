@@ -2,6 +2,7 @@
 name: refactor-claude-md
 description: Refactor a CLAUDE.md file to follow progressive disclosure principles — minimal root with intent-grouped satellite files, grounded in the actual codebase. Use when a CLAUDE.md has grown bloated, become internally inconsistent, or drifted out of sync with the code.
 argument-hint: "[path/to/CLAUDE.md]"
+disable-model-invocation: true
 ---
 
 # Refactor CLAUDE.md for Progressive Disclosure

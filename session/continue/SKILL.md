@@ -1,6 +1,7 @@
 ---
 name: continue
 description: Use when resuming work in a project or picking up where you left off (interactive), or when driving the next incomplete phase to a committed, tested state without stopping for choices (autonomous). Triggers — "continue", "/continue", "what's next", "where did we leave off", "resume the project", "continue autonomously", "implement the next phase".
+disable-model-invocation: true
 ---
 
 # Continue Skill

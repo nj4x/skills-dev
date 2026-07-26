@@ -1,6 +1,8 @@
 ---
 name: data-view-skill
-description: Creates Data View documents that map software requirements and API definitions to DynamoDB table designs. Use this skill when designing DynamoDB schemas, creating data view documents, mapping API operations to DynamoDB access patterns, or reviewing database designs for DynamoDB-backed microservices. This skill transforms SRS and API Definition documents into concrete DynamoDB table schemas with query patterns.---
+description: Creates Data View documents that map software requirements and API definitions to DynamoDB table designs. Use this skill when designing DynamoDB schemas, creating data view documents, mapping API operations to DynamoDB access patterns, or reviewing database designs for DynamoDB-backed microservices. This skill transforms SRS and API Definition documents into concrete DynamoDB table schemas with query patterns.
+disable-model-invocation: true
+---
 
 # Data View Skill
 

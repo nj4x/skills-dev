@@ -1,6 +1,7 @@
 ---
 name: SRS-skill
 description: Transforms Feature Set (FS) requirements into Software Requirements Specification (SRS) documents for back-end systems. Use this skill when user asks to create SRS, technical requirements, or back-end specifications from existing FS/EARS requirements. This skill handles entity extraction, API derivation, event modeling, and test case generation.
+disable-model-invocation: true
 ---
 
 # FS-to-SRS Skill
