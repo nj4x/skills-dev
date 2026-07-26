@@ -156,9 +156,10 @@ Print: `  reviewer #<iteration+1>   <verdict> (<severity>)`
 **3. STOP_CONDITIONS** (evaluate in order after each REVIEW_STEP):
 
 1. `verdict == "approve"` → go to Finalize
-2. `MAX_ITERATIONS != ∞ AND iteration + 1 >= MAX_ITERATIONS` → go to Finalize (explicit cap reached)
-3. `MAX_ITERATIONS == ∞ AND iteration + 1 >= 10` → go to Finalize (backstop reached)
-4. Otherwise: increment `iteration`, go back to step 1
+2. If the caller sets `halt_convergence_guard == true` → go to Finalize and emit: `Convergence guard halted: major count did not decrease. Standing issues:` followed by all open major issues.
+3. `MAX_ITERATIONS != ∞ AND iteration + 1 >= MAX_ITERATIONS` → go to Finalize (explicit cap reached)
+4. `MAX_ITERATIONS == ∞ AND iteration + 1 >= 10` → go to Finalize (backstop reached)
+5. Otherwise: increment `iteration`, go back to step 1
 
 **4. Finalize**
 
