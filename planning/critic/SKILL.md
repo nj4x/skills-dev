@@ -5,8 +5,6 @@ arguments: [task, max_iterations, mode]
 argument-hint: "[task] [max-iterations] [auto]"
 ---
 
-<!-- Note: `arguments` is supported by the Claude Code CLI. The VS Code agent-linter warning is cosmetic and accepted. -->
-
 You are running a plan/critic loop for this task:
 
 TASK: $task
@@ -25,7 +23,7 @@ test -f ~/.claude/skills/repeat/SKILL.md && echo FOUND || echo MISSING
 - **FOUND**: Read `~/.claude/skills/repeat/SKILL.md` and follow the repeat loop contract defined there, binding the extension points below (GENERATE_STEP, REVIEW_STEP, FINALIZE_STEP). The repeat contract governs Guards, Mode detection, Decision Protocol, and the loop — do not re-derive them here.
 - **MISSING**: stop with: `repeat skill not found. Install it with: ln -s /Users/roman/projects/skills-dev/planning/repeat ~/.claude/skills/repeat`
 
-In both cases, apply the critic-specific overrides and extension point bindings below before starting.
+Apply the critic-specific overrides and extension point bindings below before starting.
 
 ---
 
@@ -34,15 +32,15 @@ In both cases, apply the critic-specific overrides and extension point bindings 
 Critic-specific deltas on top of the repeat contract:
 
 - **PICKUP trigger**: TASK is empty or the literal placeholder `$task` or `$1`. Resolve the active artifact via this order:
-  1. **Explicit path sentinel** — if TASK begins with `pickup:`, strip the prefix to obtain `<path>`, read that file with the Read tool, and store `<path>` as `plan_file_path`. Skip plan-mode context line lookup entirely. This is the **plan-mode-independent** path and is required in environments where plan mode is disabled (agent / headless runs).
-  2. **Plan-mode context line** `A plan file exists from plan mode at: <path>` — used only when plan mode is available and active (interactive Claude Code). Store the path as `plan_file_path`.
+  1. **Explicit path sentinel** — if TASK begins with `pickup:`, strip the prefix to obtain `<path>`, read that file with the Read tool, and store `<path>` as `plan_path`. Skip plan-mode context line lookup entirely. This is the **plan-mode-independent** path and is required in environments where plan mode is disabled (agent / headless runs).
+  2. **Plan-mode context line** `A plan file exists from plan mode at: <path>` — used only when plan mode is available and active (interactive Claude Code). Store the path as `plan_path`.
   3. Hard-stop: `No active plan found. Pass an explicit path via pickup:<path>, re-run /critic "<task>" to generate one, or enter plan mode with an existing plan first.`
 
 ### Loop state and critic ledger
 
-After REVIEW_STEP resolves `artifact_type` and its artifact path on iteration 0, and before invoking the coordinator, derive `staging_dir` as the parent directory of `spec_file_path` or `manifest_path` for `spec` and `tickets`; for `plan` and `design-review`, derive it as the parent directory of `plan_file_path` (for a fresh headless plan, first derive `plan_file_path` as `~/.claude/plans/<CLAUDE_CODE_SESSION_ID>-plan.md`). Set `critic_ledger_path = <staging_dir>/critic-ledger-<CLAUDE_CODE_SESSION_ID>.json`.
+After REVIEW_STEP resolves `artifact_type` (iteration 0), before the coordinator, set `staging_dir` = parent of `spec_path`/`manifest_path` (`spec`/`tickets`) or `plan_path` (`plan`/`design-review`). For fresh headless, derive `plan_path` = `~/.claude/plans/<CLAUDE_CODE_SESSION_ID>-plan.md`. Set `ledger_path = <staging_dir>/critic-ledger-<CLAUDE_CODE_SESSION_ID>.json`.
 
-Initialize the file to `[]` only when it does not already exist. After each REVIEW_STEP, upsert each severity-prefixed issue into it using this record shape:
+Initialize to `[]` if absent. After each REVIEW_STEP, upsert severity-prefixed issues using this record shape:
 ```json
 { "id": "ID-001", "group": "A", "claim": "...", "evidence": "...", "severity": "major", "fix": "...", "status": "open", "introduced_pass": null }
 ```
@@ -50,7 +48,7 @@ Assign new IDs sequentially. Match repeats by ID when present, otherwise by norm
 
 The revision agent may propose that an issue be accepted by appending `ACCEPTED: [ID] [reason]`. Extract these annotations alongside `INTRODUCED:`. In guided mode, ask the user to confirm each proposal before setting `status: accepted`; rejected proposals remain open. In auto mode, ignore acceptance proposals and keep those issues open.
 
-Maintain `major_count_in_ledger` after every REVIEW_STEP. On pass 2+, set `halt_convergence_guard = true` when the current count of open major issues is greater than or equal to the previous pass's count. Bind this value into repeat's STOP_CONDITIONS as described below.
+After each REVIEW_STEP, recompute `major_count`. On pass 2+, set `halt = true` when `major_count >= prior_pass`. Bind into repeat's STOP_CONDITIONS below.
 
 ---
 
@@ -65,17 +63,15 @@ Plan/critic sessions
   planner       (agent)   pending
 ```
 
-**1c.** Determine `critic_model` and `critic_effort` from the orchestrator's own model (stated in the system prompt, e.g., "powered by the model named Sonnet 4.6"):
+**1c.** From the orchestrator's model (system prompt), determine `critic_model` and `effort`:
 
-| Orchestrator / planner tier | `critic_model` | `critic_effort` |
+| Tier | `critic_model` | `effort` |
 |---|---|---|
-| haiku (model name contains "haiku") | `"sonnet"` | normal |
-| sonnet (model name contains "sonnet") | `"opus"` | normal |
-| opus (model name contains "opus") | `"opus"` | **higher** |
+| haiku | `"sonnet"` | normal |
+| sonnet | `"opus"` | normal |
+| opus | `"opus"` | **higher** |
 
-When `critic_effort` is **higher** (opus→opus case), prepend to the critic prompt:
-`Think step by step and reason at maximum depth before producing your JSON verdict.`
-followed by a blank line.
+When `effort == higher`, prepend to critic prompt: `Think step by step and reason at maximum depth before producing your JSON verdict.` + blank line.
 
 ---
 
@@ -116,7 +112,7 @@ Invoke the Agent tool with:
 - `description: "Revise [implementation plan|design decisions] based on critic feedback"`
 - `prompt`:
   ```
-  [IF is_design_review]
+  [IF dr]
   You are a design decision critic's assistant. Revise the ADR files to address the critic's feedback on your design decisions.
 
   **IMPORTANT**: You have Write and Edit tool access. For each ADR file listed in the manifest, read it, apply the fixes suggested by the critic, and **edit the file in place** using the Edit tool. Do NOT attempt to return revised file content in text — the files are your artifact.
@@ -126,7 +122,7 @@ Invoke the Agent tool with:
   [ELSE IF artifact_type == spec]
   You are a spec writer's assistant. Revise the staged spec file to address the critic's feedback.
 
-  **IMPORTANT**: You have Write and Edit tool access. Read the spec at `<spec_file_path>`. Retain the `artifact-type: spec` frontmatter block at the top of the file — it must not be removed. Apply the critic's fixes by editing the file in place using the Edit tool. Do NOT return revised spec text in your response.
+  **IMPORTANT**: You have Write and Edit tool access. Read the spec at `<spec_path>`. Retain the `artifact-type: spec` frontmatter block at the top of the file — it must not be removed. Apply the critic's fixes by editing the file in place using the Edit tool. Do NOT return revised spec text in your response.
 
   Return the spec file path as the first line. Then emit zero or more `INTRODUCED: [name]` or `ACCEPTED: [ID] [reason]` lines; no other output.
   [ELSE IF artifact_type == tickets]
@@ -150,15 +146,15 @@ Invoke the Agent tool with:
   TASK:
   [exact $task text, verbatim]
 
-  [IF is_design_review]
+  [IF dr]
   MANIFEST (ADR file paths):
-  [insert plan_or_manifest verbatim]
+  [insert artifact verbatim]
 
   CURRENT ADR FILES (content):
   [insert adr_content verbatim]
   [ELSE IF artifact_type == spec]
   STAGED SPEC PATH:
-  [insert spec_file_path verbatim]
+  [insert spec_path verbatim]
 
   (Read the spec body from this path using the Read tool before editing.)
   [ELSE IF artifact_type == tickets]
@@ -176,7 +172,7 @@ Invoke the Agent tool with:
 
   CRITIC TOP ISSUES:
   Only major-severity issues are listed below. Minor improvements may be addressed in future passes if they accumulate.
-  [insert each `last_top_issues` item whose `[severity]` prefix is `[major]` as "- <item>"]
+  [insert each `top_issues` item whose `[severity]` prefix is `[major]` as "- <item>"]
 
   SUGGESTED FIXES:
   [insert suggested fixes that correspond to the listed major issues only]
@@ -187,9 +183,9 @@ Invoke the Agent tool with:
 
 **Post-GENERATE_STEP (every mode):**
 
-For design review (`is_design_review == true`): the agent has edited ADR files in place. The `artifact_text` is just the manifest (ADR file paths). Store it as-is; no need to extract revised content since it's already in the files.
+For design review (`dr == true`): the agent has edited ADR files in place. The `artifact_text` is just the manifest (ADR file paths). Store it as-is; no need to extract revised content since it's already in the files.
 
-For `artifact_type == spec`: extract annotation lines, then take the first remaining non-empty line as the returned path. Verify it matches `spec_file_path` and the file exists and is non-empty; if not, write the `dirty` marker (`.scratch/.../dirty` — staging dir = parent of `spec_file_path`) and hard-abort. Store that path as `artifact_text` — the review content will be re-read from `spec_file_path` in the next REVIEW_STEP.
+For `artifact_type == spec`: extract annotation lines, then take the first remaining non-empty line as the returned path. Verify it matches `spec_path` and the file exists and is non-empty; if not, write the `dirty` marker (`.scratch/.../dirty` — staging dir = parent of `spec_path`) and hard-abort. Store that path as `artifact_text` — the review content will be re-read from `spec_path` in the next REVIEW_STEP.
 
 For `artifact_type == tickets`: extract annotation lines, then take the first remaining non-empty line as the returned path. Verify it matches `manifest_path` and the manifest exists; if not, hard-abort. Store that path as `artifact_text` — the manifest and all ticket bodies will be re-assembled in the next REVIEW_STEP.
 
@@ -201,9 +197,9 @@ Parse the stripped JSON using the same temp-file harness as REVIEW_STEP:
 ```bash
 tmpfile_fd="$(mktemp -u /tmp/pwc_flagged.XXXXXX)"
 ```
-Write only the JSON array after the colon to `$tmpfile_fd` using the Write tool, then validate:
+Write only the JSON array after the colon to `$tmp` using the Write tool, then validate:
 ```bash
-FD_TMPFILE="$tmpfile_fd" python3 - <<'PYEOF'
+FD_TMPFILE="$tmp" python3 - <<'PYEOF'
 import json, sys, os
 with open(os.environ['FD_TMPFILE']) as f:
     raw = f.read().strip()
@@ -218,10 +214,10 @@ except (json.JSONDecodeError, AssertionError) as e:
 print(json.dumps(data))
 PYEOF
 ```
-On non-zero exit: `rm -f "$tmpfile_fd"`, then hard abort: `FLAGGED_DECISIONS parse failed at iteration <iteration+1>: <stderr content>`.
-On success: `rm -f "$tmpfile_fd"`. If line not present or array is empty, `flagged_decisions = []`.
+On non-zero exit: `rm -f "$tmp"`, then hard abort: `FLAGGED_DECISIONS parse failed at iteration <iteration+1>: <stderr content>`.
+On success: `rm -f "$tmp"`. If line not present or array is empty, `flagged = []`.
 
-If `flagged_decisions` is non-empty, the **orchestrator** calls `AskUserQuestion` for each entry (one question per entry, include `why_flagged` as context). Collect answers as `user_answers` for the next revision prompt.
+If `flagged` is non-empty, the **orchestrator** calls `AskUserQuestion` for each entry (one question per entry, include `why_flagged` as context). Collect answers as `user_answers` for the next revision prompt.
 
 **Hard abort conditions:**
 - Agent call fails → "Planner agent failed at iteration `<iteration+1>`."
@@ -244,30 +240,30 @@ Before invoking the agent:
    b. **Design-review sentinel** — else if the text contains `Design Decisions Reached During Grilling`, set `artifact_type = design-review`.
    c. **Plain plan** — else set `artifact_type = plan`.
 
-   `is_design_review` is the derived predicate `artifact_type == design-review` — preserves any existing code path that branches on it. Print the resolved type on every iteration: `  artifact_type: <artifact_type>`.
+   `dr` is the derived predicate `artifact_type == design-review` — preserves any existing code path that branches on it. Print the resolved type on every iteration: `  artifact_type: <artifact_type>`.
 
 2. **Assemble review content** based on `artifact_type`:
 
-   - **`design-review`**: `current_plan` is a manifest of ADR file paths. Extract paths from the manifest body (lines after the `---` sentinel, or the plain markdown list). Verify each file exists (hard-abort naming any missing path). Read all ADR files into `adr_content` (one file-path header per file, then its content). Store `current_plan` as `plan_or_manifest`.
+   - **`design-review`**: `current_plan` is a manifest of ADR file paths. Extract paths from the manifest body (lines after the `---` sentinel, or the plain markdown list). Verify each file exists (hard-abort naming any missing path). Read all ADR files into `adr_content` (one file-path header per file, then its content). Store `current_plan` as `artifact`.
 
-   - **`spec`**: on iteration 0 record `spec_file_path = pickup_path` (the path from the `pickup:` sentinel); the review content for this iteration is `current_plan` as already read. On iteration > 0, re-read the file at `spec_file_path` into `review_content`; if missing, unreadable, or empty, write `.scratch/.../dirty` (derive staging dir as parent of `spec_file_path`) and hard-stop. Store `current_plan` as `plan_or_manifest`.
+   - **`spec`**: on iteration 0 record `spec_path = pickup_path` (the path from the `pickup:` sentinel); the review content for this iteration is `current_plan` as already read. On iteration > 0, re-read the file at `spec_path` into `content`; if missing, unreadable, or empty, write `.scratch/.../dirty` (derive staging dir as parent of `spec_path`) and hard-stop. Store `current_plan` as `artifact`.
 
-   - **`tickets`**: on iteration 0 record `manifest_path = pickup_path`. On every iteration (0 and above), **re-read the manifest from `manifest_path`** — do not use `current_plan`, which is a bare path string on iteration > 0. Then assemble `review_content` as the re-read manifest body followed by the current on-disk body of every ticket file it lists, in dependency order. **Manifest-body parse rules** — ignore blank lines and `#`-prefixed comment lines; each remaining line must be a relative path (no leading `/`, no `..` segment, no shell metacharacters `;|&$()` `` ` ``); a violating or missing/unreadable path is a hard-error naming the offending path and the manifest. Store the re-read manifest content as `plan_or_manifest`.
+   - **`tickets`**: on iteration 0 record `manifest_path = pickup_path`. On every iteration (0 and above), **re-read the manifest from `manifest_path`** — do not use `current_plan`, which is a bare path string on iteration > 0. Then assemble `content` as the re-read manifest body followed by the current on-disk body of every ticket file it lists, in dependency order. **Manifest-body parse rules** — ignore blank lines and `#`-prefixed comment lines; each remaining line must be a relative path (no leading `/`, no `..` segment, no shell metacharacters `;|&$()` `` ` ``); a violating or missing/unreadable path is a hard-error naming the offending path and the manifest. Store the re-read manifest content as `artifact`.
 
-   - **`plan`**: use `current_plan` as the review content directly. Store it as `plan_or_manifest`.
+   - **`plan`**: use `current_plan` as the review content directly. Store it as `artifact`.
 
-3. Store the raw artifact text as `plan_or_manifest` (set in step 2 per type above).
+3. Store the raw artifact text as `artifact` (set in step 2 per type above).
 
-4. Resolve review groups before invoking the coordinator: `plan` → `A/B/C/D/E`; `design-review` → `A/B/C`; `spec` → `A/B/C/D` plus `F` only on iteration 0 when `CODEBASE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"` exists and is a readable directory; `tickets` → `A/B/C/D/E` plus `F` under the same iteration-0 pre-flight. Store the rendered list as `active_groups` and `group_f_preflight_succeeds`. Group F's pre-flight failure is non-fatal; omit it and continue with the remaining groups.
+4. Resolve review groups before invoking the coordinator: `plan` → `A/B/C/D/E`; `design-review` → `A/B/C`; `spec` → `A/B/C/D` plus `F` only on iteration 0 when `CODEBASE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"` exists and is a readable directory; `tickets` → `A/B/C/D/E` plus `F` under the same iteration-0 pre-flight. Store the rendered list as `groups` and `group_f_ok`. Group F's pre-flight failure is non-fatal; omit it and continue with the remaining groups.
 
 Invoke the Agent tool with:
 - `description: "Critique [implementation plan|design decisions|spec|tickets] — parallel coordinator (iteration <iteration+1>)"` (select label from `artifact_type`: `plan` → "implementation plan", `design-review` → "design decisions", `spec` → "spec", `tickets` → "tickets")
 - `model: <critic_model>` (from Step 1c)
 - `prompt` (prepend the higher-effort line if `critic_effort == higher`):
   ```
-  You are a parallel critic coordinator. The orchestrator has resolved the active groups; spawn exactly those groups IN A SINGLE MESSAGE so they run in parallel: `<active_groups>` (design-review: A/B/C; spec: A/B/C/D on iteration > 0, A/B/C/D/F on iteration 0 when Group F pre-flight succeeds; tickets: A/B/C/D/E on iteration > 0, A/B/C/D/E/F on iteration 0 when Group F pre-flight succeeds; plan: A/B/C/D/E). Each sub-agent reviews the full artifact through its assigned lenses only. After all sub-agents respond, merge their verdicts and return a single JSON result.
+  You are a parallel critic coordinator. The orchestrator has resolved the active groups; spawn exactly those groups IN A SINGLE MESSAGE so they run in parallel: `<groups>` (design-review: A/B/C; spec: A/B/C/D on iteration > 0, A/B/C/D/F on iteration 0 when Group F pre-flight succeeds; tickets: A/B/C/D/E on iteration > 0, A/B/C/D/E/F on iteration 0 when Group F pre-flight succeeds; plan: A/B/C/D/E). Each sub-agent reviews the full artifact through its assigned lenses only. After all sub-agents respond, merge their verdicts and return a single JSON result.
 
-  Append the SHARED REVIEW CONTRACT verbatim to every group prompt. It is the single output and severity contract for all groups:
+  **Append to every group:** the SHARED REVIEW CONTRACT below, then `[ARTIFACT]`.
 
   SHARED REVIEW CONTRACT:
   - Return only raw JSON with exactly `verdict`, `severity`, `top_issues`, and `suggested_fixes`.
@@ -290,16 +286,12 @@ Invoke the Agent tool with:
   You are an adversarial reviewer focused on COMPLETENESS and SCOPE. Evaluate ONLY:
   - Scope creep / under-scoping: does the [plan|design] do more than needed or miss steps clearly required for the task?
   - Simplicity: is there a simpler approach with fewer moving parts or fewer assumptions?
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
 
   GROUP B — Consistency & Coherence:
   You are an adversarial reviewer focused on CONSISTENCY and COHERENCE. Evaluate ONLY:
   - Hidden assumptions: what does this assume about the environment, existing code, dependencies, or user behavior that is not explicitly stated or verified?
   - Consistency and contradictions: does the [plan|design] contradict itself or make incompatible choices?
   - Trade-off justification: are decisions justified with stated reasons and considered alternatives?
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
 
   GROUP C — Edge Cases & Robustness:
   You are an adversarial reviewer focused on EDGE CASES and ROBUSTNESS. Evaluate ONLY:
@@ -307,22 +299,16 @@ Invoke the Agent tool with:
   [IF artifact_type == plan]
   - Failure modes and rollback: what happens when each step fails? Is there a rollback path? Are there irreversible operations with no guard?
   [END IF]
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
 
   [IF artifact_type == plan]
   GROUP D — Execution & Ordering:
   You are an adversarial reviewer focused on EXECUTION ORDER and VERIFICATION. Evaluate ONLY:
   - Ordering and sequencing: are there steps that must happen before others but are not ordered that way? Could parallelism cause race conditions or conflicts?
   - Testability and verification: how will the implementer know each step succeeded? Are there missing verification steps or acceptance criteria?
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
 
   GROUP E — Operational Concerns:
   You are an adversarial reviewer focused on OPERATIONAL CONCERNS. Evaluate ONLY:
   - Operational concerns: where relevant, are logging, monitoring, configuration, migration, and rollout addressed? If this plan has no operational surface, approve immediately with severity "none".
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
   [END IF]
 
   [IF artifact_type == spec]
@@ -330,8 +316,6 @@ Invoke the Agent tool with:
   You are an adversarial reviewer focused on REQUIREMENT TRACEABILITY (internal-consistency only). Evaluate ONLY:
   - Are requirement IDs (e.g. `REQ-XXXX`) used consistently *within the spec itself*? Every user story or implementation decision that cites an ID must resolve against the spec's own `Requirements:` mapping; the mapping must not cite IDs that no story covers, and no story may cite an ID absent from the mapping.
   - **Out of scope:** verifying that a REQ-ID exists in the external requirements corpus — only the draft spec file is passed to critic, so external corpus membership cannot be checked here.
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
   [END IF]
 
   [IF artifact_type == tickets]
@@ -351,19 +335,15 @@ Invoke the Agent tool with:
   - Duplicate ownership of entity creation, migration, or deletion.
   - Every `Blocked by` reference resolving to a slug present in the manifest.
   Each major finding must cite the ticket slug(s) and exact field/value discrepancy.
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
   [END IF]
 
-  [IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_f_preflight_succeeds]
+  [IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_f_ok]
   GROUP F — Codebase Grounding:
   You are an adversarial reviewer focused on CODEBASE GROUNDING. `CODEBASE_ROOT` is provided below. Evaluate ONLY:
   - Verify every named existing function, method, class, config key, schema field, DB column, and type cited by the artifact exists at its cited location.
   - Do not flag intentionally new artifacts.
   - For an absent artifact, cite the search performed and the artifact quote that names it. A `file:line` citation is mandatory for findings about present code; absence findings instead require the failed search evidence.
   Search source code conceptually and cross-file, search docs and requirements as a document corpus, and for architecture-level questions start with a global search before reading individual files. Use `rg`, `fd`, and Read for exact or local lookups when semantic search is unavailable.
-  [APPEND SHARED REVIEW CONTRACT VERBATIM]
-  [ARTIFACT]
   [END IF]
 
   ---
@@ -385,16 +365,16 @@ Invoke the Agent tool with:
 
   [IF artifact_type == design-review]
   MANIFEST:
-  [insert plan_or_manifest verbatim]
+  [insert artifact verbatim]
 
   REFERENCED ADR FILES:
   [insert adr_content verbatim (concatenated ADR files with file-path headers)]
   [ELSE IF artifact_type IN {spec, tickets}]
   ARTIFACT (artifact_type: <artifact_type>):
-  [insert review_content verbatim — for spec: the current on-disk spec body (re-read from spec_file_path on iteration > 0); for tickets: the manifest body followed by all ticket file bodies in dependency order]
+  [insert content verbatim — for spec: the current on-disk spec body (re-read from spec_path on iteration > 0); for tickets: the manifest body followed by all ticket file bodies in dependency order]
   [ELSE]
   PLAN:
-  [insert plan_or_manifest verbatim]
+  [insert artifact verbatim]
   [END IF]
   ```
 
@@ -402,12 +382,12 @@ Invoke the Agent tool with:
 
 Generate a unique temp-file path:
 ```bash
-tmpfile="$(mktemp -u /tmp/pwc_critic.XXXXXX)"
+tmp="$(mktemp -u /tmp/pwc_critic.XXXXXX)"
 ```
 
-Write the agent's returned text to `$tmpfile` using the Write tool. Then validate:
+Write the agent's returned text to `$tmp` using the Write tool. Then validate:
 ```bash
-CRITIC_TMPFILE="$tmpfile" python3 - <<'PYEOF'
+CRITIC_TMPFILE="$tmp" python3 - <<'PYEOF'
 import json, sys, os
 
 with open(os.environ['CRITIC_TMPFILE']) as f:
@@ -451,16 +431,16 @@ print(json.dumps(data))
 PYEOF
 ```
 
-On non-zero exit: run `rm -f "$tmpfile"`, then hard abort: "Critic agent returned invalid output at iteration `<iteration+1>`: `<stderr content>`."
-On success: run `rm -f "$tmpfile"`.
+On non-zero exit: run `rm -f "$tmp"`, then hard abort: "Critic agent returned invalid output at iteration `<iteration+1>`: `<stderr content>`."
+On success: run `rm -f "$tmp"`.
 
-Parse every issue string for its group and severity prefix before ledger persistence. The coordinator must preserve group and severity in each `top_issues` item (for example: `[A][major] claim — evidence`). Upsert the result into `critic_ledger_path` as defined in Loop state and critic ledger, set unresolved old claims to `fixed` only when absent from this REVIEW_STEP, and recompute the count of open major records. On pass 2+, compare that count to the prior pass and set `halt_convergence_guard` when it is non-decreasing.
+Parse every issue string for its group and severity prefix before ledger persistence. The coordinator must preserve group and severity in each `top_issues` item (for example: `[A][major] claim — evidence`). Upsert the result into `ledger_path` as defined in Loop state and critic ledger, set unresolved old claims to `fixed` only when absent from this REVIEW_STEP, and recompute the count of open major records. On pass 2+, compare that count to the prior pass and set `halt` when it is non-decreasing.
 
-Store: `last_verdict`, `last_severity`, `last_top_issues`, `last_suggested_fixes`, `halt_convergence_guard`.
+Store: `last_verdict`, `last_severity`, `top_issues`, `fixes`, `halt`.
 
 Print: `  critic #<iteration+1>   (agent)   <verdict> (<severity>)`
 
-Return `{ verdict: last_verdict, severity: last_severity, issues: last_top_issues, fixes: last_suggested_fixes }`.
+Return `{ verdict, severity, issues: top_issues, fixes }`.
 
 ---
 
@@ -493,45 +473,45 @@ Assemble:
 
 ## Critic Review
 
-- **Final verdict:** <last_verdict>
-- **Severity:** <last_severity>
+- **Final verdict:** <verdict>
+- **Severity:** <severity>
 - **Iterations used:** <iteration+1> of <MAX_ITERATIONS>
-- **Approval status:** <"✓ Automatically approved by critic. No manual review required." if auto_approval; "Requires manual review and approval." otherwise>
-- **Remaining risks / open questions:** <last_top_issues as bullets, or "none" if verdict is "approve" and severity is "none"; optional improvements may still be listed when verdict is "approve" and severity is "minor">
+- **Approval status:** <"✓ Automatically approved by critic. No manual review required." if approved; "Requires manual review and approval." otherwise>
+- **Risks / questions:** <top_issues as bullets, or "none" if verdict is "approve" and severity is "none">
 ```
 
 **Detect plan-mode availability:**
 
-Check whether `EnterPlanMode` and `ExitPlanMode` appear in the available tool list (look in the system prompt's tool list). Store as `plan_mode_available` (boolean). All plan-mode transitions below are conditional on this flag.
+Check whether `EnterPlanMode` and `ExitPlanMode` appear in the available tool list (look in the system prompt's tool list). Store as `plan_mode` (boolean). All plan-mode transitions below are conditional on this flag.
 
 **Write plan/ledger file (`artifact_type IN {plan, design-review}` only):**
 
-For `artifact_type IN {spec, tickets}`: **skip the file write entirely.** The staged artifact on disk is correct and must not be overwritten — the synthesizer maintained it in place during revisions, and `to-spec`/`to-tickets` will read and publish it as-is. Instead, print the Session Ledger and Critic Review assembled above as conversation text so the outcome is visible to the calling skill. Do not touch `plan_file_path`.
+For `artifact_type IN {spec, tickets}`: **skip the file write entirely.** The staged artifact on disk is correct and must not be overwritten — the synthesizer maintained it in place during revisions, and `to-spec`/`to-tickets` will read and publish it as-is. Instead, print the Session Ledger and Critic Review assembled above as conversation text so the outcome is visible to the calling skill. Do not touch `plan_path`.
 
 For `artifact_type IN {plan, design-review}`:
 
 - **Plan mode available, FRESH**: call `EnterPlanMode` first, then write enriched content to the active plan file using the Write tool.
-- **Plan mode available, PICKUP**: session is already in plan mode — do NOT call `EnterPlanMode`; write directly to `plan_file_path`.
-- **Plan mode unavailable (agent / headless run)**: write enriched content directly to `plan_file_path`. For FRESH mode without an explicit `plan_file_path`, derive one as `~/.claude/plans/<CLAUDE_CODE_SESSION_ID>-plan.md`. After writing, present the enriched plan content as text in the conversation.
+- **Plan mode available, PICKUP**: session is already in plan mode — do NOT call `EnterPlanMode`; write directly to `plan_path`.
+- **Plan mode unavailable (agent / headless run)**: write enriched content directly to `plan_path`. For FRESH mode without an explicit `plan_path`, derive one as `~/.claude/plans/<CLAUDE_CODE_SESSION_ID>-plan.md`. After writing, present the enriched plan content as text in the conversation.
 
 **Write verification** (`artifact_type IN {plan, design-review}` only): re-read the file and assert the original `current_plan` text is a substring of the file content. Hard abort if not: `Plan write verification failed — file does not contain the expected plan body.`
 
-**Branch on auto_approval:**
+**Branch on approved:**
 
-If `auto_approval == True`:
-1. If `plan_mode_available`: call `ExitPlanMode`.
+If `approved == True`:
+1. If `plan_mode`: call `ExitPlanMode`.
 2. Print: `✓ Plan automatically approved by critic. Proceeding to plan execution…` (for `artifact_type == plan`); or `✓ Artifact approved by critic.` (for `spec`, `tickets`, or `design-review`).
-3. Print: `PLAN_APPROVED_READY_FOR_FINALIZATION: <plan_file_path>`
+3. Print: `PLAN_APPROVED_READY_FOR_FINALIZATION: <plan_path>`
 4. **Branch on `artifact_type`:**
    - **`plan`**: Read the verified plan file and proceed directly to implementation **in this same orchestrator response** — no separate user confirmation required. Decompose the approved plan into independent phases — phases with no shared-file dependencies. When ≥3 independent phases exist (advisory floor — fall back to serial if phases share heavy context), launch one Agent subagent per phase **in a single message** so they execute in parallel. Each subagent implements and tests its phase, writing only to files owned by that phase. After all report back, run a reconciliation pass: cross-module consistency (entity fields, API signatures, event contracts), then the full test suite and lint; fix any mismatches before committing. If fewer than 3 independent phases exist or any subagent fails, implement the remaining phases serially in the main conversation. Commit only when all checks pass. Only pause for a product decision, a destructive or shared-system action, or genuine ambiguity that cannot be resolved by reading specs and code.
    - **`design-review`**: the ADRs are the artifact. No implementation step — return control to the caller.
    - **`spec` or `tickets`**: do **not** implement. The sentinel printed in step 3 is the signal; the calling skill (`to-spec` or `to-tickets`) handles publishing. Return control to the calling skill.
 
-If `auto_approval == False`:
-1. If `plan_mode_available`: call `ExitPlanMode` to present the plan for manual review.
+If `approved == False`:
+1. If `plan_mode`: call `ExitPlanMode` to present the plan for manual review.
 2. Return.
 
-`auto_approval` is the only gate for automatic execution. It is `True` only when verdict is `approve`, severity is not `major`, and the iteration cap/backstop was not reached. Any other outcome (revise, major severity, cap exhaustion, invalid agent output, plan-write verification failure, or hard-abort) leaves `auto_approval` False and stops without execution.
+`approved` is the only gate for automatic execution. It is `True` only when verdict is `approve`, severity is not `major`, and the iteration cap/backstop was not reached. Any other outcome (revise, major severity, cap exhaustion, invalid agent output, plan-write verification failure, or hard-abort) leaves `approved` False and stops without execution.
 
 ---
 
@@ -540,6 +520,6 @@ If `auto_approval == False`:
 - Do NOT launch headless `claude` CLI processes via Bash.
 - Never pass task or plan text as shell arguments. Write to temp files for Bash.
 - Bash non-zero exit, unparseable critic JSON, or missing/invalid required field = hard abort. Never treat as approval or revise.
-- Do NOT call ExitPlanMode if the plan has not received a successful critic review (verdict="approve"), EXCEPT when the iteration cap is reached. When `plan_mode_available` is false, skip all ExitPlanMode calls.
+- Do NOT call ExitPlanMode if the plan has not received a successful critic review (verdict="approve"), EXCEPT when the iteration cap is reached. When `plan_mode` is false, skip all ExitPlanMode calls.
 - `rm -f "$tmpfile"` must run on every exit path, including hard-abort paths.
 
