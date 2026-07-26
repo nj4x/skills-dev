@@ -196,27 +196,24 @@ class AuditRepository:
 
 ---
 
-### 4b. Cursor Factory and Row Access
+### 4b. Cursor Factory and Row Shape
 
-**Choosing a cursor factory** — set once at the connection level, not per-cursor:
+The **cursor factory** determines the **row shape** — which indexing modes are valid on every `fetchone()` / `fetchall()` result. Set it once at the connection level, not per-cursor.
 
-| Need | Factory | Row access |
+| Need | Factory | Row shape / access |
 |---|---|---|
-| Max speed, positional columns | `cursor()` (default) | `row[0]`, `row[1]` |
-| Both `row["col"]` AND `row[0]` | `DictCursor` | both work |
-| Direct `json.dumps(row)` without conversion | `RealDictCursor` | `row["col"]` only — `row[0]` raises `KeyError` |
-| Dot-access `row.col_name`, immutable, hashable | `NamedTupleCursor` | `row.col`, `row[0]`, `row._asdict()` |
-| Millions of rows, low RAM | Named server-side cursor | any of the above |
+| Max speed, positional columns | `cursor()` (default) | tuple — `row[0]`, `row[1]` |
+| Both `row["col"]` AND `row[0]` | `DictCursor` | dict + positional — both work |
+| Direct `json.dumps(row)` | `RealDictCursor` | real dict — `row["col"]` **only**; `row[0]` → `KeyError` |
+| Dot-access `row.col_name` | `NamedTupleCursor` | named tuple — `row.col`, `row[0]`, `row._asdict()` |
+| Millions of rows, low RAM | Named server-side cursor | inherits factory's row shape |
 
 ```python
 # DO — set cursor_factory once at connection level
-import psycopg2, psycopg2.extras
-
 conn = psycopg2.connect(dsn, cursor_factory=psycopg2.extras.RealDictCursor)
-# all cursors on this connection are now RealDictCursor
 ```
 
-**Critical: `RealDictCursor` rows do NOT support integer indexing.**
+**`RealDictCursor` rows are dicts — integer indexing raises `KeyError`, not `IndexError`.**
 
 ```python
 # DON'T — integer indexing on a RealDictCursor row (KeyError, not IndexError)
@@ -263,7 +260,7 @@ class _Cur:
 
 ### 4c. Error Handling for DB Operations
 
-- **Catch specific `psycopg2.errors.*` classes** (available since psycopg2 2.8) rather than broad `DatabaseError`. Error names match PostgreSQL condition names exactly.
+- **Catch specific `psycopg2.errors.*` classes** rather than broad `DatabaseError`. Error names match PostgreSQL condition names exactly.
 - **Always call `conn.rollback()`** after any exception before reusing the connection — after a DB error the connection is in aborted-transaction state and every subsequent command raises `InFailedSqlTransaction` until rollback.
 - **Log `exc.diag` fields for structured error metadata** (`constraint_name`, `table_name`, `column_name`, `pgcode`) instead of parsing the error string, which is not stable across PG versions.
 - **Retry strategy by exception class**: `OperationalError` (connection lost) → retry with backoff; `TransactionRollbackError` (serialization failure) → retry the entire transaction; `IntegrityError` subclasses → surface to caller, do not retry.
@@ -285,14 +282,6 @@ except psycopg2.OperationalError:
     conn.rollback()
     # retry with backoff or re-raise
     raise
-```
-
-```python
-# DON'T — catch broad Exception and swallow the connection state
-try:
-    cur.execute(...)
-except Exception:
-    pass                    # ❌ connection now in aborted state; next execute fails
 ```
 
 ---
@@ -338,24 +327,11 @@ cur.execute("INSERT INTO t (a) VALUES (%s)", (val,))
 cur.execute("SELECT MAX(id) FROM t")    # ❌ race-prone, extra round-trip
 ```
 
-```python
-# DO — copy_expert (COPY FROM STDIN) for maximum bulk ingest throughput
-import io, csv
-
-buf = io.StringIO()
-writer = csv.writer(buf)
-for row in data:
-    writer.writerow(row)
-buf.seek(0)
-cur.copy_expert("COPY t (a, b, c) FROM STDIN WITH CSV", buf)
-```
-
 ---
 
 ### 4e. Transaction Discipline
 
-- **Keep transactions short** — long-running transactions hold row locks and block autovacuum from reclaiming dead tuples.
-- **Commit as soon as a logical unit of work is complete** — psycopg2 starts a transaction on the first `execute()` call; a SELECT left open holds a snapshot and increases table bloat.
+- **psycopg2 starts a transaction on the first `execute()`** — an open transaction holds row locks and blocks autovacuum. Commit at each logical unit boundary; flag transactions spanning unrelated operations.
 - **Use savepoints for partial rollback** within a single transaction, rather than aborting the entire transaction on a risky sub-operation.
 - **Use `autocommit = True`** for DDL and PostgreSQL maintenance commands (`CREATE INDEX CONCURRENTLY`, `VACUUM`) which cannot run inside a transaction.
 

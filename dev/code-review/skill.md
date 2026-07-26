@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review pull requests, committed branch changes, or explicitly requested working-tree changes against project standards, requirements, security patterns, and architecture constraints. Use when reviewing a PR, auditing recent code changes, validating a branch before merge or push, checking uncommitted changes, or producing approve/request-changes feedback. Supports --scope committed|working-tree and --effort low|medium|high, discovers requirement docs, verifies major findings, and can draft PR comments or approval text after explicit consent.
+description: Review pull requests, committed branches, or working-tree changes against project standards, requirements, security patterns, and architecture constraints. Use when reviewing a PR, validating a branch before push, checking uncommitted changes, or producing approve/request-changes feedback.
 ---
 
 # Code Review Skill
@@ -138,6 +138,7 @@ For detailed guidelines, see the following documents:
 | Security Patterns | [security-patterns.md](docs/security-patterns.md) | Hardcoded secrets, injection risks, CORS issues |
 | Architecture Patterns | [architecture-patterns.md](docs/architecture-patterns.md) | Field injection, business logic in controllers, entity exposure |
 | Kotlin Standards | [kotlin-standards.md](docs/kotlin-standards.md) | Vertical slice pattern, three-tier model, validation patterns, Data View alignment |
+| Python Standards | [python-standards.md](docs/python-standards.md) | DRY, pydantic v2, psycopg2 cursor/row/error/batch patterns, type hints, testing |
 | Testing Standards | [testing-standards.md](docs/testing-standards.md) | Kotlin Test Framework, MockK usage, test independence |
 | Git Commands | [git-commands.md](docs/git-commands.md) | Git command reference and best practices |
 | Maintainability Smells | [smell-baseline.md](docs/smell-baseline.md) | Fowler ch.3 12-smell vocabulary; reported as Notes only (no grade impact) |
