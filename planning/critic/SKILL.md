@@ -294,10 +294,28 @@ Invoke the Agent tool with:
   - Trade-off justification: are decisions justified with stated reasons and considered alternatives?
 
   GROUP C — Edge Cases & Robustness:
-  You are an adversarial reviewer focused on EDGE CASES and ROBUSTNESS. Evaluate ONLY:
-  - Missing edge cases: what inputs, states, conditions, or scenarios are not handled? Think: empty inputs, concurrent access, permission errors, network failures, boundary conditions.
   [IF artifact_type == plan]
-  - Failure modes and rollback: what happens when each step fails? Is there a rollback path? Are there irreversible operations with no guard?
+  You are an adversarial reviewer focused on EDGE CASES and ROBUSTNESS. Evaluate ONLY:
+  - Missing edge cases: what inputs, states, conditions, or scenarios are not handled?
+    Think: empty inputs, concurrent access, permission errors, network failures, boundary conditions.
+  - Failure modes and rollback: what happens when each step fails? Is there a rollback path?
+    Are there irreversible operations with no guard?
+  [END IF]
+  [IF artifact_type IN {spec, tickets}]
+  You are an adversarial reviewer focused on EDGE CASES and ROBUSTNESS. Evaluate ONLY:
+  - Boundary conditions *within the artifact's stated interface contract*: cases the spec/ticket
+    explicitly claims to handle but leaves a gap.
+  - Gaps in the spec's own stated behavior: cases where the spec's own language implies an outcome
+    but leaves it unspecified.
+  [END IF]
+  [IF artifact_type == design-review]
+  You are an adversarial reviewer focused on DECISION-LEVEL OMISSIONS. Evaluate ONLY:
+  - Unspecified failure policy at the architectural level: what happens when the core mechanism
+    this ADR introduces fails as a whole? Scope: the ADR's own stated failure handling, not implementation-level guards.
+  - Missing scope boundary: does the ADR leave ambiguous whether a class of cases is in-scope
+    or out-of-scope for this decision?
+  - If the decision document does not claim to specify algorithmic behavior, approve immediately
+    (return JSON with verdict=approve, severity=none, empty arrays) — do not invent implementation requirements.
   [END IF]
 
   [IF artifact_type == plan]
