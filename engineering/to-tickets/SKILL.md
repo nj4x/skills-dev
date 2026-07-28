@@ -29,6 +29,17 @@ Present as numbered list (title, blocked-by, what it delivers). Iterate on granu
 
 **Derive the feature slug.** Slugify the conversation's feature name — lowercase, non-alphanumeric → `-`, trimmed. Headless fallback: `<CLAUDE_CODE_SESSION_ID>-<unix-timestamp>`. The slug lives in memory for this run.
 
+**Resolve ticket lineage subtype (ADR-0067).** Before staging, determine whether tickets are spec-linked or adr-direct:
+
+- **Spec-linked (default):** The session was triggered by a spec at `.scratch/<feature-slug>/spec.md`. Confirm the file exists — if missing, surface the gap and do not proceed.
+- **ADR-direct:** Propose this subtype when the user's request references an ADR directly with no spec in context. **User must confirm** before applying. Require at least one ADR path under `docs/adr/`; verify each file exists.
+
+Block conditions before writing any ticket file:
+- Spec-linked: `.scratch/<feature-slug>/spec.md` must exist.
+- ADR-direct: at least one `**Source ADR**:` path must be present and each path must resolve to an existing file under `docs/adr/`.
+
+If any check fails, surface the gap and request the missing information before continuing.
+
 **Staging-collision behaviour:** if `.scratch/<feature-slug>/draft-issues/` already exists, overwrite the draft files — a re-run is a fresh draft start. Clear any `dirty` marker at `.scratch/<feature-slug>/dirty` left by a prior failed critic run. If `.scratch/<feature-slug>/issues/` already exists (published tickets are present), stop with: "already published — delete `.scratch/<feature-slug>/issues/` to republish."
 
 Write ticket draft files to `.scratch/<feature-slug>/draft-issues/<NN>-<slug>.md`, one per ticket, numbered in dependency order. Then write the manifest at `.scratch/<feature-slug>/manifest.md`. The manifest **must** begin with this YAML frontmatter block (required for critic's artifact-type detection):
@@ -50,10 +61,50 @@ artifact-type: tickets
 .scratch/<feature-slug>/draft-issues/03-ui-component.md
 ```
 
-Use the `<local-ticket-template>` for each ticket file:
+Use the appropriate `<local-ticket-template>` for each ticket file:
 
+**Spec-linked ticket (default):**
 ```
+---
+artifact-type: ticket
+lineage-rules:
+  - "Ticket must reference its source spec"
+  - "Ticket may additionally reference source ADRs for cross-cutting concerns"
+---
+
 # <NN> — <Title>
+
+**Spec**: <feature-slug>
+
+## What to build
+<description>
+
+## Requirements
+<requirement IDs, or omit if none>
+
+## Blocked by
+<NN> — <slug>, or none
+
+## Status
+ready-for-agent
+
+## Checklist
+- [ ] ...
+```
+
+**ADR-direct ticket (user-confirmed):**
+```
+---
+artifact-type: ticket
+ticket-subtype: adr-direct
+lineage-rules:
+  - "Ticket must reference at least one source ADR"
+  - "Spec field is intentionally omitted: this ticket traces directly to an ADR"
+---
+
+# <NN> — <Title>
+
+**Source ADR**: docs/adr/<slug>.md
 
 ## What to build
 <description>
