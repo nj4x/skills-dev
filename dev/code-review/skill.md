@@ -77,7 +77,7 @@ After activation:
 
    **Primary — Code-to-spec alignment (grade-impacting):**
    - Retrieve the ticket's `**Spec**:` slug (spec-linked) or `**Source ADR**:` path (adr-direct) from the diff context or PR description.
-   - Resolve the spec: read `.scratch/<slug>/spec.md`. If the file does not exist or has no frontmatter, skip this check gracefully — Group F (Critic) will catch the missing frontmatter.
+   - Resolve the spec: read `.scratch/<slug>/spec.md`. If the file does not exist or has no frontmatter, skip this check — Group F (Critic) will catch the missing frontmatter.
    - Compare code changes against the spec's acceptance criteria and implementation decisions:
      - Code adds behavior not described in the spec: **Major** finding — "Undocumented scope creep: `<behavior>` not in spec."
      - Code omits behavior that the spec explicitly requires: **Major** finding — "Incomplete implementation: `<requirement>` specified in spec but not present in code."
@@ -86,7 +86,7 @@ After activation:
    **Secondary — Spec-to-ADR chain visibility (informational, no grade impact):**
    - Read the spec's `**Source ADR**:` field (if the spec was resolved above).
    - If the field is missing or any listed ADR path does not resolve to an existing file under `docs/adr/`: **Minor** finding — "Spec lacks valid ADR anchor; ask architect to trace this spec to its source decisions."
-   - If the spec does not exist or has no frontmatter: skip this check entirely (do not escalate).
+   - If the spec does not exist or has no frontmatter: skip this check.
 
 8. Generate the structured report (Step 13) with severity, evidence, grade, PR context status, build/OpenAPI status, and action items. Include a **Lineage** subsection after the standard findings, listing any code-to-spec or spec-to-ADR findings from step 7.5.
 9. If PR integration is enabled, proceed to PR write actions (Step 13.5) and offer PR comments or approval only after explicit user consent.

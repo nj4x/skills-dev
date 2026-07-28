@@ -29,16 +29,12 @@ Present as numbered list (title, blocked-by, what it delivers). Iterate on granu
 
 **Derive the feature slug.** Slugify the conversation's feature name — lowercase, non-alphanumeric → `-`, trimmed. Headless fallback: `<CLAUDE_CODE_SESSION_ID>-<unix-timestamp>`. The slug lives in memory for this run.
 
-**Resolve ticket lineage subtype (ADR-0067).** Before staging, determine whether tickets are spec-linked or adr-direct:
+**Resolve ticket lineage subtype (ADR-0067).** Before staging, confirm one of:
 
-- **Spec-linked (default):** The session was triggered by a spec at `.scratch/<feature-slug>/spec.md`. Confirm the file exists — if missing, surface the gap and do not proceed.
-- **ADR-direct:** Propose this subtype when the user's request references an ADR directly with no spec in context. **User must confirm** before applying. Require at least one ADR path under `docs/adr/`; verify each file exists.
+- **Spec-linked (default):** `.scratch/<feature-slug>/spec.md` exists. If missing, block staging and surface the gap.
+- **ADR-direct:** Propose when the user's request references an ADR directly with no spec in context. **User must confirm.** At least one `**Source ADR**:` path under `docs/adr/` must be provided; verify each file exists. If any path is missing, block staging and surface the gap.
 
-Block conditions before writing any ticket file:
-- Spec-linked: `.scratch/<feature-slug>/spec.md` must exist.
-- ADR-direct: at least one `**Source ADR**:` path must be present and each path must resolve to an existing file under `docs/adr/`.
-
-If any check fails, surface the gap and request the missing information before continuing.
+Done when the subtype is confirmed and all required files are verified.
 
 **Staging-collision behaviour:** if `.scratch/<feature-slug>/draft-issues/` already exists, overwrite the draft files — a re-run is a fresh draft start. Clear any `dirty` marker at `.scratch/<feature-slug>/dirty` left by a prior failed critic run. If `.scratch/<feature-slug>/issues/` already exists (published tickets are present), stop with: "already published — delete `.scratch/<feature-slug>/issues/` to republish."
 

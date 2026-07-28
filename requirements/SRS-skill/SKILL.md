@@ -121,7 +121,7 @@ Load the source FS/EARS document(s) provided by the user:
    - Extract individual requirements with their IDs
    - Note EARS patterns used (Ubiquitous, Event-driven, etc.)
 3. Build an internal model of all requirements for transformation
-4. **Load all existing FS documents** from `.data/requirements/*-FS-*.md` into a lookup table of known FS IDs. This table is used by the FS anchor preflight in Step 8.4 to validate and resolve `**Source FS**:` references.
+4. **Load all existing FS documents** from `.data/requirements/*-FS-*.md` into a lookup table of known FS IDs.
 
 ### 2.2 Document Metadata Extraction
 
@@ -534,7 +534,7 @@ Every SRS requirement MUST trace back to source FS requirements:
 
 ### 8.4 FS Anchor Preflight (ADR-0058)
 
-For every generated SRS requirement, ensure a `**Source FS**:` field is present and valid before SRS finalization:
+For every generated SRS requirement, ensure a `**Source FS**:` field is present and valid:
 
 1. **Field present** — validate the cited FS ID exists in the lookup table built at Step 2.1; if not found, flag error and block finalization.
 2. **Field absent** — run the inline FS authoring flow:
@@ -542,7 +542,7 @@ For every generated SRS requirement, ensure a `**Source FS**:` field is present 
    b. If the user names an existing FS ID: validate it in the lookup table; if not found, flag error.
    c. If no matching FS item exists, offer: "Create a new FS requirement now?"
       - **Yes**: Draft the requirement in EARS format, present for user approval, write to the appropriate FS document (and update the lookup table), then populate `**Source FS**:` in the SRS requirement.
-      - **No**: Mark the SRS requirement as **unanchored** — do not proceed to finalization until all unanchored requirements are resolved (see Step 12.3).
+      - **No**: Mark the SRS requirement as **unanchored** — Step 12.3 blocks finalization until all unanchored requirements are resolved.
 
 ---
 

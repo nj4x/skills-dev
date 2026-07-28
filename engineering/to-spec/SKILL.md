@@ -17,16 +17,14 @@ The issue tracker and triage label vocabulary should have been provided to you �
 
 3. **Derive the feature slug.** Slugify the conversation's feature name — take it from the first user message or task description, lowercase it, collapse non-alphanumeric characters to `-`, and trim. In headless mode fall back to `<CLAUDE_CODE_SESSION_ID>-<unix-timestamp>`. The slug lives in memory for the duration of this run.
 
-3.5. **Resolve source ADRs (ADR-0066).** Before writing the spec, determine which ADR(s) the spec derives from:
-   - Scan the conversation context for mentioned ADR paths (`docs/adr/*.md`).
-   - If no ADRs are identified, ask the user: "Which ADR(s) does this spec derive from? Please provide paths under `docs/adr/`."
-   - Do not leave `**Source ADR**:` blank or set it to a placeholder — the field must be resolved before writing the draft.
-   - For each identified ADR path: verify the file exists under `docs/adr/`; verify the file body contains `**Status**: Approved`.
+3.5. **Resolve source ADRs (ADR-0066).**
+   - Collect all ADR paths (`docs/adr/*.md`) mentioned in the conversation context.
+   - If none found, ask: "Which ADR(s) does this spec derive from? Provide paths under `docs/adr/`."
+   - `**Source ADR**:` must resolve to at least one validated path before writing.
+   - For each path: verify the file exists under `docs/adr/`; verify the file body contains `**Status**: Approved`.
      - **Path not found**: surface the gap and request a valid path, or offer to initiate `grill-with-docs` to produce the missing ADR first.
-     - **Not Approved status**: block finalization and surface which ADR is not yet approved.
-   - Store the validated list as `source_adrs` for use in step 4.
-
-   > **Note (ADR-0066 §4)**: The `**Status**: Approved` check relies on an informal body-text convention. This convention is expected to be formalized in ADR-0056 in a future pass; this implementation treats the check as-specified for now.
+     - **Not Approved**: block finalization and surface which ADR is not yet approved.
+   - Store the validated list as `source_adrs`.
 
 4. Write the spec to a **staging file** at `.scratch/<feature-slug>/draft-spec.md`, using the spec template below. The draft **must** begin with this YAML frontmatter block (required for critic's artifact-type detection):
 
@@ -39,15 +37,15 @@ The issue tracker and triage label vocabulary should have been provided to you �
    ---
    ```
 
-   The spec body must include a `**Source ADR**:` field at the top, listing the comma-separated ADR paths resolved in step 3.5 (e.g., `docs/adr/0034-foo.md, docs/adr/0035-bar.md`).
+   The spec body must include a `**Source ADR**:` field at the top, listing the comma-separated ADR paths from `source_adrs` (e.g., `docs/adr/0034-foo.md, docs/adr/0035-bar.md`).
 
    Do **not** publish yet. If `.scratch/<feature-slug>/draft-spec.md` already exists (e.g. from a prior interrupted run), overwrite it — a re-run is a fresh draft start, not a resume. Also clear any `dirty` marker at `.scratch/<feature-slug>/dirty` left by a prior failed critic run.
 
 5. **Verify frontmatter and lineage fields.** Confirm that `.scratch/<feature-slug>/draft-spec.md`, after stripping any leading BOM or whitespace, begins with the `artifact-type: spec` frontmatter block. If it does not, stop with: "draft-spec.md is missing the required `artifact-type: spec` frontmatter — re-write the staging file with the frontmatter block and re-invoke."
 
    Additionally confirm:
-   - The draft body contains a `**Source ADR**:` field with at least one entry.
-   - Each listed ADR path resolves to an existing file under `docs/adr/` with `**Status**: Approved`. If any check fails, surface the specific gap and do not proceed to the critic loop.
+   - `**Source ADR**:` is present in the draft body with at least one entry.
+   - The listed paths match `source_adrs` exactly. On any mismatch, block the critic loop and surface the specific gap.
 
    **Already-published guard:** if `.scratch/<feature-slug>/spec.md` already exists, stop with: "already published — delete `.scratch/<feature-slug>/spec.md` to republish." Do not overwrite a previously published spec.
 

@@ -4,12 +4,6 @@ description: Retrofit an existing repo with lineage frontmatter and inline sourc
 disable-model-invocation: true
 ---
 
-# Setup-Lineage Skill
-
-Retrofit an existing repository with the lineage system defined in ADR-0054 through ADR-0067. Runs in three phases: auto-inference (FS→SRS only), grilling (all remaining chain links), and writing (frontmatter + inline fields + report).
-
----
-
 ## Phase 1 — Auto-Inference (FS→SRS only)
 
 1. Scan all FS documents at `.data/requirements/*-FS-*.md`. For each, extract requirement IDs and one-line summaries.
@@ -23,9 +17,8 @@ Retrofit an existing repository with the lineage system defined in ADR-0054 thro
 5. Present the approval UI and wait for user confirmation before making any writes:
    - High-confidence matches: one batch-approval list; user unchecks to exclude
    - Medium-confidence matches: one by one, each requires explicit accept/reject
-   - Never write without user confirmation
 
-> **Scope limit**: Auto-inference applies to FS→SRS only. ADR→SRS, Spec→ADR, and Ticket→Spec links have no reliable automated inference signal — all are handled in Phase 2.
+> **Scope limit**: ADR→SRS, Spec→ADR, and Ticket→Spec links lack reliable automated inference signal — resolve all in Phase 2.
 
 ---
 
@@ -43,6 +36,8 @@ Work through each artifact type that has unresolved chain links. Ask the user fo
 For "create new FS item" responses: draft the requirement in EARS format, get user approval, write to the relevant FS document, then use the new ID as the anchor.
 
 Skip items the user explicitly skips — record them in the lineage report as "user-skipped / unresolved."
+
+Phase 2 is complete when every artifact either has a confirmed anchor or is explicitly marked user-skipped.
 
 ---
 
@@ -98,4 +93,4 @@ Write a report to `.data/lineage-retrofit-report.md` with three sections:
 | ... | ... | ... |
 ```
 
-Flag all unresolved gaps prominently — these require manual intervention before Critic Group F will pass cleanly.
+All unresolved gaps require manual intervention before Critic Group F passes.
