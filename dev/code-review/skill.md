@@ -73,7 +73,22 @@ After activation:
 5. Resolve the build/OpenAPI gate before diff analysis unless the user explicitly waives it with risk accepted. Auto-detect project type and ask user for build confirmation before running (Step 2.1-2.2): run `for f in build.gradle build.gradle.kts pom.xml pyproject.toml setup.py package.json Cargo.toml go.mod; do [ -f "$f" ] && echo "$f"; done`, present the detected type and default command, and wait for user confirmation; do not silently execute the build.
 6. Run build/validation only after user confirmation or a user-provided build command; set `OPENAPI_APPLICABLE = YES` for Gradle/Maven only. If `OPENAPI_APPLICABLE = YES`, verify canonical OpenAPI artifact at `build/api-spec/openapi3.yaml`; on build timeout use `find build -name "openapi3.yaml"` to check; do not use `sleep` and do not use `ls` on a hardcoded path. If `OPENAPI_APPLICABLE = NO`, set `OPENAPI_STATUS = NOT_APPLICABLE`. Then retrieve stats and diff by scope: `origin/<base>...HEAD` (merge-base, three-dot; `<base>` discovered from the PR) for committed scope, `HEAD` for working-tree scope.
 7. Review according to effort level. For ALL effort levels, analysis runs in subagents — never inline. For `low`, spawn a single Explore subagent with all review angles merged into one prompt (Step 4.9 in workflow.md). For `medium` or `high`, spawn 4 parallel Explore agents: Finder A (Correctness/Security), Finder B (Architecture/Compliance), Finder C (Quality/Standards), and Finder D (Maintainability Smells) — see Step 4.1 in workflow.md. For `high`, adversarially verify every Critical/Major finding (Step 4.2 in workflow.md) before including it in the grade. Finder D Notes are never sent to verifiers.
-8. Generate the structured report (Step 13) with severity, evidence, grade, PR context status, build/OpenAPI status, and action items.
+7.5. **Lineage enforcement (ADR-0061).** After the standard review passes complete, run these two additional checks. Append findings in a **Lineage** subsection of the report (step 8), separate from other findings.
+
+   **Primary — Code-to-spec alignment (grade-impacting):**
+   - Retrieve the ticket's `**Spec**:` slug (spec-linked) or `**Source ADR**:` path (adr-direct) from the diff context or PR description.
+   - Resolve the spec: read `.scratch/<slug>/spec.md`. If the file does not exist or has no frontmatter, skip this check gracefully — Group F (Critic) will catch the missing frontmatter.
+   - Compare code changes against the spec's acceptance criteria and implementation decisions:
+     - Code adds behavior not described in the spec: **Major** finding — "Undocumented scope creep: `<behavior>` not in spec."
+     - Code omits behavior that the spec explicitly requires: **Major** finding — "Incomplete implementation: `<requirement>` specified in spec but not present in code."
+   - For adr-direct tickets (no spec): compare code changes against the ADR's decision and consequences section using the same logic.
+
+   **Secondary — Spec-to-ADR chain visibility (informational, no grade impact):**
+   - Read the spec's `**Source ADR**:` field (if the spec was resolved above).
+   - If the field is missing or any listed ADR path does not resolve to an existing file under `docs/adr/`: **Minor** finding — "Spec lacks valid ADR anchor; ask architect to trace this spec to its source decisions."
+   - If the spec does not exist or has no frontmatter: skip this check entirely (do not escalate).
+
+8. Generate the structured report (Step 13) with severity, evidence, grade, PR context status, build/OpenAPI status, and action items. Include a **Lineage** subsection after the standard findings, listing any code-to-spec or spec-to-ADR findings from step 7.5.
 9. If PR integration is enabled, proceed to PR write actions (Step 13.5) and offer PR comments or approval only after explicit user consent.
 10. Offer task tracking after the report (Step 13.6).
 
