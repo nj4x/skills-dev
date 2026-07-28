@@ -15,7 +15,7 @@ Add **Group F (Lineage)** as a dedicated critic lens that runs on all artifact t
    **Stage 1 — Universal pre-gate (always runs)**:
    Group F begins by identifying all in-scope artifacts using the path-convention globs defined in ADR-0056 §4. For every matched artifact it checks for the presence of a `lineage-rules` frontmatter key:
    - Artifact has no `lineage-rules` key → **Major** finding: "Artifact missing `lineage-rules` frontmatter; lineage cannot be audited." (No further Group F checks are run on this artifact.)
-   - Exception: artifacts under `docs/adr/` whose filename prefix matches `00[0-9][0-9]-` and that pre-date ADR-0056 adoption are flagged as **Informational** (legacy artifact). The user must confirm whether to retrofit.
+   - Exception: artifacts under `docs/adr/` whose filename prefix is `< 0056` (i.e., `0001-` through `0055-`) are flagged as **Informational** (legacy artifact). The user must confirm whether to retrofit.
    - to-spec and to-tickets output artifacts (specs at `.scratch/<slug>/spec.md`, tickets at `.scratch/<slug>/issues/*.md`) are **in scope** and must carry `lineage-rules` frontmatter. Absence is flagged as **Major**.
    - Artifact has `lineage-rules: exempt` → **Informational** note that the artifact has opted out; no further Group F checks.
 
@@ -33,7 +33,8 @@ Add **Group F (Lineage)** as a dedicated critic lens that runs on all artifact t
    - FS IDs (pattern `*-FS-*`): search `.data/requirements/*-FS-*.md`
    - SRS IDs (pattern `*-FR-*`, `*-NFR-*`, etc.): search `.data/requirements/*-SRS-*.md`
    - ADR IDs: search `docs/adr/*.md` by filename
-   - Spec slugs: search `.scratch/<feature-slug>/spec.md`
+   - Spec slugs: search `.scratch/*/spec.md`
+   - Ticket files: search `.scratch/*/issues/*.md`
 
 4. **Findings**:
    - Missing anchor (e.g., SRS with no `**Source FS**:`): Major
