@@ -40,6 +40,7 @@ This skill helps create back-end focused SRS documents from high-level Feature S
 
 ### Phase 3: Generation
 9. **Step 8** - Generate SRS requirements with FS attribution
+   - **Step 8.4** - FS Anchor Preflight: validate/resolve `**Source FS**:` for every requirement; inline FS authoring if missing
 10. **Step 9** - *(CONDITIONAL)* Generate test cases with encoded IDs — only if confirmed at Checkpoint #2.5
 11. **Step 9.5** - *(CONDITIONAL)* Generate Module View Diagram — only if confirmed at Checkpoint #2.5
 12. **Step 10** - Identify main use cases
@@ -60,6 +61,7 @@ This skill helps create back-end focused SRS documents from high-level Feature S
 15. **Step 14** - Generate companion documents
     - API Definition Document ([DOMAIN]-API-Definition-[VERSION].md)
     - Use Case Diagrams Document ([DOMAIN]-Use-Case-Diagrams-[VERSION].md)
+    - Data View Document ([DOMAIN]-Data-View-[VERSION].md)
 
 ### Decision Rules
 | Condition | Action |
@@ -69,6 +71,7 @@ This skill helps create back-end focused SRS documents from high-level Feature S
 | User declined test cases at Checkpoint #2.5 | SKIP Step 9, omit Test Cases and Appendix B from SRS |
 | User declined module view at Checkpoint #2.5 | SKIP Step 9.5, omit Module View Diagram from SRS |
 | User has NOT approved at Checkpoint #2 | LOOP - Return to Step 12.1 |
+| SRS requirement has no `**Source FS**:` after Step 8.4 preflight | BLOCK - Do not finalize; surface unanchored list |
 | User says "yes", "approved", "satisfied", "proceed" | PROCEED to next phase |
 | User provides feedback or says "no" | INCORPORATE changes, stay in loop |
 
@@ -118,6 +121,7 @@ Load the source FS/EARS document(s) provided by the user:
    - Extract individual requirements with their IDs
    - Note EARS patterns used (Ubiquitous, Event-driven, etc.)
 3. Build an internal model of all requirements for transformation
+4. **Load all existing FS documents** from `.data/requirements/*-FS-*.md` into a lookup table of known FS IDs. This table is used by the FS anchor preflight in Step 8.4 to validate and resolve `**Source FS**:` references.
 
 ### 2.2 Document Metadata Extraction
 
@@ -528,6 +532,18 @@ Every SRS requirement MUST trace back to source FS requirements:
 - GRP-FS-CRUD-004: When a group is created, the system shall record...
 ```
 
+### 8.4 FS Anchor Preflight (ADR-0058)
+
+For every generated SRS requirement, ensure a `**Source FS**:` field is present and valid before SRS finalization:
+
+1. **Field present** — validate the cited FS ID exists in the lookup table built at Step 2.1; if not found, flag error and block finalization.
+2. **Field absent** — run the inline FS authoring flow:
+   a. Ask: "Which FS requirement does SRS requirement `<ID>` trace to?"
+   b. If the user names an existing FS ID: validate it in the lookup table; if not found, flag error.
+   c. If no matching FS item exists, offer: "Create a new FS requirement now?"
+      - **Yes**: Draft the requirement in EARS format, present for user approval, write to the appropriate FS document (and update the lookup table), then populate `**Source FS**:` in the SRS requirement.
+      - **No**: Mark the SRS requirement as **unanchored** — do not proceed to finalization until all unanchored requirements are resolved (see Step 12.3).
+
 ---
 
 ## 9. Generate Test Cases (CONDITIONAL)
@@ -716,7 +732,7 @@ Verify:
 - [ ] No orphaned SRS requirements
 - [ ] Attribution is accurate
 
-### 11.4 Structural Provenance Check (Companion-Doc Refinement)
+### 11.4 Structural Provenance Check (Companion-Doc Refinement, ADR-0063)
 
 Before proposing any new companion-document structure (entity, table, event, enum, API, field, or use-case phase), verify against the source SRS and record explicit line anchors in the iteration plan.
 
@@ -771,6 +787,7 @@ Cross-reference every SRS requirement against source FS:
 - Verify FS reference is accurate
 - Ensure SRS correctly interprets FS intent
 - Flag any SRS requirements without FS backing
+- **Block SRS finalization** if any requirement still carries no `**Source FS**:` field after the Step 8.4 preflight; surface the list of unanchored requirements and return to Step 12.1
 
 ### 12.4 Confirmation Checkpoint (REQUIRED)
 
@@ -857,7 +874,20 @@ Example: `.data/requirements/Role-Management-SRS-2.0.md`
 
 ### 13.2 Document Structure
 
-Follow template in [SRS-Structure.md](<skill dir>/docs/SRS-Structure.md):
+Follow template in [SRS-Structure.md](<skill dir>/docs/SRS-Structure.md).
+
+Every SRS document must begin with this YAML frontmatter block:
+
+```yaml
+---
+artifact-type: srs
+lineage-rules:
+  - "Every SRS item must reference at least one FS item via **Source FS**:"
+  - "If no matching FS item exists, user must confirm adding a new FS requirement"
+  - "SRS must flag contradictions with existing FS items for grilling"
+source-fs: .data/requirements/[Domain]-FS-[Version].md
+---
+```
 
 ```markdown
 # [Domain] | Software Requirements Specification
@@ -943,7 +973,19 @@ After writing the main SRS document, generate the companion documents:
 
 Create: `<Project Root>/.data/requirements/[Domain]-API-Definition-[Version].md`
 
-Follow template in [API-Definition-Structure.md](<skill dir>/docs/API-Definition-Structure.md):
+Follow template in [API-Definition-Structure.md](<skill dir>/docs/API-Definition-Structure.md).
+
+Every API Definition document must begin with this YAML frontmatter block:
+
+```yaml
+---
+artifact-type: api-definition
+lineage-rules: companion of SRS
+source-srs: .data/requirements/[Domain]-SRS-[Version].md
+---
+```
+
+Each top-level API section must include an inline `**Source SRS**: <SRS-ID>` field citing the SRS requirement it derives from. No new structure may be added that cannot be anchored to a `**Source SRS**:` field.
 
 **Contents:**
 - Document Information (linked to SRS)
@@ -974,7 +1016,19 @@ Example forms:
 
 Create: `<Project Root>/.data/requirements/[Domain]-Use-Case-Diagrams-[Version].md`
 
-Follow template in [Use-Case-Diagrams-Structure.md](<skill dir>/docs/Use-Case-Diagrams-Structure.md):
+Follow template in [Use-Case-Diagrams-Structure.md](<skill dir>/docs/Use-Case-Diagrams-Structure.md).
+
+Every Use Case Diagrams document must begin with this YAML frontmatter block:
+
+```yaml
+---
+artifact-type: use-case-diagram
+lineage-rules: companion of SRS
+source-srs: .data/requirements/[Domain]-SRS-[Version].md
+---
+```
+
+Each use case section must include an inline `**Source SRS**: <SRS-ID>` field citing the SRS requirement it derives from. No new use-case phase or actor may be added that cannot be anchored to a `**Source SRS**:` field.
 
 **Contents:**
 - Document Information (linked to SRS)
@@ -992,6 +1046,30 @@ Follow template in [Use-Case-Diagrams-Structure.md](<skill dir>/docs/Use-Case-Di
 3. Create PlantUML sequence diagram using ```plantuml code blocks
 4. Include all participants, message flows, and alternative/exception fragments
 
-### 14.3 PlantUML Sequence Diagram Format
+### 14.3 Data View Document
+
+Create: `<Project Root>/.data/requirements/[Domain]-Data-View-[Version].md`
+
+Every Data View document must begin with this YAML frontmatter block:
+
+```yaml
+---
+artifact-type: data-view
+lineage-rules: companion of SRS
+source-srs: .data/requirements/[Domain]-SRS-[Version].md
+---
+```
+
+Each entity or schema section must include an inline `**Source SRS**: <SRS-ID>` field citing the SRS requirement it derives from. No new entity, field, or relationship may be added that cannot be anchored to a `**Source SRS**:` field.
+
+**Contents:**
+- Document Information (linked to SRS)
+- Entity Relationship Diagram
+- Per-entity schema tables (attributes, types, constraints, SRS anchors)
+- Relationship definitions with cardinality and source SRS references
+
+---
+
+### 14.4 PlantUML Sequence Diagram Format
 
 For syntax rules, elements, note colors, and a worked example, see [PLANTUML.md](PLANTUML.md).
