@@ -142,7 +142,11 @@ Follow [Requirement-Format.md](<skill dir>/docs/Requirement-Format.md) for:
 
 Generate requirements following EARS syntax from [EARS.md](<skill dir>/docs/EARS.md). Requirements can be rephrased from user inputs for better clarity.
 
-### 5.3 Parallel Fan-Out (advisory)
+### 5.3 Stable-ID Immutability
+
+Once an FS ID (e.g., `GRP-FS-CRUD-001`) is written to file and confirmed by the user, that ID is **immutable**. Renaming an ID equals deletion + re-creation; apply the deletion guard (Section 9) against the old ID before removing it.
+
+### 5.4 Parallel Fan-Out (advisory)
 
 **Parallel fan-out (≥3 categories, advisory):** When requirements span ≥3 independent categories, pre-allocate a disjoint requirement-ID range to each category (e.g. 001–049, 050–099) so IDs never collide, then launch one Agent subagent per category **in a single message** (parallel execution). Each subagent receives the source-document pointers, the EARS rules, its category scope, and its ID range; it returns drafted requirements as text and must not write files. After all report back, reconcile: merge drafts, check ID continuity and no duplicates, deduplicate cross-cutting requirements, unify terminology, resolve cross-references — then run the quality check on the merged set. The ≥3 threshold is a floor, not a mandate: fall back to serial main-thread generation when categories share heavy context, fewer than 3 exist, or any subagent fails or returns empty. User checkpoints and file writes always stay in the main conversation.
 
@@ -248,3 +252,39 @@ Follow [Document-Template.md](<skill dir>/docs/Document-Template.md) for:
 - Required document structure
 - Required sections (Header, Source Documents, Contradictions, Requirements, Appendices)
 - Output location and file naming conventions
+
+Every FS document written by this skill must include the following YAML frontmatter block at the top of the file:
+
+```yaml
+---
+artifact-type: fs
+lineage-rules: root
+---
+```
+
+---
+
+## 9. Deletion Guard
+
+Before deleting or renaming (= deleting + re-creating) any FS requirement ID:
+
+### 9.1 Scan SRS Documents
+
+Scan all SRS documents matching `.data/requirements/*-SRS-*.md` for references of the form `**Source FS**: <ID>`.
+
+Surface the scan scope report before blocking or permitting deletion:
+- Paths searched: `.data/requirements/*-SRS-*.md`
+- Files found: `<N>` files
+- Matches found: `<M>` references to `<ID>`
+
+### 9.2 Block on Orphans
+
+If any SRS items reference the FS ID being deleted:
+- **Block** the deletion.
+- Surface the full list of orphaned SRS items (file path + requirement ID + current `**Source FS**:` value).
+- Require the user to re-anchor each orphaned SRS item to another valid FS ID, or delete the orphaned SRS item, before proceeding.
+- Re-run the scan after each re-anchoring until the reference count reaches zero.
+
+### 9.3 Permit Deletion
+
+Only after the scan confirms zero remaining references to the FS ID may deletion proceed.

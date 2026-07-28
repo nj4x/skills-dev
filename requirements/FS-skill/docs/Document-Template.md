@@ -7,6 +7,11 @@ Requirements documents MUST follow this structure.
 ## Template
 
 ```markdown
+---
+artifact-type: fs
+lineage-rules: root
+---
+
 # [Category Name] Requirements
 
 [Brief description of the requirements scope]
