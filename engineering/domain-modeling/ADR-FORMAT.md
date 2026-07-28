@@ -7,6 +7,13 @@ Create the `docs/adr/` directory lazily — only when the first ADR is needed.
 ## Template
 
 ```md
+---
+artifact-type: adr
+lineage-rules:
+  - "ADR must reference at least one source SRS item"
+source-srs: .data/requirements/{Domain}-SRS-{Version}.md
+---
+
 # {Short title of the decision}
 
 {1-3 sentences: what's the context, what did we decide, and why.}
