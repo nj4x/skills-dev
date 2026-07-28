@@ -254,14 +254,14 @@ Before invoking the agent:
 
 3. Store the raw artifact text as `artifact` (set in step 2 per type above).
 
-4. Resolve review groups before invoking the coordinator: `plan` → `A/B/C/D/E`; `design-review` → `A/B/C`; `spec` → `A/B/C/D` plus `F` only on iteration 0 when `CODEBASE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"` exists and is a readable directory; `tickets` → `A/B/C/D/E` plus `F` under the same iteration-0 pre-flight. Store the rendered list as `groups` and `group_f_ok`. Group F's pre-flight failure is non-fatal; omit it and continue with the remaining groups.
+4. Resolve review groups before invoking the coordinator: `plan` → `A/B/C/D/E/F`; `design-review` → `A/B/C/F`; `spec` → `A/B/C/D/F` plus `G` only on iteration 0 when `CODEBASE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"` exists and is a readable directory; `tickets` → `A/B/C/D/E/F` plus `G` under the same iteration-0 pre-flight. Store the rendered list as `groups` and `group_g_ok`. Group F (Lineage) always runs. Group G (Codebase Grounding) pre-flight failure is non-fatal; omit G and continue with the remaining groups.
 
 Invoke the Agent tool with:
 - `description: "Critique [implementation plan|design decisions|spec|tickets] — parallel coordinator (iteration <iteration+1>)"` (select label from `artifact_type`: `plan` → "implementation plan", `design-review` → "design decisions", `spec` → "spec", `tickets` → "tickets")
 - `model: <critic_model>` (from Step 1c)
 - `prompt` (prepend the higher-effort line if `critic_effort == higher`):
   ```
-  You are a parallel critic coordinator. The orchestrator has resolved the active groups; spawn exactly those groups IN A SINGLE MESSAGE so they run in parallel: `<groups>` (design-review: A/B/C; spec: A/B/C/D on iteration > 0, A/B/C/D/F on iteration 0 when Group F pre-flight succeeds; tickets: A/B/C/D/E on iteration > 0, A/B/C/D/E/F on iteration 0 when Group F pre-flight succeeds; plan: A/B/C/D/E). Each sub-agent reviews the full artifact through its assigned lenses only. After all sub-agents respond, merge their verdicts and return a single JSON result.
+  You are a parallel critic coordinator. The orchestrator has resolved the active groups; spawn exactly those groups IN A SINGLE MESSAGE so they run in parallel: `<groups>` (design-review: A/B/C/F; spec: A/B/C/D/F on iteration > 0, A/B/C/D/F/G on iteration 0 when Group G pre-flight succeeds; tickets: A/B/C/D/E/F on iteration > 0, A/B/C/D/E/F/G on iteration 0 when Group G pre-flight succeeds; plan: A/B/C/D/E/F). Each sub-agent reviews the full artifact through its assigned lenses only. After all sub-agents respond, merge their verdicts and return a single JSON result.
 
   **Append to every group:** the SHARED REVIEW CONTRACT below, then `[ARTIFACT]`.
 
@@ -355,8 +355,58 @@ Invoke the Agent tool with:
   Each major finding must cite the ticket slug(s) and exact field/value discrepancy.
   [END IF]
 
-  [IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_f_ok]
-  GROUP F — Codebase Grounding:
+  GROUP F — Lineage Auditing:
+  You are an adversarial reviewer focused on LINEAGE AUDITING. This group runs on ALL artifact types in two stages.
+
+  **Stage 1 — Universal pre-gate (always runs)**:
+  Identify all in-scope artifacts using these five path-convention globs:
+  - `.data/requirements/*-FS-*.md`
+  - `.data/requirements/*-SRS-*.md`
+  - `docs/adr/*.md`
+  - `.scratch/*/spec.md`
+  - `.scratch/*/issues/*.md`
+
+  For each matched artifact, check for a `lineage-rules` frontmatter key:
+  - Missing key → **Major**: "Artifact missing `lineage-rules` frontmatter; lineage cannot be audited." (No further Group F checks on this artifact.)
+  - Exception: `docs/adr/` files whose filename prefix is `< 0056` (e.g. `0001-` through `0055-`) → **Informational** (legacy artifact; user must confirm whether to retrofit)
+  - `lineage-rules: exempt` → **Informational** (opted out); skip further checks for this artifact
+  - Blank, null, or empty-list `lineage-rules` → same as missing key (Stage-1 Major)
+
+  **Artifact-type → Required Source Field Mapping** (from ADR-0056 §2):
+
+  | Artifact type | Required source field |
+  |---|---|
+  | FS | none (root) |
+  | SRS | `**Source FS**:` |
+  | ADR | `**Source SRS**:` |
+  | Spec | `**Source ADR**:` |
+  | Ticket (spec-linked) | `**Spec**:` |
+  | Ticket (adr-direct) | `**Source ADR**:` |
+  | Companion | `**Source SRS**:` |
+
+  **Stage 2 — Content-validation gate (runs when `lineage-rules` is non-empty, non-`root`, non-`exempt`)**:
+  - Consult the artifact-type → required source field mapping above to determine which `**Source X**:` field is required
+  - **Ticket subtype dispatch** (`.scratch/*/issues/*.md` artifacts): inspect `ticket-subtype` frontmatter key — value `adr-direct` → use adr-direct row; absent or any other value → use spec-linked row
+  - For each `**Source X**:` field present in the artifact body, extract referenced IDs
+  - Use convention-based lookup to verify each ID exists in its source document:
+    - FS IDs: search `.data/requirements/*-FS-*.md`
+    - SRS IDs: search `.data/requirements/*-SRS-*.md`
+    - ADR IDs: search `docs/adr/*.md` by filename
+    - Spec slugs: search `.scratch/*/spec.md`
+    - Ticket files: search `.scratch/*/issues/*.md`
+  - Findings:
+    - Missing anchor (required `**Source X**:` field absent for this artifact type): **Major**
+    - Dangling reference (ID not found in source): **Critical**
+    - Circular reference (A traces to B traces to A): **Critical**
+    - Source document not found: **Critical**
+
+  **Special cases**:
+  - `lineage-rules: root` → Stage-2 exclusion; no further checks
+  - `lineage-rules: companion of SRS` → restrict Stage-2 to `**Source SRS**:` field only; skip all other Source fields
+  - ADR-direct tickets (`ticket-subtype: adr-direct` + `**Source ADR**:` present): `**Spec**:` is optional; skip the missing-anchor Major finding for the Spec field only
+
+  [IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_g_ok]
+  GROUP G — Codebase Grounding:
   You are an adversarial reviewer focused on CODEBASE GROUNDING. `CODEBASE_ROOT` is provided below. Evaluate ONLY:
   - Verify every named existing function, method, class, config key, schema field, DB column, and type cited by the artifact exists at its cited location.
   - Do not flag intentionally new artifacts.
@@ -378,7 +428,7 @@ Invoke the Agent tool with:
   ---
 
   [IF artifact_type IN {spec, tickets}]
-  CODEBASE_ROOT: <CODEBASE_ROOT derived from $CLAUDE_PROJECT_DIR, falling back to $PWD; Group F is omitted when this is not a readable directory>
+  CODEBASE_ROOT: <CODEBASE_ROOT derived from $CLAUDE_PROJECT_DIR, falling back to $PWD; Group G is omitted when this is not a readable directory>
   [END IF]
 
   [IF artifact_type == design-review]
