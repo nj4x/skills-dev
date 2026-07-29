@@ -24,6 +24,16 @@ disable-model-invocation: true
 
 ## Phase 2 — Grilling (Gap Resolution)
 
+### Lineage level model
+
+- **FS** defines high-level product requirements: user/system outcomes and material constraints.
+- **SRS** defines the system contracts that satisfy FS: entities, interfaces, workflows, and invariants. Companion API/Data-View documents project an SRS and cite its requirement IDs.
+- **ADR** records lower-level architectural or implementation decisions that realize an existing SRS contract; an ADR does not need a one-to-one SRS requirement when a broader interface or invariant governs it.
+
+Before treating an ADR as unanchored, search the SRS and companions marked `lineage-rules: companion of SRS` for the governing capability, interface, entity, workflow, or invariant. A companion may locate a cited SRS requirement ID but cannot itself anchor the ADR. Anchor to that validated SRS ID when it covers the ADR's behavior, even if the ADR selects the concrete schema, library, validation method, storage shape, or provider translation.
+
+Only when no existing SRS requirement ID covers the ADR's behavior, grill a proposed new SRS requirement. If that requirement has no defensible product outcome or constraint in FS, grill and define a new FS requirement first. Do not create a duplicate SRS requirement merely because the ADR is more detailed than its existing system contract.
+
 Work through each artifact type that has unresolved chain links. Ask the user for each missing anchor:
 
 | Artifact | Missing field | Question to ask |
