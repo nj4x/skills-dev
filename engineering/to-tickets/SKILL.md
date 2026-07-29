@@ -8,7 +8,7 @@ The issue tracker and triage label vocabulary should have been provided to you �
 ## Process
 
 ### 1. Gather context
-Work from whatever is in the conversation. Fetch referenced specs or issue numbers in full. If `.data/requirements/` exists, read any relevant requirements docs for context. Track which requirement IDs each ticket will satisfy — inline `(ID)` tags in the source spec map straight onto the ticket's `Requirements:` field.
+Work from whatever is in the conversation. Fetch referenced specs or issue numbers in full. If `.data/requirements/` exists, read relevant FS/SRS contracts and `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary). Track which requirement IDs each ticket will satisfy — inline `(ID)` tags in the source spec map straight onto the ticket's `Requirements:` field. Put invocation and realization work under the source ADR, not a new FS/SRS obligation.
 
 ### 2. Explore the codebase (optional)
 If not already done, explore to understand current state. Read `docs/agents/domain.md` for the domain doc layout. Use domain glossary vocabulary, respect ADRs. Look for prefactor opportunities. Search source code conceptually and cross-file; search docs and requirements as a document corpus; for architecture-level questions start with a global search before reading individual files.

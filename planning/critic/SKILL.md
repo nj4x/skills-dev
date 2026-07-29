@@ -400,6 +400,11 @@ Invoke the Agent tool with:
     - Circular reference (A traces to B traces to A): **Critical**
     - Source document not found: **Critical**
 
+  **Requirements boundary**: Consult `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary).
+  - A new or materially edited FS/SRS item that defines an invocation or realization mechanism rather than an outcome, capability, lifecycle behavior, or safety contract → **Major**.
+  - A new or materially edited companion obligation → **Major**. Existing unchanged companions are legacy projections: report uncited or mechanism-bound content as drift, without blocking approval.
+  - An ADR/spec may record invocation or realization detail when it traces to the governing SRS requirement ID; do not flag it as a requirements-boundary violation.
+
   **Special cases**:
   - `lineage-rules: root` → Stage-2 exclusion; no further checks
   - `lineage-rules: companion of SRS` → restrict Stage-2 to `**Source SRS**:` field only; skip all other Source fields

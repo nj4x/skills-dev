@@ -4,6 +4,16 @@ description: Retrofit an existing repo with lineage frontmatter and inline sourc
 disable-model-invocation: true
 ---
 
+## Requirements boundary
+
+FS records product outcomes, capabilities, lifecycle behavior, and material safety constraints. SRS records the system capability, lifecycle, and safety contracts that satisfy FS. Neither defines invocation mechanisms: endpoints, transports, topics, request/response schemas, storage representations, providers, libraries, modules, or deployment topology.
+
+An external mechanism mandated by product, regulation, or a partner is an FS/SRS constraint only when stated through its required observable effect; its realization remains an ADR decision. API contracts, use-case sequences, and data realization belong in the ADR that selects or changes them. Include the relevant ADR section only when that mechanism is decided or changed.
+
+New or materially edited FS/SRS items must meet this boundary. Rewrite mechanism-bound source material to its outcome or contract, then route the mechanism to an ADR. Preserve unchanged legacy detail, but report it as drift. Legacy companion documents are read-only projections: validate their cited SRS IDs, do not add obligations to them, and do not create new companions.
+
+All lineage-enabled skills must consult this section when authoring, refining, linking, or auditing requirements.
+
 ## Phase 1 — Auto-Inference (FS→SRS only)
 
 1. Scan all FS documents at `.data/requirements/*-FS-*.md`. For each, extract requirement IDs and one-line summaries.
@@ -27,7 +37,7 @@ disable-model-invocation: true
 ### Lineage level model
 
 - **FS** defines high-level product requirements: user/system outcomes and material constraints.
-- **SRS** defines the system contracts that satisfy FS: entities, interfaces, workflows, and invariants. Companion API/Data-View documents project an SRS and cite its requirement IDs.
+- **SRS** defines the system capability, lifecycle, and safety contracts that satisfy FS. Legacy companion documents project an SRS and cite its requirement IDs.
 - **ADR** records lower-level architectural or implementation decisions that realize an existing SRS contract; an ADR does not need a one-to-one SRS requirement when a broader interface or invariant governs it.
 
 Before treating an ADR as unanchored, search the SRS and companions marked `lineage-rules: companion of SRS` for the governing capability, interface, entity, workflow, or invariant. A companion may locate a cited SRS requirement ID but cannot itself anchor the ADR. Anchor to that validated SRS ID when it covers the ADR's behavior, even if the ADR selects the concrete schema, library, validation method, storage shape, or provider translation.
@@ -67,7 +77,7 @@ Write `lineage-rules` frontmatter to all artifacts per ADR-0056:
 | Spec | `spec` | structured rule list referencing ADR anchor |
 | Ticket (spec-linked) | `ticket` | structured rule list referencing Spec |
 | Ticket (adr-direct) | `ticket` (+ `ticket-subtype: adr-direct`) | structured rule list referencing ADR |
-| Companion | appropriate type | `companion of SRS` + `source-srs:` path |
+| Legacy companion | appropriate type | preserve `companion of SRS` + `source-srs:` path; do not create new companions |
 
 ### 3.2 Inline source-reference fields
 

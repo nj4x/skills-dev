@@ -6,8 +6,10 @@ Requirements can be classified as the following types:
 
 | Type | Abbreviation | Description |
 |------|--------------|-------------|
-| **Feature Set** | FS | High level feature requirements and core policies |
-| **Software Requirements Specification** | SRS | Technical and architectural requirements (e.g., database choice, event publishing) |
+| **Feature Set** | FS | Product outcomes, capabilities, lifecycle behavior, and material safety constraints |
+| **Software Requirements Specification** | SRS | System capability, lifecycle, and safety contracts that satisfy FS |
+
+Invocation and realization mechanisms belong in ADRs, not FS/SRS: endpoints, transports, topics, schemas, storage, providers, libraries, modules, and deployment topology. Consult [Requirements boundary](../../../engineering/setup-lineage/SKILL.md#requirements-boundary) before classifying or drafting an item.
 
 > **Note**: SRS should be informed by and adhere to FS.
 

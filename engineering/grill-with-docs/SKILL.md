@@ -4,7 +4,7 @@ description: A relentless interview to sharpen a plan or design, which also crea
 disable-model-invocation: true
 ---
 
-Run a `/grilling` session, using the `/domain-modeling` skill to capture decisions as Architecture Decision Records.
+Run a `/grilling` session, using the `/domain-modeling` skill to capture decisions as Architecture Decision Records. Consult `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary): FS/SRS state outcomes and contracts; ADRs record invocation and realization mechanisms.
 
 ## Session start
 

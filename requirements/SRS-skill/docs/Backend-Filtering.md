@@ -1,6 +1,6 @@
 # Backend Filtering Guide
 
-This document provides rules and criteria for filtering Feature Set (FS) requirements to identify those relevant to back-end systems when creating SRS documents.
+This document provides rules and criteria for filtering Feature Set (FS) requirements into capability-level SRS contracts. Consult [Requirements boundary](../../../engineering/setup-lineage/SKILL.md#requirements-boundary): exclude invocation and realization mechanisms.
 
 ## Overview
 
@@ -56,10 +56,10 @@ Operations that communicate with other systems:
 
 | Pattern | Example | Why Back-End |
 |---------|---------|--------------|
-| "The system shall call [API]" | "call Role Assignment API" | API integration |
-| "The system shall publish [event]" | "publish RoleCreated event" | Event publishing |
-| "The system shall consume [event]" | "listen for UserDeleted" | Event consumption |
-| "The system shall sync [data]" | "sync with directory service" | Data synchronization |
+| "The system shall obtain [fact]" | "determine whether a role remains assigned" | Required external information |
+| "The system shall notify [stakeholder]" | "make role creation observable" | Required observable effect |
+| "The system shall react to [change]" | "revoke access after a user is removed" | Required lifecycle behavior |
+| "The system shall keep [data] consistent" | "keep directory membership current" | Required consistency contract |
 
 ### 5. Data Retrieval
 

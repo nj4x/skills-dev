@@ -28,43 +28,6 @@ This document defines the standard structure for Software Requirements Specifica
 
 ---
 
-## Module View Diagram (Optional)
-
-> **⚠️ OPTIONAL**: This section is only included if the user confirmed module view generation at **Checkpoint #2.5** in the SRS-skill workflow. Omit this entire section if the user declined.
-
-This section provides a high-level architectural view of the system modules and their relationships.
-
-### System Architecture
-
-![Module View Diagram](./diagrams/[DOMAIN]-module-view.drawio.svg)
-
-*Figure 1: Module view diagram showing system components and their interactions*
-
-### Module Descriptions
-
-| Module | Responsibility | Dependencies |
-|--------|----------------|--------------|
-| [Module Name] | [Brief description of module responsibility] | [List of dependent modules] |
-
-### Notes
-
-- The diagram should be created using draw.io and exported as SVG
-- Store the source file (`.drawio`) alongside the SVG for future edits
-- Update the diagram when adding new modules or changing relationships
-
----
-
-## Dependencies
-
-This section lists external systems and services that this module depends on. Dependencies were identified during requirements analysis and approved by stakeholders.
-
-| # | System/Service | Type | Description | User Notes |
-|---|----------------|------|-------------|------------|
-| 1 | [Service Name] | API | [What API is called and why] | [Stakeholder notes/clarifications] |
-| 2 | [Service Name] | Event | [What event is consumed and why] | [Stakeholder notes/clarifications] |
-
----
-
 ## Entity Reference
 
 | Entity | Description |
@@ -92,55 +55,6 @@ This section lists external systems and services that this module depends on. De
 | Event Name | Source | Handler | Description |
 |------------|--------|---------|-------------|
 | [EventName] | [Origin system] | [How processed] | [Expected behavior] |
-
----
-
-## API Reference
-
-> **Note**: This section provides a summary of available APIs. For detailed specifications including request/response schemas, status codes, and examples, see the companion document: **[DOMAIN]-API-Definition-[VERSION].md**
-
-### Internal APIs
-
-| Operation | Method | Path | Description |
-|-----------|--------|------|-------------|
-| [OpName] | [HTTP] | /internal/[path] | [Brief description] |
-
-### Administrative APIs
-
-| Operation | Method | Path | Description |
-|-----------|--------|------|-------------|
-| [OpName] | [HTTP] | /v2/[path] | [Brief description] |
-
-### Related Documents
-
-- **API Definition Document**: [DOMAIN]-API-Definition-[VERSION].md - Full API specifications with request/response schemas, status codes, error handling, and examples
-
----
-
-## Main Use Cases
-
-This section outlines the primary use cases implemented by this system. Detailed sequence diagrams for each use case are provided in the companion document.
-
-### Use Case Summary
-
-| UC ID | Use Case Name | Primary Actor | Description |
-|-------|---------------|---------------|-------------|
-| UC-001 | [Use Case Name] | [Actor] | [Brief description of the use case] |
-| UC-002 | [Use Case Name] | [Actor] | [Brief description of the use case] |
-
-### Use Case Descriptions
-
-#### UC-001: [Use Case Name]
-
-- **Actor**: [Primary actor]
-- **Preconditions**: [What must be true before execution]
-- **Main Success Scenario**: [Brief summary of happy path]
-- **Alternative Scenarios**: [Brief summary of alternatives]
-- **Postconditions**: [What is true after successful execution]
-
-### Related Documents
-
-- **Use Case Diagrams Document**: [DOMAIN]-Use-Case-Diagrams-[VERSION].md - Sequence diagrams for each use case with detailed actor interactions and message flows
 
 ---
 
@@ -175,23 +89,8 @@ This section outlines the primary use cases implemented by this system. Detailed
 - The system shall [requirement statement 2]
 - [Additional requirement statements]
 
-**Inputs:**
-- [Input field 1]: [Description]
-- [Input field 2]: [Description]
-
-**Outputs:**
-- [Output field 1]: [Description]
-- [Output field 2]: [Description]
-
-**Test Cases:** *(Optional — only if confirmed at Checkpoint #2.5)*
-
-1. [SRS-ID]-P-001
-   - Given [precondition]
-   - [HTTP Method] `[Endpoint]` API call must return a `[Status]` status with [expected response]
-
-2. [SRS-ID]-N-001
-   - Given [failure condition]
-   - [HTTP Method] `[Endpoint]` API call must return a `[Error Status]` status with an `error.code: [ERROR_CODE]`
+**Lifecycle and Safety Conditions:**
+- [Precondition, postcondition, invariant, or failure behavior]
 
 **Source FS Requirements:**
 - [FS-ID-001]: [Brief FS requirement description]
@@ -206,16 +105,6 @@ This section outlines the primary use cases implemented by this system. Detailed
 | [SRS-X.0.0] | [FS-001, FS-002] | [Brief description] |
 
 ---
-
-## Appendix B: Test Case Summary (Optional)
-
-> **⚠️ OPTIONAL**: This appendix is only included if the user confirmed test case generation at **Checkpoint #2.5**. Omit if test cases were declined.
-
-| SRS ID | Total | P (Positive) | N (Negative) | E (Edge) | S (Security) |
-|--------|-------|--------------|--------------|----------|--------------|
-| [X.0.0] | [N] | [N] | [N] | [N] | [N] |
-| **Total** | [Sum] | [Sum] | [Sum] | [Sum] | [Sum] |
-
 
 ---
 
@@ -288,11 +177,7 @@ When generating HTML output (like Confluence), use nested panel structure:
     <ul>
       <li>[Requirement bullet]</li>
     </ul>
-    <p><strong>Test Cases:</strong></p>
-    <ol>
-      <li>[Test case 1]</li>
-      <li>[Test case 2]</li>
-    </ol>
+    <p><strong>Lifecycle and Safety Conditions:</strong> [Precondition, postcondition, invariant, or failure behavior]</p>
   </panel>
 </panel>
 ```
@@ -305,35 +190,18 @@ Every SRS document MUST include:
 
 - [ ] Document Information header
 - [ ] Source Feature Sets table
-- [ ] Dependencies section (with user-approved dependencies and notes)
 - [ ] Entity Reference (if entities exist)
-- [ ] Event Reference (if events exist)
-- [ ] API Reference (summary)
-- [ ] Main Use Cases
+- [ ] Event Reference (if event semantics are required)
 - [ ] At least one Feature Set section (X.0)
 - [ ] At least one Requirement subsection (X.0.Y)
+- [ ] Lifecycle and safety conditions where relevant
 - [ ] Source FS attribution for each requirement
 - [ ] Appendix A: Traceability Matrix
 - [ ] Document History
 
-### Optional Sections (Include if confirmed at Checkpoint #2.5)
+### Excluded Sections
 
-- [ ] Module View Diagram — only if `generate_module_view = true`
-- [ ] Test Cases for each requirement — only if `generate_test_cases = true`
-- [ ] Appendix B: Test Case Summary — only if `generate_test_cases = true`
-
-### Excluded Sections (NOT part of standard SRS)
-
-The following appendices are **NOT generated** by the SRS skill and must **NOT be added** to SRS documents:
-
-- ❌ **Appendix C: Error Code Reference** — Error codes belong in the API Definition companion document (`[DOMAIN]-API-Definition-[VERSION].md`), not in the SRS. Do NOT add an Appendix C to SRS documents.
-
-### Companion Documents
-
-Every SRS should be accompanied by:
-
-- [ ] API Definition Document ([DOMAIN]-API-Definition-[VERSION].md)
-- [ ] Use Case Diagrams Document ([DOMAIN]-Use-Case-Diagrams-[VERSION].md)
+Do not add API contracts, sequence diagrams, data-realization details, module views, test cases, or companion-document links. Those mechanisms belong in the ADR that selects or changes them; consult [Requirements boundary](../../../engineering/setup-lineage/SKILL.md#requirements-boundary).
 
 ---
 

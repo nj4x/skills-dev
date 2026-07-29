@@ -121,6 +121,8 @@ See [MCP-Usage.md](<skill dir>/docs/MCP-Usage.md) for additional MCP tool detail
 
 ## 4. Identify Categories
 
+Read `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary). Draft only outcomes, capabilities, lifecycle behavior, and material safety constraints; rewrite invocation mechanisms as observable constraints and route their realization to an ADR.
+
 Follow rules in [Categorization.md](<skill dir>/docs/Categorization.md) for:
 - Requirement type classification (FS vs SRS)
 - Category acronym conventions
@@ -175,9 +177,10 @@ Follow [Quality-Check.md](<skill dir>/docs/Quality-Check.md) for:
    - Missing edge cases or error conditions
    - Requirements that could be more specific
    - Gaps in coverage based on source documents
-3. **Provide improvement suggestions** to the user
-4. **Ask explicitly**: "Would you like to make any changes, additions, or refinements to these requirements?"
-5. **Wait for user response** - Do NOT proceed until user responds
+3. **Block finalization** for any new or materially edited requirement that defines an invocation or realization mechanism; rewrite it to an outcome, capability, lifecycle behavior, or safety constraint.
+4. **Provide improvement suggestions** to the user
+5. **Ask explicitly**: "Would you like to make any changes, additions, or refinements to these requirements?"
+6. **Wait for user response** - Do NOT proceed until user responds
 
 ### 7.2 Generate New Version (if changes requested)
 

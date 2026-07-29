@@ -29,6 +29,11 @@ Only include these when they add genuine value. Most ADRs won't need them.
 - **Considered Options** — only when the rejected alternatives are worth remembering
 - **Consequences** — only when non-obvious downstream effects need to be called out
 - **Requirements** — a `Requirements:` line listing the requirement IDs the decision traces to (e.g. `Requirements: REQ-1234`), when the ADR is driven by a formal requirement
+- **API Contract** — required when the decision selects or changes an API or invocation contract; state the operation, inputs, outputs, failure behavior, and compatibility constraints.
+- **Use Case Sequence** — required when the decision selects or changes a multi-party interaction sequence; include a concise sequence diagram or numbered exchange.
+- **Data Realization** — required when the decision selects or changes persistence shape, data representation, or provider translation; state the relevant model and invariants.
+
+FS/SRS define outcomes and system contracts. Invocation and realization mechanisms belong here; consult [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary). Include only the mechanism sections the ADR decides.
 
 ## Numbering
 

@@ -14,7 +14,7 @@ Wayfinder is **planning** by default: each ticket resolves a decision, and the m
 
 ## Requirements lineage when decisions create ADRs
 
-Treat FS as high-level product requirements, SRS as the system contracts satisfying them, and ADRs as lower-level architectural or implementation decisions. Before a wayfinding decision creates or reanchors an ADR, search the SRS corpus and companion API/Data-View documents for the existing governing capability, interface, entity, workflow, or invariant. Use that existing SRS contract when it covers the decision; do not manufacture a duplicate SRS merely because the ADR is more detailed. If no SRS contract covers the behavior, make defining the missing SRS a prerequisite decision; if it lacks an FS product basis, define the FS requirement first.
+Consult `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary). Before a wayfinding decision creates or reanchors an ADR, search the SRS corpus and legacy companions for the governing capability, lifecycle, or safety contract. Use the existing SRS requirement ID when it covers the decision; do not manufacture a duplicate SRS merely because the ADR records its invocation or realization. If no SRS contract covers the behavior, make defining the missing SRS a prerequisite decision; if it lacks an FS product basis, define the FS requirement first.
 
 ## Refer by name
 

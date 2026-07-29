@@ -72,24 +72,22 @@ Look for phrases indicating completed actions:
 | "The system shall grant [permission]" | `PermissionGranted` |
 | "The system shall revoke [permission]" | `PermissionRevoked` |
 
-### Pattern 3: External System Calls
+### Pattern 3: External State Changes
 
-Requirements mentioning calls to external systems suggest events:
+Requirements that react to an external state change may imply event semantics:
 
 ```
-"The system shall call the [External API] to..."
+"When the external assignment changes, the system shall..."
 ```
 
-May indicate:
-- **Consumed event** (if reacting to external change)
-- **Produced event** (if notifying external systems)
+Determine whether the contract requires a consumed event or a produced event. Transport and invocation remain ADR decisions.
 
 **Example:**
 ```
-"The system shall call the Role Assignment API to check if the role is currently assigned"
+"When a role is no longer assigned, the system shall permit deletion"
 ```
-- This is a synchronous call, not an event
-- But completion of the delete operation → `RoleDeleted` event
+- The requirement is a lifecycle constraint, not an invocation mechanism
+- A `RoleDeleted` event may express completion when the governing contract requires it
 
 ### Pattern 4: Cascading Effects
 
