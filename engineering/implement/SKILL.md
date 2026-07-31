@@ -9,7 +9,7 @@ After each substantive change, run typechecking and the test file(s) that cover 
 
 Once done, invoke the `code-review` skill via `Skill("code-review")` — not via the Agent tool's `subagent_type` parameter.
 
-## Verify-then-check checklist workflow (ADR-0062)
+## Verify-then-check checklist workflow
 
 This phase runs **only after code-review produces zero Major or Critical findings**. If any remain, fix them first and re-run the review before proceeding.
 
