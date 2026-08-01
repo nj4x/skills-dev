@@ -49,9 +49,9 @@ Work through each artifact type that has unresolved chain links. Ask the user fo
 | Artifact | Missing field | Question to ask |
 |----------|---------------|-----------------|
 | SRS item | `**Source FS**:` (no match from Phase 1) | "Which FS requirement does `<SRS-ID>` trace to? Options: existing ID / create new FS item / skip" |
-| ADR | `**Source SRS**:` | "Which SRS requirement does ADR `<filename>` trace to? Provide an SRS ID." |
-| Spec | `**Source ADR**:` | "Which ADR(s) does this spec derive from? Provide paths under `docs/adr/`." |
-| Ticket | `**Spec**:` or `**Source ADR**:` | "Does this ticket trace to a spec slug (`.scratch/<slug>/spec.md`) or directly to an ADR?" |
+| ADR | `**Source SRS**:` | "Which SRS requirement does ADR `<filename>` trace to? Options: existing SRS ID / create new SRS item / skip" |
+| Spec | `**Source ADR**:` | "Which ADR(s) does this spec derive from? Options: existing path(s) under `docs/adr/` / create new ADR / skip" |
+| Ticket | `**Spec**:` and/or `**Source ADR**:` | "Does this ticket trace to a spec slug, an ADR, or both? Options: spec slug / ADR path / both / skip" |
 
 For "create new FS item" responses: draft the requirement in EARS format, get user approval, write to the relevant FS document, then use the new ID as the anchor.
 
@@ -76,19 +76,21 @@ Write `lineage-rules` frontmatter to all artifacts per ADR-0056:
 | ADR | `adr` | structured rule list referencing SRS anchor |
 | Spec | `spec` | structured rule list referencing ADR anchor |
 | Ticket (spec-linked) | `ticket` | structured rule list referencing Spec |
+| Ticket (spec-linked + ADR) | `ticket` | structured rule list referencing both Spec and ADR |
 | Ticket (adr-direct) | `ticket` (+ `ticket-subtype: adr-direct`) | structured rule list referencing ADR |
-| Legacy companion | appropriate type | preserve `companion of SRS` + `source-srs:` path; do not create new companions |
+| Legacy companion | appropriate type | preserve `lineage-rules: companion of SRS`; do not write new companions |
 
 ### 3.2 Inline source-reference fields
 
-Write `**Source X**:` fields to each artifact body, one field per artifact, immediately after the frontmatter block:
+Write `**Source X**:` fields to each artifact body immediately after the frontmatter block:
 
 - FS: no source field (root)
 - SRS: `**Source FS**: <FS-ID>`
 - ADR: `**Source SRS**: <SRS-ID>`
 - Spec: `**Source ADR**: docs/adr/<filename>.md`
-- Ticket (spec-linked): `**Spec**: <feature-slug>`
+- Ticket (spec-linked): `**Spec**: <feature-slug>` (may also carry `**Source ADR**:` if user supplied both)
 - Ticket (adr-direct): `**Source ADR**: docs/adr/<filename>.md`
+- Legacy companion: validate existing `**Source SRS**:` IDs; do not overwrite or add
 
 ### 3.3 Lineage report
 
