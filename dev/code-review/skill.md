@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review pull requests, committed branches, or working-tree changes against project standards, requirements, security patterns, and architecture constraints. Use when reviewing a PR, validating a branch before push, checking uncommitted changes, or producing approve/request-changes feedback.
+description: Review a PR, committed branch, or working-tree changes against project standards, requirements, security patterns, and architecture constraints, ending in an approve/request-changes verdict. Use when reviewing a branch before push or merge, or checking uncommitted changes.
 ---
 
 # Code Review Skill
@@ -50,19 +50,13 @@ The default `--mode review` is **read-only** — it reviews and reports, never m
 
 ### Consent definitions
 
-- **announced (informational):** the agent prints a banner of what it is about to do; no user reply required. Used for non-mutating progress.
-- **BLOCKING consent gate (hard gate):** the agent prints the exact git command + target, then STOPS and waits for an explicit user reply before executing. It does not proceed on silence, does not infer consent, and does not batch multiple mutating actions behind one approval — same force as the Step 1.5 print-verbatim-then-wait gate. An operator may pre-authorize specific actions up front (e.g. "autofix and commit without stopping"); merge-to-main is **never** implicitly pre-authorized.
+Two consent levels — **announced** (informational banner, no reply needed) and **BLOCKING consent gate** (print exact command + target, STOP, wait for explicit reply; never proceed on silence, never batch approvals; merge-to-main never implicitly pre-authorized). Full definitions in [workflow.md](docs/workflow.md) Step 14 *Consent model*.
 
 ---
 
 ## Scope Resolution Contract
 
-Resolve scope before any repo gate, PR gate, build gate, diff retrieval, or review analysis.
-
-1. If `--scope committed`, `--scope working-tree`, or `--scope uncommitted` is supplied, use it. `--scope uncommitted` is an explicit alias for `working-tree` — accept it directly, do not treat it as unrecognized.
-2. If the user explicitly says `uncommitted`, `working tree`, `working-tree`, `staged`, `unstaged`, `local changes`, `my diff`, or `pending changes`, use `working-tree`.
-3. If the user explicitly says `committed`, `branch`, `commits`, `before push`, `ready to push`, `PR`, or `pull request`, use `committed`.
-4. For ambiguous requests, including bare `/code-review`, ask the user to choose scope before starting review work. Offer `committed` as the default option.
+Resolve scope before any repo gate, PR gate, build gate, diff retrieval, or review analysis. Explicit `--scope` (including the `uncommitted` alias for `working-tree`) wins; otherwise map the user's scope words; for ambiguous requests including bare `/code-review`, ask and offer `committed` as the default. Full keyword lists and the exact ask string are authoritative in [workflow.md](docs/workflow.md) *Scope Resolution*.
 
 ## Activation Contract
 

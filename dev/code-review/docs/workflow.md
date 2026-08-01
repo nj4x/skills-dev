@@ -4,12 +4,7 @@ Analyze code changes against project standards, security patterns, requirement d
 
 ## Parameters
 
-| Parameter | Values | Default | Effect |
-|-----------|--------|---------|--------|
-| `--effort` | `low`, `medium`, `high` | `high` | Analysis depth |
-| `--baseline` | `merge-base`, `merge-preview` | `merge-base` | `merge-base` (default) diffs `origin/<base>...HEAD` to match the GitHub PR view; `merge-preview` merges the base branch in a disposable worktree to surface integration conflicts |
-| `--scope` | `committed`, `working-tree` (alias `uncommitted`) | `committed` policy, confirm if omitted | `committed` compares branch commits against the PR base branch using the merge-base (three-dot) view; `working-tree` compares uncommitted local changes against `HEAD`. `uncommitted` is an explicit alias for `working-tree` |
-| `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only (report only). `autofix` = review + autonomously fix Major/Critical + regression tests + selective suite (testing skill; full-suite fallback on uncovered files) + commit (stops after commit). `review-to-merge` = `autofix` + push + safe merge to main. Mutating modes imply `--effort high`. |
+The parameter summary (values, defaults, one-line effects for `--effort`, `--scope`, `--baseline`, `--mode`) is authoritative in [skill.md](../skill.md) *Parameters*. The per-value behavior tables below are the detailed spec.
 
 ### `--mode` behavior
 
@@ -25,8 +20,8 @@ Three distinct values, **no synonyms**. An unrecognized or near-miss `--mode` va
 
 | Value | Analysis mode | When to use |
 |-------|--------------|-------------|
-| `low` | Single inline pass through Steps 5–10 | Quick check, very small diff, explicit legacy mode |
-| `medium` | 3 parallel Explore agents (Correctness/Security, Architecture/Compliance, Quality/Standards) replace Steps 5–10 | Faster review where adversarial verification is not required |
+| `low` | Single Explore subagent (Step 4.9) applying the Compliance Reference (Steps 5–10) | Quick check, very small diff, explicit legacy mode |
+| `medium` | 4 parallel Explore agents (Step 4.1: Correctness/Security, Architecture/Compliance, Quality/Standards, Maintainability Smells) | Faster review where adversarial verification is not required |
 | `high` *(default)* | Fan-out (medium) + adversarial verifier per Critical/Major finding (Step 4.2) | Default — maximum confidence, every Critical/Major finding independently verified |
 
 ### `--scope` behavior
@@ -218,11 +213,7 @@ Parse the output for divergence indicators (e.g., `"Your branch and 'origin/...'
   - **IF the agent does not ask and self-decides** → this is a workflow violation; the review must restart from this gate
 - **IF local branch is up to date with remote** → proceed normally
 
-> ⛔ **FORBIDDEN PATTERNS** (must never be used as a substitute for asking the user):
-> - "The intention is to review the current state of the branch" → **FORBIDDEN self-rationalization**
-> - "I'll proceed with local HEAD since this is a review skill" → **FORBIDDEN self-rationalization**
-> - Silently noting "⚠️ remote has unpulled commits" in the report without asking the user first → **FORBIDDEN**
-> - Treating divergence as informational only → **FORBIDDEN**
+> ⛔ **On divergence, the only valid action is asking the user the pull question above and waiting for the reply.** Any self-rationalization for proceeding without asking — reviewing "current state", defaulting to local HEAD, or treating divergence as merely informational and noting it in the report — is a workflow violation that restarts the review from this gate.
 
 All subsequent committed-scope diff/log commands use `origin/$REVIEW_BASE_REF`, not local `main`. Because `git diff A...B` computes the merge-base of the local refs, the three-dot result is only PR-accurate after this fetch of `origin/$REVIEW_BASE_REF` and the current branch.
 
@@ -642,8 +633,8 @@ Prompt:
 >
 > **Architecture & Compliance (unchanged):**
 > - Architecture: module boundary violations, circular dependencies, wrong-layer access (entity leaking beyond repository), field injection anti-patterns, N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
-> - API compliance: HTTP method/path/error-code alignment with PROJECT_API_DEFINITION, OpenAPI annotation completeness, API documentation parity (consistent-or-better vs API Definition text)
-> - Data View compliance: PK/SK prefixes, GSI count/names/projections, attribute naming, access-pattern mapping — validate against PROJECT_DATA_VIEW when DDB entities/repos/configs are changed
+> - API compliance: HTTP method/path/error-code alignment with PROJECT_API_DEFINITION, OpenAPI annotation completeness, API documentation parity (consistent-or-better vs API Definition text). Apply the framework-validation `BAD_REQUEST` allowance and the API-doc severity policy from workflow.md Steps 8.x.1 and 8.y — read them before grading any error-code or documentation mismatch.
+> - Data View compliance: PK/SK prefixes, GSI count/names/projections, attribute naming, access-pattern mapping — validate against PROJECT_DATA_VIEW when DDB entities/repos/configs are changed. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow.md Steps 8.5.1 and 8.5.2.
 > - Cross-file duplication: identify near-identical logic that can be extracted
 >
 > **Deep-Module Detection (use vocabulary from pre-read skill docs — apply to the diff only, never flag pre-existing debt the diff leaves untouched):**
@@ -678,26 +669,9 @@ Prompt:
 ### Finder D — Maintainability Smells
 
 Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Maintainability Smells** from Fowler's _Refactoring_, chapter 3. Check the diff for any of these 12 smells:
-> - **Mysterious Name** — function/variable/type whose name doesn't reveal its purpose → rename; a murky name signals murky design
-> - **Duplicated Code** — same logic shape in multiple hunks or files → extract the shared shape, call it from both
-> - **Feature Envy** — method reaching into another object's data more than its own → move it onto the data it envies
-> - **Data Clumps** — same few fields/params always travelling together → bundle into one type
-> - **Primitive Obsession** — primitive or string standing in for a domain concept → give it its own small type
-> - **Repeated Switches** — same switch/if-cascade on the same type recurs across the change → replace with polymorphism or a shared map
-> - **Shotgun Surgery** — one logical change forcing scattered edits across many files → gather into one module
-> - **Divergent Change** — one file edited for several unrelated reasons → split so each module changes for one reason
-> - **Speculative Generality** — abstraction/parameters/hooks for needs the spec doesn't have → delete; inline until a real need shows
-> - **Message Chains** — long `a.b().c().d()` navigation → hide behind one method on the first object
-> - **Middle Man** — class/function that mostly delegates onward → cut it, call the real target direct
-> - **Refused Bequest** — subclass/implementer ignoring most of what it inherits → use composition instead
->
-> Two binding rules apply:
-> - **Repo overrides baseline.** A documented repo standard (kotlin-standards.md, CONTRIBUTING) always wins; suppress any smell it endorses.
-> - **De-dup precedence.** If Finder A, B, or C already reported the same `file:line` at a higher severity, skip the smell — do not double-report.
->
-> Report each match at **Note** severity only — never grade-affecting. Each Note must name the smell, quote the relevant hunk, and suggest the fix. Prefer omission over speculation — only raise a smell you can name concretely with a specific code location.
->
+> You are a high-recall code reviewer (READ-ONLY). Your angle is **Maintainability Smells** from Fowler's _Refactoring_, chapter 3.
+> First read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and its binding rules (repo overrides baseline, skip tooling-enforced smells, Notes-only, judgement-call standard). Apply them exactly.
+> **De-dup precedence for this roster:** if Finder A, B, or C already reported the same `file:line` at a higher severity, skip the smell — do not double-report.
 > For each finding, return: `severity = NOTE`, `file:line`, `smell name`, `description`, `suggested fix`.
 > Do NOT include findings you are not confident about.
 
@@ -761,6 +735,7 @@ Prompt:
 > - Module boundary violations, circular dependencies, wrong-layer access, field-injection anti-patterns, duplication that should be extracted
 > - Naming, complexity, dependency direction, dead code, over-engineering
 > - N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
+> - API + Data View compliance when PROJECT_API_DEFINITION / PROJECT_DATA_VIEW is provided and the diff touches controllers/API models or DDB entities/repos/configs: grade per the severity policies and allowances in workflow.md Steps 8.x.1, 8.y, 8.5.1, and 8.5.2 — read them before grading any API-doc or Data View mismatch.
 >
 > **Deep-Module Detection (use vocabulary from pre-read skill docs — apply to the diff only, never flag pre-existing debt the diff leaves untouched):**
 >
@@ -786,23 +761,9 @@ Prompt:
 ### Agent 5 — Maintainability Smells
 
 Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Maintainability Smells** from Fowler's _Refactoring_, chapter 3. Check the diff for any of these 12 smells:
-> - **Mysterious Name** — function/variable/type whose name doesn't reveal its purpose → rename; a murky name signals murky design
-> - **Duplicated Code** — same logic shape in multiple hunks or files → extract the shared shape, call it from both
-> - **Feature Envy** — method reaching into another object's data more than its own → move it onto the data it envies
-> - **Data Clumps** — same few fields/params always travelling together → bundle into one type
-> - **Primitive Obsession** — primitive or string standing in for a domain concept → give it its own small type
-> - **Repeated Switches** — same switch/if-cascade on the same type recurs across the change → replace with polymorphism or a shared map
-> - **Shotgun Surgery** — one logical change forcing scattered edits across many files → gather into one module
-> - **Divergent Change** — one file edited for several unrelated reasons → split so each module changes for one reason
-> - **Speculative Generality** — abstraction/parameters/hooks for needs the spec doesn't have → delete; inline until a real need shows
-> - **Message Chains** — long `a.b().c().d()` navigation → hide behind one method on the first object
-> - **Middle Man** — class/function that mostly delegates onward → cut it, call the real target direct
-> - **Refused Bequest** — subclass/implementer ignoring most of what it inherits → use composition instead
->
-> De-dup precedence: skip a `file:line` if Agents 1, 2, 3, or 4 already reported it at any severity.
-> Report each match at **Note** severity only — never grade-affecting. Only raise a smell you can name concretely with a specific code location. Prefer omission over speculation.
->
+> You are a high-recall code reviewer (READ-ONLY). Your angle is **Maintainability Smells** from Fowler's _Refactoring_, chapter 3.
+> First read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and its binding rules (repo overrides baseline, skip tooling-enforced smells, Notes-only, judgement-call standard). Apply them exactly.
+> **De-dup precedence for this roster:** skip a `file:line` if Agents 1, 2, 3, or 4 already reported it at any severity.
 > For each finding return: `severity = NOTE`, `file:line`, `smell name`, `description`, `suggested fix`. Omit findings you are not confident about.
 
 ### Synthesis (shared)
@@ -855,6 +816,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
   1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
   2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in findings.
   3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
+  4. Read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and binding rules for the maintainability-smells dimension.
 - This analysis brief:
 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
@@ -870,15 +832,15 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 > - *Deepening existing modules*: If diff reduces interface surface, introduces a seam, or pulls logic behind an interface: Deepening complete (interface simpler, implementation absorbs complexity) → POSITIVE. Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
 > Use codebase-design vocabulary (module, interface, depth, seam, adapter, leverage, locality) in all deep-module findings.
 >
-> **API compliance** (when API_DEFINITION provided): HTTP method + path matches spec; request/response fields correct; error codes correct; pagination follows project pattern; OpenAPI annotations present; API documentation semantically consistent-or-better vs API Definition.
+> **API compliance** (when API_DEFINITION provided): HTTP method + path matches spec; request/response fields correct; error codes correct; pagination follows project pattern; OpenAPI annotations present; API documentation semantically consistent-or-better vs API Definition. Apply the framework-validation `BAD_REQUEST` allowance and API-doc severity policy from workflow.md Steps 8.x.1 and 8.y before grading any error-code or documentation mismatch.
 >
-> **Data View compliance** (when DATA_VIEW provided, if DDB entities/repos/constants changed): PK/SK prefixes match; GSI count/names/projections match; attribute naming correct; access-pattern mapping to Data View; transactional semantics correct.
+> **Data View compliance** (when DATA_VIEW provided, if DDB entities/repos/constants changed): PK/SK prefixes match; GSI count/names/projections match; attribute naming correct; access-pattern mapping to Data View; transactional semantics correct. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow.md Steps 8.5.1 and 8.5.2.
 >
 > **Business logic** (when SRS provided, for UseCase/validator/event-handler changes): business rules enforced; authorization correct; state transitions respected; events published correctly. Apply 2x severity multiplier for UseCase findings.
 >
 > **Testing standards**: Kotlin Test over JUnit; MockK `match {}` vs `any<T>()` pitfall; backtick descriptive names; correct test types per class; event exhaustiveness checks; test independence.
 >
-> **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): Mysterious Name, Duplicated Code, Feature Envy, Data Clumps, Primitive Obsession, Repeated Switches, Shotgun Surgery, Divergent Change, Speculative Generality, Message Chains, Middle Man, Refused Bequest. Only raise a smell you can name concretely with a specific code location.
+> **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >
 > For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Prefer omission over false positives.
 
@@ -929,6 +891,10 @@ python3 <skill dir>/scripts/code_review_pr_helper.py dedupe \
 ```
 
 ---
+
+# Compliance Reference (Steps 5–10)
+
+> ⛔ **These are NOT orchestrator steps.** All effort levels analyze via subagents (Step 4.1 finders, or the Step 4.9 single subagent), never inline. This section is the **detailed compliance reference** those subagents consult. The Finder prompts point here for the parts they cannot carry inline — the framework-validation `BAD_REQUEST` allowance (Step 8.x.1), the Data View severity policy (Step 8.5.1), and the API documentation severity policy (Step 8.y). Step 10.5 (Lineage) below is the one exception: it is a real orchestrator step, run per Step 4.1/4.2/4.9 routing.
 
 ## Step 5: Validate Commit Messages
 
@@ -1579,16 +1545,7 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 ## Usage
 
-```bash
-/code-review                              # default: --effort high, committed scope offered as default
-/code-review --scope committed            # review committed changes vs PR base (merge-base view), all gates
-/code-review --effort high                # fan-out + adversarial verify after scope resolution
-/code-review --effort high --scope committed  # maximum depth, committed diff, all gates
-/code-review --effort low --scope committed   # legacy single-pass (old default behavior)
-/code-review --mode autofix                   # review + autonomous fix + regression tests + commit (BLOCKING), stops after commit
-/code-review --mode review-to-merge           # autofix + push (BLOCKING) + safe merge to main (BLOCKING)
-/code-review --mode review-to-merge --scope committed  # full autonomous review-to-merge, committed branch scope
-```
+See [skill.md](../skill.md) *Common invocations* for the full command table.
 
 Or conversationally:
 ```
