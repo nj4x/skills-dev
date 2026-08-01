@@ -352,6 +352,18 @@ For every generated SRS requirement, ensure a `**Source FS**:` field is present 
 
 ---
 
+## 8. Quality Check and Validation
+
+After generating SRS requirements in Step 7:
+
+1. Cross-reference every SRS requirement against source FS documents
+2. Verify all SRS requirements express capability, lifecycle, or safety contracts — not invocation or realization mechanisms
+3. Flag any requirements that define an invocation or realization mechanism; rewrite to a capability/lifecycle/safety contract and route the mechanism to an ADR
+4. Ensure all entity attributes are accounted for and no entity is missing from the Entity Reference
+5. Verify event semantics are complete and correctly classified (Consumed/Produced/Internal)
+
+---
+
 ## 9. Iterative Refinement Loop (MANDATORY CHECKPOINT #2)
 
 > **⛔ CRITICAL**: This section is MANDATORY. You MUST NOT skip to Section 10 without completing at least one full iteration and receiving explicit user confirmation.
@@ -511,5 +523,52 @@ source-fs: .data/requirements/[Domain]-FS-[Version].md
 |--------|----------|-------------|
 | ... | ... | ... |
 ```
+
+---
+
+## 11. Companion Document Lineage (ADR-0063)
+
+> **Note**: New companion documents (API Definitions, Use Case Diagrams, Data Views) are **not generated** by this skill. New API contracts, use-case sequences, and data realization belong in an ADR authored through `/grill-with-docs`. See Workflow Summary introduction.
+
+When reviewing or updating **existing** companion documents, apply the following lineage rules:
+
+### 11.1 Frontmatter Requirement
+
+Every existing companion document must include YAML frontmatter at the top of the file:
+
+```yaml
+---
+artifact-type: api-definition   # or: use-case-diagram / data-view
+lineage-rules: companion of SRS
+source-srs: .data/requirements/[Domain]-SRS-[Version].md
+---
+```
+
+If an existing companion document lacks this frontmatter, add it before writing the file.
+
+### 11.2 Inline Source SRS Field
+
+Each section of the companion document that derives from the SRS must cite the source SRS requirement:
+
+```markdown
+**Source SRS**: [DOMAIN]-[TYPE]-[VERSION].[SECTION].[SUBSECTION]
+```
+
+Place the `**Source SRS**:` field at the end of the section, analogous to `**Source FS**:` in SRS requirements.
+
+### 11.3 No New Structure Rule
+
+Every entity, event, API, use case, or field in the companion must have an explicit SRS line anchor proving it is already stated in the source SRS. No new structure may be invented by the companion (new entities, events, APIs, enums) unless the SRS explicitly requires it. Prose-only obligations in the SRS are rendered as schema notes, validation rules, or use-case annotations in companions, not as new schema elements.
+
+### 11.4 Structural Provenance Rule (ADR-0063)
+
+When auditing an existing companion document:
+
+1. For each entity, event, API, use case, or field in the companion: verify it traces to an explicit `**Source SRS**:` citation.
+2. If no SRS anchor exists: flag the element as uninventoried and require the user to either add an SRS requirement that covers it, or remove the element from the companion.
+3. Surface all uninventoried elements before blocking — do not silently skip.
+4. Only after all elements are anchored may the companion document be considered lineage-complete.
+
+This rule implements the structural provenance check mandated by ADR-0063.
 
 ---

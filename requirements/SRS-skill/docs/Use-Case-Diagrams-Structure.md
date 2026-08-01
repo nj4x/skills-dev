@@ -5,6 +5,12 @@ This document defines the standard structure for Use Case Diagrams documents tha
 ## Document Template
 
 ```markdown
+---
+artifact-type: use-case-diagram
+lineage-rules: companion of SRS
+source-srs: .data/requirements/[Domain]-SRS-[Version].md
+---
+
 # [Domain Name] | Use Case Diagrams
 
 ## Document Information
@@ -164,6 +170,8 @@ end
 | API ID | Operation | Method | Path |
 |--------|-----------|--------|------|
 | [DOMAIN]-API-001 | [Operation] | [HTTP] | [Path] |
+
+**Source SRS**: [DOMAIN]-[TYPE]-[VERSION].[SECTION].[SUBSECTION]
 
 ---
 
@@ -624,6 +632,8 @@ DB --> Service: result
 Service --> Actor: response
 @enduml
 ```
+
+**Source SRS**: [DOMAIN]-[TYPE]-[VERSION].[SECTION].[SUBSECTION]
 ```
 
 ---

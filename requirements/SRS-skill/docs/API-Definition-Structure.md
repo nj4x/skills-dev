@@ -5,6 +5,12 @@ This document defines the standard structure for detailed API Definition documen
 ## Document Template
 
 ```markdown
+---
+artifact-type: api-definition
+lineage-rules: companion of SRS
+source-srs: .data/requirements/[Domain]-SRS-[Version].md
+---
+
 # [Domain Name] | API Definition
 
 ## Document Information
@@ -162,11 +168,7 @@ Content-Type: application/json
 }
 ```
 
-#### Related Requirements
-
-| SRS Requirement | Description |
-|-----------------|-------------|
-| [SRS-X.0.0] | [Brief requirement description] |
+**Source SRS**: [DOMAIN]-[TYPE]-[VERSION].[SECTION].[SUBSECTION]
 
 ---
 
