@@ -794,7 +794,8 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
   1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
   2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in findings.
   3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
-  4. Read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and binding rules for the maintainability-smells dimension.
+  4. Read `~/.claude/skills/code-review/docs/deep-module-lens.md` — the shared deep-module detection scenarios (same as medium/high effort paths).
+  5. Read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and binding rules for the maintainability-smells dimension.
 - This analysis brief:
 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
@@ -805,10 +806,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Module architecture** (when MODULE_VIEW provided): zero circular dependencies; module boundaries respected per Module View; shared modules have no dependencies on feature modules; cross-module reads go through interfaces.
 >
-> **Deep-Module Detection (apply to the diff only, never flag pre-existing debt):**
-> - *New shallow modules*: Apply the deletion test — would deleting it concentrate complexity back into callers (deep) or just move it (shallow)? If shallow → MAJOR.
-> - *Deepening existing modules*: If diff reduces interface surface, introduces a seam, or pulls logic behind an interface: Deepening complete (interface simpler, implementation absorbs complexity) → POSITIVE. Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
-> Use codebase-design vocabulary (module, interface, depth, seam, adapter, leverage, locality) in all deep-module findings.
+> **Deep-Module Detection**: Apply the two scenarios from `~/.claude/skills/code-review/docs/deep-module-lens.md` (the shared lens used by medium/high-effort finders). Use codebase-design vocabulary (module, interface, depth, seam, adapter, leverage, locality) in all findings.
 >
 > **API compliance** (when API_DEFINITION provided): HTTP method + path matches spec; request/response fields correct; error codes correct; pagination follows project pattern; OpenAPI annotations present; API documentation semantically consistent-or-better vs API Definition. Apply the framework-validation `BAD_REQUEST` allowance and API-doc severity policy from workflow.md Steps 8.x.1 and 8.y before grading any error-code or documentation mismatch.
 >

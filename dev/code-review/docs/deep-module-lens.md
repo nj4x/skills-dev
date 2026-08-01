@@ -1,6 +1,6 @@
 # Deep-Module Lens (shared)
 
-Shared pre-read, bounded-context rule, and deep-module detection scenarios used by any review agent whose angle includes **Deep-Module Detection** (Step 4.1 Finder B, Step 4.1-RTM Agent 3). Each such agent pre-reads these files, applies the bounded-context rule, and reports per the two scenarios below. The agent's own architecture/compliance bullets stay in its Finder/Agent prompt.
+Shared pre-read, bounded-context rule, and deep-module detection scenarios used by review agents whose angle includes **Deep-Module Detection**: Step 4.1 Finder B (medium/high-effort fan-out), Step 4.1-RTM Agent 3 (mutating modes), and Step 4.9 (low-effort single-subagent brief). Each agent pre-reads these files, applies the bounded-context rule, and reports per the two scenarios below. The agent's own architecture/compliance bullets stay in its Finder/Agent prompt.
 
 ## Pre-read (before reviewing the diff)
 
