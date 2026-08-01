@@ -79,7 +79,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 
 ```json
 {
-  "phase": "discovery|planning|baseline|moving|rewriting|validating|simplifying|simplify-validating|done",
+  "phase": "discovery|planning|baseline|moving|rewriting|validating|pruning|prune-validating|done",
   "project_path": "/abs/path",
   "languages": ["python"],
   "source_roots": ["src"],
@@ -88,7 +88,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
   "id_map": { "tests/test_instruments.py::test_parse": "tests/protrading/adapters/test_instruments.py::test_parse" },
   "moves": [ { "from": "tests/test_instruments.py", "to": "tests/protrading/adapters/test_instruments.py", "language": "python", "source_file": "src/protrading/adapters/instruments.py" } ],
   "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ],
-  "simplification": {
+  "pruning": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
     "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ]
@@ -114,7 +114,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 
 `plan.json` is the Phase A artifact the repeat loop refines; `ledger.json` is the durable execution record written during FINALIZE_STEP.
 
-## Simplification plan schema (`.scratch/refactor-tests/simplification-plan.json`)
+## Pruning plan schema (`.scratch/refactor-tests/pruning-plan.json`)
 
 ```json
 {
@@ -148,7 +148,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 }
 ```
 
-`simplification-plan.json` is the Phase B artifact the repeat loop refines.
+`pruning-plan.json` is the Phase B artifact the repeat loop refines.
 
 ## AST editor guidance (per language)
 
