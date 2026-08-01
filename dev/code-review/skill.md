@@ -12,7 +12,7 @@ Review code changes against project standards, security patterns, requirements, 
 | Parameter | Values | Default | Effect |
 |-----------|--------|---------|--------|
 | `--effort` | `low`, `medium`, `high` | `high` | Controls analysis depth: `low` = single inline pass, `medium` = 3 parallel Explore agents, `high` = fan-out + adversarial verifier per Critical/Major finding |
-| `--scope` | `committed`, `working-tree` | `committed` policy, confirm if omitted | `committed` reviews branch commits against the PR base branch (merge-base / three-dot view); `working-tree` reviews uncommitted local changes via `git diff HEAD` |
+| `--scope` | `committed`, `working-tree` (alias `uncommitted`) | `committed` policy, confirm if omitted | `committed` reviews branch commits against the PR base branch (merge-base / three-dot view); `working-tree` reviews uncommitted local changes via `git diff HEAD`. `uncommitted` is accepted as an explicit alias for `working-tree`. |
 | `--baseline` | `merge-base`, `merge-preview` | `merge-base` | `merge-base` (default) diffs `origin/<base>...HEAD` to match the GitHub PR view; `merge-preview` (documented follow-up, not yet wired) would merge the base branch in a disposable worktree to surface integration conflicts |
 | `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only review + report (current behavior, no mutation). `autofix` = review, then autonomously implement Major/Critical fixes + regression tests, run the testing skill's selective suite to green (full-suite fallback on uncovered files), and commit; STOPS after commit. `review-to-merge` = everything `autofix` does, then push and (if safe) merge the working branch into main. Both mutating modes force `--effort high` semantics, require a non-`main` feature branch, and gate commit/push/merge behind BLOCKING consent (see Mutating-Mode Contract). Three distinct values, **no synonyms** — an unrecognized value is not guessed; the skill lists the three and asks. |
 
@@ -26,6 +26,7 @@ Review code changes against project standards, security patterns, requirements, 
 | `/code-review --effort medium --scope working-tree` | 3 fan-out agents, working-tree diff |
 | `/code-review --effort low --scope committed` | Single-pass inline, committed scope, all hard gates active |
 | `/code-review --mode autofix` | Review, then autonomously fix Major/Critical, add regression tests, run selective suite to green (full-suite fallback on uncovered files), commit (BLOCKING). Stops after commit. |
+| `/code-review --scope uncommitted --mode autofix` | Review the working tree, autonomously fix Major/Critical + regression tests, then commit the reviewed changes plus fixes together (BLOCKING). `uncommitted` = `working-tree`. Stops after commit. |
 | `/code-review --mode review-to-merge` | `autofix` + push (BLOCKING) + safe merge to main (BLOCKING). |
 | `/code-review --mode review-to-merge --scope committed` | Full autonomous review-to-merge on committed branch scope, all gates active. |
 
@@ -58,7 +59,7 @@ The default `--mode review` is **read-only** — it reviews and reports, never m
 
 Resolve scope before any repo gate, PR gate, build gate, diff retrieval, or review analysis.
 
-1. If `--scope committed` or `--scope working-tree` is supplied, use it.
+1. If `--scope committed`, `--scope working-tree`, or `--scope uncommitted` is supplied, use it. `--scope uncommitted` is an explicit alias for `working-tree` — accept it directly, do not treat it as unrecognized.
 2. If the user explicitly says `uncommitted`, `working tree`, `working-tree`, `staged`, `unstaged`, `local changes`, `my diff`, or `pending changes`, use `working-tree`.
 3. If the user explicitly says `committed`, `branch`, `commits`, `before push`, `ready to push`, `PR`, or `pull request`, use `committed`.
 4. For ambiguous requests, including bare `/code-review`, ask the user to choose scope before starting review work. Offer `committed` as the default option.
@@ -68,7 +69,7 @@ Resolve scope before any repo gate, PR gate, build gate, diff retrieval, or revi
 After activation:
 
 1. Parse `--effort` and resolve or confirm `--scope`.
-1a. Parse `--mode` (default `review`). If `review`, follow the read-only contract below unchanged. If `autofix` or `review-to-merge`: force `--effort high` semantics, confirm a non-`main` feature branch and committed-scope semantics first, run the standard read-only review through the report, then execute the Autonomous Mutating Phases (workflow.md Step 14, RTM-1…RTM-7) **after** the report. An unrecognized `--mode` value is not guessed — list the three valid values and ask.
+1a. Parse `--mode` (default `review`). If `review`, follow the read-only contract below unchanged. If `autofix` or `review-to-merge`: force `--effort high` semantics, confirm a non-`main` feature branch first, run the standard read-only review through the report, then execute the Autonomous Mutating Phases (workflow.md Step 14, RTM-1…RTM-7) **after** the report. Scope compatibility: `autofix` runs on either `committed` or `working-tree`/`uncommitted` scope (working-tree commits the reviewed changes plus fixes together at RTM-5); only the `review-to-merge` merge step requires committed-scope semantics. An unrecognized `--mode` value is not guessed — list the three valid values and ask.
 2. Discover requirement and architecture documents: SRS, API Definition, Module View, Use Cases, and Data View.
 3. For `committed` scope: verify git repo and valid `HEAD`, resolve `REVIEW_BASE_REF` from the PR base branch (`baseRefName`, fallback `main`) before fetching, fetch `origin/$REVIEW_BASE_REF` and the current branch, handle branch divergence by asking the user, run PR context intake when `gh` is available, and print the PR Integration State block verbatim (Step 1.5.4) before any diff commands.
 4. For `working-tree` scope: verify git repo and valid `HEAD`; skip fetch, branch divergence, PR gates, and committed-branch comparison.

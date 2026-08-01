@@ -8,7 +8,7 @@ Analyze code changes against project standards, security patterns, requirement d
 |-----------|--------|---------|--------|
 | `--effort` | `low`, `medium`, `high` | `high` | Analysis depth |
 | `--baseline` | `merge-base`, `merge-preview` | `merge-base` | `merge-base` (default) diffs `origin/<base>...HEAD` to match the GitHub PR view; `merge-preview` merges the base branch in a disposable worktree to surface integration conflicts |
-| `--scope` | `committed`, `working-tree` | `committed` policy, confirm if omitted | `committed` compares branch commits against the PR base branch using the merge-base (three-dot) view; `working-tree` compares uncommitted local changes against `HEAD` |
+| `--scope` | `committed`, `working-tree` (alias `uncommitted`) | `committed` policy, confirm if omitted | `committed` compares branch commits against the PR base branch using the merge-base (three-dot) view; `working-tree` compares uncommitted local changes against `HEAD`. `uncommitted` is an explicit alias for `working-tree` |
 | `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only (report only). `autofix` = review + autonomously fix Major/Critical + regression tests + selective suite (testing skill; full-suite fallback on uncovered files) + commit (stops after commit). `review-to-merge` = `autofix` + push + safe merge to main. Mutating modes imply `--effort high`. |
 
 ### `--mode` behavior
@@ -40,7 +40,7 @@ Three distinct values, **no synonyms**. An unrecognized or near-miss `--mode` va
 
 Resolve scope before repo gates, PR gates, build gates, diff retrieval, or review analysis.
 
-- Explicit `--scope committed` or `--scope working-tree` wins.
+- Explicit `--scope committed` or `--scope working-tree` wins. `--scope uncommitted` is an explicit alias for `working-tree` — accept it directly, never treat it as an unrecognized value.
 - Requests mentioning `uncommitted`, `working tree`, `working-tree`, `staged`, `unstaged`, `local changes`, `my diff`, or `pending changes` select `working-tree`.
 - Requests mentioning `committed`, `branch`, `commits`, `before push`, `ready to push`, `PR`, or `pull request` select `committed`.
 - Ambiguous requests, including bare `/code-review`, must ask: `I can review committed changes, which is the default, or your working tree. Which scope should I use?`
@@ -1493,7 +1493,12 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 ### Phases
 
-**RTM-1 — Status/branch/upstream/scope confirmation.** Confirm `git status`, current branch, upstream tracking, and review scope (reuse Step 1 outputs). If branch/upstream/scope is unclear, default to the safe interpretation — committed scope on the current non-`main` feature branch — and state the assumption. If on `main`, state it immediately, propose a feature branch, and block (do not mutate `main`). If `--scope working-tree` was requested, run review on the working tree but BLOCK before any commit and ask the user to commit or switch scope — never auto-stage unrelated work. **Capture the pre-RTM HEAD SHA** as the rollback anchor for every recovery row.
+**RTM-1 — Status/branch/upstream/scope confirmation.** Confirm `git status`, current branch, upstream tracking, and review scope (reuse Step 1 outputs). If branch/upstream/scope is unclear, default to the safe interpretation — committed scope on the current non-`main` feature branch — and state the assumption. If on `main`, state it immediately, propose a feature branch, and block (do not mutate `main`). **Capture the pre-RTM HEAD SHA** as the rollback anchor for every recovery row.
+
+**Scope-specific handling:**
+- **`--scope committed`** (default): fixes are committed as new commits on the feature branch per RTM-5.
+- **`--scope working-tree` (or its alias `uncommitted`) + `--mode autofix`**: this is a naturally supported combination. Review the working tree, implement fixes on top of the existing uncommitted work, and commit the reviewed changes **plus** the fixes together at RTM-5 behind the normal BLOCKING consent gate. Do NOT hard-block or ask the user to switch scope — the uncommitted work under review is the intended commit content. The BLOCKING gate at RTM-5 is where the user reviews the exact staged set before confirming; print `git status` there so the staged set is visible.
+- **`--scope working-tree` + `--mode review-to-merge`**: the merge step (RTM-7) requires committed-scope semantics and a feature branch. Run review + autofix + commit as above, but before RTM-7 confirm a non-`main` feature branch exists; if only `main` is present, STOP after commit and report (do not merge working-tree fixes straight to `main`).
 
 **RTM-2 — Consolidate fix plan + 3 critic passes.** From the Step 4.1-RTM / 4.2 verified findings, filter to Major/Critical and build an ordered fix plan (each entry: finding id, `file:line`, root cause, proposed fix, regression test to add, dependencies/order). Quarantine any finding that requires a genuine product decision — these are the only stop-for-user items in the loop. Then run the three fixed critic passes over the plan (reuse the Step 4.2 adversarial style, retargeted at the plan): (1) impossible assumptions, (2) missing dependencies / schema or contract mismatches (cross-check `PROJECT_DATA_VIEW` / `PROJECT_API_DEFINITION` / `PROJECT_SRS`), (3) test-coverage gaps. Drop or rewrite plan items the critics refute.
 
@@ -1501,7 +1506,7 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 **RTM-4 — Summarize changes.** Produce a structured summary: each finding → its fix → its regression test → suite result.
 
-**RTM-5 — Commit (BLOCKING consent gate).** Stage ALL changes per the global git convention (modified files + renames + new files; never a partial set). Use a structured commit message listing each finding and its fix, with the `Co-Authored-By` trailer. See git-commands.md for the message format. **`autofix` terminates here** — report the commit SHA and summary.
+**RTM-5 — Commit (BLOCKING consent gate).** Stage ALL changes per the global git convention (modified files + renames + new files; never a partial set). For `--scope working-tree`/`uncommitted` this stages the reviewed uncommitted work together with the autofixes — that combined set is the intended commit. Print `git status` as part of the BLOCKING banner so the user sees the exact staged set before confirming. Use a structured commit message listing each finding and its fix, with the `Co-Authored-By` trailer. See git-commands.md for the message format. **`autofix` terminates here** — report the commit SHA and summary.
 
 **RTM-6 — Adversarial final review (≤2 passes).** Re-run adversarial verification against the **original** finding list: for each original Critical/Major, confirm it is now actually resolved (`CONFIRMED-FIXED` / `STILL-OPEN` / `REGRESSED`). Also scan the implemented diff for *new* findings (regressions, new security/operational risk). If anything is `STILL-OPEN`, `REGRESSED`, or a new Critical/Major appears → return to RTM-3 (bounded by the cap) or, if the cap is hit, STOP before push and report the gap + commit SHA.
 
