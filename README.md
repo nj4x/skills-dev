@@ -72,121 +72,28 @@ The agent will symlink each skill directory to `~/.claude/skills/<name>` so they
 
 ### `~/.claude/CLAUDE.md`
 
-The root is minimal — one universal instruction plus plain path references to intent-grouped satellite files in `~/.claude/docs/agents/`.
+Minimal — one universal instruction plus an `@RTK.md` include for token optimization:
 
 ```markdown
-## Main rules
-
 When reporting any information, be extremely concise and sacrifice grammar for sake of concision.
 
-## Code Review
-
-Scope defaults, branch handling, and the autonomous fix-and-commit workflow for reviews. See `docs/agents/code-review.md`.
-
-## Research, Planning, and Task Execution
-
-Deliver-first discipline, multi-phase fan-out, and autonomous-loop behavior. See `docs/agents/task-execution.md`.
-
-## Search Strategy
-
-When to use fd/rg vs mcp-vectors, the tool reference table, entity-graph pre-conditions, and worktree safety. See `docs/agents/search-strategy.md`.
-
-## Testing, Committing & Logging
-
-Test-suite/lint discipline, commit staging, real test data and dependency wiring (app-level factories), and file-only logging. See `docs/agents/testing.md`.
-
-## Token Optimization
-
-See `RTK.md`.
+@RTK.md
 ```
 
-#### `~/.claude/docs/agents/code-review.md`
+#### `~/.claude/RTK.md`
 
-```markdown
-# Code Review Workflow
+Loaded via `@RTK.md`. Documents the RTK (Rust Token Killer) CLI proxy: meta commands (`rtk gain`, `rtk discover`, `rtk proxy`), installation verification, and hook-based transparent rewriting of common commands (`git`, `grep`, `find`, etc.) for 60–90% token savings.
 
-Code reviews default to **committed** scope. Confirm scope (committed vs working-tree) before starting and pass `--scope` explicitly.
+#### `~/.claude/docs/agents/` (not currently referenced from CLAUDE.md)
 
-On `main` with `--scope` committed: tell the user, automatically check out a feature branch, then review. On `main` with `--scope` working-tree: review uncommitted changes in place.
+Four satellite files exist but are not wired into the global CLAUDE.md. They can be consulted manually or re-linked if desired:
 
-Identify all Major and Critical findings, then autonomously: (1) implement every fix, (2) write regression tests for each, (3) run the full test suite, (4) if any test fails, debug and re-run until 100% pass, (5) commit with a structured summary listing each finding and its fix. Only stop to ask if a fix requires a genuine product decision; otherwise resolve ambiguity by reading the codebase and specs.
-
-When the user asks to merge after code review, merge the working branch into main.
-```
-
-#### `~/.claude/docs/agents/task-execution.md`
-
-```markdown
-# Task Execution, Planning & Research
-
-## Delivering plans and research
-
-Deliver plan or research text first; wait for user approval before reading files or making edits.
-
-## Fan-out execution
-
-Fan out any multi-file or multi-phase task into independent sub-phases, each to a separate sub-agent, instructed to implement its module, write and pass its own tests, and avoid touching shared files. After all agents report back, run a reconciliation pass — check entity fields, event counts, and API signatures are consistent across every module, fix any mismatches in lockstep, run the full suite, and commit only when all tests pass with zero regressions.
-
-## Autonomous loops
-
-When the user requests an autonomous loop (debug, fix-and-verify, requirements-to-SRS sync), proceed without pausing for manual approval and persist intermediate research/findings to disk as you go.
-```
-
-#### `~/.claude/docs/agents/search-strategy.md`
-
-```markdown
-# Search Strategy
-
-| Tool | Use for |
+| File | Content |
 |---|---|
-| `Bash(fd)` / `Bash(rg)` / `Read` | Exact symbol, literal, or filename lookup. |
-| `search_root` | Conceptual, cross-file, exploratory retrieval — semantic, entity-graph, and architecture-level in one call. |
-| `index_codebase` | Index a root before first `search_root` call; re-index after large structural changes. |
-| `clear_index` | Remove stale Qdrant entries for a path (preview without `confirm=true`). |
-
-`fd`/`rg` - Use -h for short descriptions and --help for more details.
-
-### `fd` finds entries in the filesystem
-
-Usage: fd [OPTIONS] [pattern] [path]...
-Arguments:
-  [pattern]  the search pattern (a regular expression, unless '--glob' is used; optional)
-  [path]...  the root directories for the filesystem search (optional)
-
-### `rg` recursively searches the current directory for lines matching a regex pattern
-
-Usage: rg [OPTIONS] PATTERN [PATH ...]
-Arguments:
-  <PATTERN>   A regular expression used for searching.
-  <PATH>...   A file or directory to search.
-  
-## Pre-condition gate
-
-`search_root` requires the root to be indexed. Pass `dry_run=true` to `index_codebase` to check status without indexing. A missing index causes a tool error — fall back to `rg`/`fd` and offer indexing when the search is substantial.
-
-## Task-shaped triggers
-
-- Before changing a function/class signature: `search_root` for callers/usages first.
-- During code review, for each modified public entity: blast-radius check via `search_root`.
-- When asked "how does X relate to Y": `search_root` on both concepts before reading files.
-- When planning multi-file work: `search_root` on central concepts to get the file map.
-
-Never index or search any path under `.claude/worktrees/` with `mcp-vectors`; use filesystem tools directly for worktree-specific inspection.
-```
-
-#### `~/.claude/docs/agents/testing.md`
-
-```markdown
-# Testing, Committing & Logging
-
-Always run the full test suite AND lint after code changes, then commit/push when the user requests it.
-
-When committing, run `git status` first and stage ALL changes — modified files alongside renames and new files — before creating the commit.
-
-Use real test IDs, real requirement IDs, and real implementations; wire dependencies through the app-level factory interface (e.g. DataProviderFactory) rather than concrete providers.
-
-Logging should be file-only (no console output) unless explicitly requested otherwise.
-```
+| `code-review.md` | Scope defaults (committed vs working-tree), autonomous fix-and-commit loop. |
+| `task-execution.md` | Deliver-first discipline, multi-phase sub-agent fan-out, autonomous loop behavior. |
+| `search-strategy.md` | `fd`/`rg` vs `mcp-vectors` reference table, pre-condition gate, task-shaped triggers. |
+| `testing.md` | Full suite + lint discipline, staging rules, real test data, file-only logging. |
 
 ### `~/.claude/settings.json` (relevant segments)
 
