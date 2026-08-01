@@ -40,6 +40,17 @@ Let a source file be `<root>/<pkg-path>/<name>.<ext>`.
 - Target: `src/test/<lang>/<pkg-path>/<Name>Test.<ext>` mirroring `src/main/<lang>/<pkg-path>/<Name>.<ext>`
 - Example: `src/main/java/com/foo/Bar.java` → `src/test/java/com/foo/BarTest.java`
 
+## Integration directory targets (cross-cutting tests)
+
+Cross-cutting tests are moved to a dedicated integration directory — not left in place. File names are preserved.
+
+| Language | Integration target directory |
+|---|---|
+| Python | `tests/integration/` |
+| TypeScript/JavaScript | `tests/integration/` |
+| Go | `integration/` (at project root) |
+| Java/Kotlin | `src/test/integration/` |
+
 ## Test-file naming
 
 | Language | Test file name for source `<name>` |
@@ -86,7 +97,10 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
   "runners": { "python": "pytest" },
   "baseline": { "python": { "passed": 412, "failed": ["tests/test_x.py::test_a"] } },
   "id_map": { "tests/test_instruments.py::test_parse": "tests/protrading/adapters/test_instruments.py::test_parse" },
-  "moves": [ { "from": "tests/test_instruments.py", "to": "tests/protrading/adapters/test_instruments.py", "language": "python", "source_file": "src/protrading/adapters/instruments.py" } ],
+  "moves": [
+    { "from": "tests/test_instruments.py", "to": "tests/protrading/adapters/test_instruments.py", "language": "python", "source_file": "src/protrading/adapters/instruments.py", "cross_cutting": false },
+    { "from": "tests/test_end_to_end.py", "to": "tests/integration/test_end_to_end.py", "language": "python", "source_file": null, "cross_cutting": true }
+  ],
   "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ],
   "pruning": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
@@ -106,8 +120,8 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
   "rewrites": [
     { "file": "<to path>", "edits": [ { "before": "from ..x import y", "after": "from pkg.x import y" } ] }
   ],
-  "unmapped": [
-    { "file": "tests/test_end_to_end.py", "reason": "exercises adapters + audit + persistence; cross-cutting" }
+  "cross_cutting": [
+    { "from": "tests/test_end_to_end.py", "to": "tests/integration/test_end_to_end.py", "language": "python", "reason": "exercises adapters + audit + persistence; 3 distinct non-mocked classes" }
   ]
 }
 ```

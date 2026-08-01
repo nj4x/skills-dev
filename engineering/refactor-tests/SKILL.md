@@ -44,7 +44,7 @@ For each source file in each detected source root:
 3. If the existing test path differs from the target path, record a move entry `{ from, to, language, source_file }`.
 4. If no test file exists for this source file, skip — do not create empty test files.
 
-Classify any test file that cannot be cleanly attributed to a single source file (integration tests, conftest, fixtures, e2e, tests importing from many packages) as **cross-cutting**: record under `unmapped` with the reason. Do **not** move them — leave in place.
+**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: conftest/fixture-only files, e2e tests, and tests whose import list spans packages with no dominant module. For each cross-cutting file: compute its target path in the language's integration directory (from `reference/patterns.md`), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`. These are moved to the integration directory — not left in place.
 
 **When a mapping is ambiguous** (test plausibly belongs to two modules), pick the one whose module name appears first in the test file's import list. Record the decision in the ledger `notes` field; do not stop to ask.
 
@@ -72,9 +72,14 @@ Set ledger `phase: moving`.
 For each entry in `plan.json` moves:
 1. Create any missing target directories (including `__init__.py` if the test tree uses package-style dirs — detect by presence of any `tests/**/__init__.py`).
 2. `git mv <from> <to>` (falls back to `mv` outside git). Hard-stop on non-zero exit.
-3. Record `{ from, to }` in ledger `moves` immediately.
+3. Record `{ from, to, cross_cutting: false }` in ledger `moves` immediately.
 
-Build `id_map` in the ledger: for each moved file, record the old→new pytest/jest/go test id mapping (replace file path prefix in the id).
+Then for each entry in `plan.json` `cross_cutting`:
+1. Create the integration directory if absent (including `__init__.py` under the same rule as above).
+2. `git mv <from> <to>` (falls back to `mv` outside git). Hard-stop on non-zero exit.
+3. Record `{ from, to, cross_cutting: true }` in ledger `moves` immediately.
+
+Build `id_map` in the ledger: for each moved file (regular and cross-cutting), record the old→new pytest/jest/go test id mapping (replace file path prefix in the id).
 
 ### Step 5 — Rewrite imports
 
@@ -158,7 +163,7 @@ Re-run the full suite. Regression check: compare against post-layout baseline. E
 **Phase A — Layout:**
 - Files moved: count and move list (sample if large)
 - Imports rewritten: count with representative rewrites
-- Cross-cutting (left in place): unmapped list with reasons
+- Cross-cutting (moved to integration dir): list with `from` → `to` and reason
 - Baseline: `<N> passed, <M> failed`
 - Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions:` + ids
 

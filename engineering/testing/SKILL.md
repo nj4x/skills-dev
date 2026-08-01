@@ -21,9 +21,10 @@ When code-review or the user provides changed files, run only the tests covering
 - No args — run the full suite as usual
 
 **Mapping (search-codebase first, path-based fallback):** for each changed source file —
-1. Query the `search-codebase` skill for tests that import or reference symbols from that file; add any hits to the run set.
+1. Query the `search-codebase` skill for tests that import or reference symbols from that file; add any hits to the run set — including any matches found under the language's integration directory (`tests/integration/`, `integration/`, `src/test/integration/`).
 2. If none, apply the `refactor-tests` mirroring convention to compute the expected test path and add it if it exists.
-3. If still none, mark the file uncovered.
+3. If still none, check the integration directory for a file with the same name and add it if it exists.
+4. If still none, mark the file uncovered.
 
 **Fallback:** if any changed file is uncovered, run the full suite as a safety net and report which files were uncovered. Otherwise run only the selected subset.
 
