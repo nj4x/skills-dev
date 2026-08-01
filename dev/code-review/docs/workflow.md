@@ -61,11 +61,6 @@ Each gate is a hard stop that enforces one invariant. Multiple enforcement block
 
 ---
 
-## Prerequisites
-
-- Git repository
-- When `--scope committed`: current branch is not main, review base branch exists for comparison
-
 ## Overview
 
 I will review your committed changes following these steps, keeping you updated on progress as I work.
@@ -635,37 +630,20 @@ Prompt:
 
 ### Finder B — Architecture & Compliance
 
-Pre-read (before reviewing the diff):
-1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
-2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in all findings — not "component," "service," "API," or "boundary."
-3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
-
-Bounded context (before applying the deep-module lens):
-- If PROJECT_MODULE_VIEW is set: for each changed file, identify its module boundary per the MODULE_VIEW document and read all source files in that module.
-- Otherwise: for each changed file, read all source files in its parent directory (package-prefix fallback).
-- READ-ONLY — do not walk the full codebase.
+Apply the shared **Deep-Module Lens** ([deep-module-lens.md](deep-module-lens.md)).
 
 Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture**, **Compliance**, and **Deep-Module Detection**:
+> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture**, **Compliance**, and **Deep-Module Detection**.
 >
-> **Architecture & Compliance (unchanged):**
+> First read `~/.claude/skills/code-review/docs/deep-module-lens.md` — it contains the pre-read list, bounded-context rule, and the two deep-module detection scenarios; apply them exactly.
+>
+> **Architecture & Compliance:**
 > - Architecture: module boundary violations, circular dependencies, wrong-layer access (entity leaking beyond repository), field injection anti-patterns, N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
 > - API compliance: HTTP method/path/error-code alignment with PROJECT_API_DEFINITION, OpenAPI annotation completeness, API documentation parity (consistent-or-better vs API Definition text). Apply the framework-validation `BAD_REQUEST` allowance and the API-doc severity policy from workflow.md Steps 8.x.1 and 8.y — read them before grading any error-code or documentation mismatch.
 > - Data View compliance: PK/SK prefixes, GSI count/names/projections, attribute naming, access-pattern mapping — validate against PROJECT_DATA_VIEW when DDB entities/repos/configs are changed. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow.md Steps 8.5.1 and 8.5.2.
 > - Cross-file duplication: identify near-identical logic that can be extracted
 >
-> **Deep-Module Detection (use vocabulary from pre-read skill docs — apply to the diff only, never flag pre-existing debt the diff leaves untouched):**
->
-> *Scenario 1 — Diff creates a new shallow module:*
-> Apply the deletion test to every new module introduced by the diff: would deleting it concentrate complexity back into callers (deep) or just move it (shallow)? If shallow → MAJOR.
-> Description format: `Module '<name>' is shallow (interface ≈ implementation complexity; deletion test: deleting it moves complexity rather than concentrating it). Deepening sketch: <one-line suggestion using codebase-design vocabulary>.`
->
-> *Scenario 2 — Diff deepens an existing module:*
-> If the diff reduces interface surface, introduces a seam, or pulls logic behind an interface:
-> - Deepening complete (interface genuinely simpler, implementation absorbs complexity) → POSITIVE.
->   Description: `Module '<name>' deepened: interface surface reduced — good locality gain. (<vocabulary term> applied correctly.)`
-> - Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
->   Description: `Module '<name>' partially deepened but seam is still leaky: <what remains exposed>. To complete: <one-line sketch>.`
+> **Deep-Module Detection:** apply the two scenarios from the shared lens (deep-module-lens.md).
 >
 > For each finding, return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE).
 > Do NOT include findings you are not confident about.
@@ -735,37 +713,20 @@ Prompt:
 
 ### Agent 3 — Architecture & Maintainability
 
-Pre-read (before reviewing the diff):
-1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
-2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in all findings — not "component," "service," "API," or "boundary."
-3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
-
-Bounded context (before applying the deep-module lens):
-- If PROJECT_MODULE_VIEW is set: for each changed file, identify its module boundary per the MODULE_VIEW document and read all source files in that module.
-- Otherwise: for each changed file, read all source files in its parent directory (package-prefix fallback).
-- READ-ONLY — do not walk the full codebase.
+Apply the shared **Deep-Module Lens** ([deep-module-lens.md](deep-module-lens.md)).
 
 Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture & Maintainability** and **Deep-Module Detection**:
+> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture & Maintainability** and **Deep-Module Detection**.
 >
-> **Architecture & Maintainability (baseline):**
+> First read `~/.claude/skills/code-review/docs/deep-module-lens.md` — it contains the pre-read list, bounded-context rule, and the two deep-module detection scenarios; apply them exactly.
+>
+> **Architecture & Maintainability:**
 > - Module boundary violations, circular dependencies, wrong-layer access, field-injection anti-patterns, duplication that should be extracted
 > - Naming, complexity, dependency direction, dead code, over-engineering
 > - N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
 > - API + Data View compliance when PROJECT_API_DEFINITION / PROJECT_DATA_VIEW is provided and the diff touches controllers/API models or DDB entities/repos/configs: grade per the severity policies and allowances in workflow.md Steps 8.x.1, 8.y, 8.5.1, and 8.5.2 — read them before grading any API-doc or Data View mismatch.
 >
-> **Deep-Module Detection (use vocabulary from pre-read skill docs — apply to the diff only, never flag pre-existing debt the diff leaves untouched):**
->
-> *Scenario 1 — Diff creates a new shallow module:*
-> Apply the deletion test to every new module introduced by the diff: would deleting it concentrate complexity back into callers (deep) or just move it (shallow)? If shallow → MAJOR.
-> Description format: `Module '<name>' is shallow (interface ≈ implementation complexity; deletion test: deleting it moves complexity rather than concentrating it). Deepening sketch: <one-line suggestion using codebase-design vocabulary>.`
->
-> *Scenario 2 — Diff deepens an existing module:*
-> If the diff reduces interface surface, introduces a seam, or pulls logic behind an interface:
-> - Deepening complete (interface genuinely simpler, implementation absorbs complexity) → POSITIVE.
->   Description: `Module '<name>' deepened: interface surface reduced — good locality gain. (<vocabulary term> applied correctly.)`
-> - Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
->   Description: `Module '<name>' partially deepened but seam is still leaky: <what remains exposed>. To complete: <one-line sketch>.`
+> **Deep-Module Detection:** apply the two scenarios from the shared lens (deep-module-lens.md).
 >
 > For each finding return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Omit findings you are not confident about.
 
@@ -911,7 +872,7 @@ python3 <skill dir>/scripts/code_review_pr_helper.py dedupe \
 
 # Compliance Reference (Steps 5–10)
 
-> ⛔ **These are NOT orchestrator steps.** All effort levels analyze via subagents (Step 4.1 finders, or the Step 4.9 single subagent), never inline. This section is the **detailed compliance reference** those subagents consult. The Finder prompts point here for the parts they cannot carry inline — the framework-validation `BAD_REQUEST` allowance (Step 8.x.1), the Data View severity policy (Step 8.5.1), and the API documentation severity policy (Step 8.y). Step 10.5 (Lineage) below is the one exception: it is a real orchestrator step, run per Step 4.1/4.2/4.9 routing.
+> ⛔ **These are NOT orchestrator steps.** All effort levels analyze via subagents (Step 4.1 finders, or the Step 4.9 single subagent), never inline. This section is the **detailed compliance reference** those subagents consult. The Finder prompts point here for the parts they cannot carry inline — the framework-validation `BAD_REQUEST` allowance (Step 8.x.1), the Data View severity policy (Step 8.5.1), and the API documentation severity policy (Step 8.y). The compliance reference ends at Step 10; orchestrator steps resume at Step 10.5 (Lineage) under the divider below.
 
 ## Step 5: Validate Commit Messages
 
@@ -1168,6 +1129,10 @@ When reviewing test files, validate against established testing patterns.
 
 ---
 
+# Orchestrator Steps (resume)
+
+> The Compliance Reference above ends here. Steps 10.5 onward are **real orchestrator steps** run by the orchestrator (not subagent reference material), per Step 4.1/4.2/4.9 routing.
+
 ## Step 10.5: Lineage Enforcement (ADR-0061)
 
 Run after finding synthesis and verification complete — after Step 4.2 for `--effort high`, Step 4.1 for `--effort medium`, and Step 4.9 for `--effort low` — immediately before Step 11. Findings go in the report's **🔗 Lineage** subsection (Step 13), separate from the other findings sections.
@@ -1240,7 +1205,7 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 > The report below is the primary deliverable of this skill. Generate it now in your response using the exact structure.
 
 ```markdown
-## Cline Code Review
+## Code Review
 
 ### 📄 Documents Used
 - SRS: [path or "not found — skipped"]

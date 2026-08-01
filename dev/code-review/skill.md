@@ -1,11 +1,11 @@
 ---
 name: code-review
-description: Review a PR, committed branch, or working-tree changes against project standards, requirements, security patterns, and architecture constraints, ending in an approve/request-changes verdict. Use when reviewing a branch before push or merge, or checking uncommitted changes.
+description: Review committed branch changes, a PR, or working-tree changes; ends in an approve/request-changes verdict. Use when reviewing before push or merge, checking uncommitted changes, reviewing a PR, or running autofix/review-to-merge.
 ---
 
 # Code Review Skill
 
-Review code changes against project standards, security patterns, requirements, and architecture constraints. The default review policy is committed branch changes against the PR's base branch (default `origin/main`) using the merge-base (three-dot) view; working-tree review is available only when explicitly requested or selected after scope confirmation.
+Review code changes against project standards, security patterns, requirements, and architecture constraints.
 
 ## Parameters
 
@@ -93,7 +93,7 @@ After activation:
 
 - Do not run diff/stat/log commands before scope is resolved and the required gates for that scope are complete.
 - Do not run `git diff`, `git diff --stat`, or `git log origin/<base>..HEAD` before the build/OpenAPI gate is complete or explicitly waived.
-- Do not treat `gh pr view --comments` as a replacement for unresolved review-thread intake.
+- Satisfy the PR-thread intake gate with the helper-script GraphQL flow (or the manual `reviewThreads` fallback); `gh pr view --comments` output is supplemental only.
 - Use the merge-base (three-dot) diff `origin/<base>...HEAD` as the primary committed-scope review baseline so the diff matches the GitHub PR Files-changed view. Do not use the two-dot `origin/<base> HEAD` form as the primary review diff: it absorbs target-branch commits added after divergence and inflates the diff.
 - Do not create or merge review worktrees for the default `merge-base` baseline; that review is repo-local and non-worktree. Worktree-based merge preview is allowed only under `--baseline merge-preview` (or explicit user request) and must use a unique `/tmp` path, treat merge conflicts as findings, and guarantee `git worktree remove --force` + `git worktree prune` cleanup on success and failure.
 - Do not publish PR comments, approve PRs, or resolve PR threads without explicit user consent.
