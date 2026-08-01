@@ -16,7 +16,7 @@ FS states high-level product requirements; SRS states the system contracts that 
 
 After drafting each ADR, and before writing it to disk, run this pre-flight:
 
-1. Search the SRS corpus and indexed companion documents for the system contract governing the ADR's behavior. Ask: "Which existing SRS requirement does this ADR realize?"
+1. Search the SRS corpus and indexed companion documents for the system contract governing the ADR's behavior. Ask: "Which SRS requirement(s) does this ADR realize?"
 2. If a contract is found, validate its SRS requirement ID against the corpus and use it as the anchor. A companion can supply only an ID it cites; it cannot itself anchor the ADR. Do not create a duplicate SRS requirement solely because the ADR fixes a concrete schema, dependency, validation method, storage representation, or provider translation.
 3. If no SRS requirement ID covers the behavior, offer "Create a new SRS requirement now?"
    - Before drafting it, verify the requirement has an FS product outcome or constraint. If not, offer to define the missing FS requirement first.
@@ -24,7 +24,20 @@ After drafting each ADR, and before writing it to disk, run this pre-flight:
    - If the user declines, block ADR finalization — the ADR is unanchored.
 4. Populate the `**Source SRS**:` field in the ADR body with every validated SRS requirement ID. Done when every validated anchor is listed.
 
-ADR frontmatter must include `artifact-type: adr` and `lineage-rules` per ADR-0056 (see [ADR-FORMAT.md](../domain-modeling/ADR-FORMAT.md)).
+### ADR Frontmatter Requirements (ADR-0056)
+
+ADR frontmatter must include `artifact-type: adr` and `lineage-rules` per ADR-0056. Follow the template below:
+
+```yaml
+---
+artifact-type: adr
+lineage-rules:
+  - "ADR must reference at least one source SRS item"
+source-srs: .data/requirements/{Domain}-SRS-{Version}.md
+---
+```
+
+See [ADR-FORMAT.md](../domain-modeling/ADR-FORMAT.md) for full details. The ADR title and body are all that's required; optional sections (Status, Considered Options, Consequences, API Contract, Use Case Sequence, Data Realization) should only be included when they add genuine value.
 
 ## Grilling conclusion
 
