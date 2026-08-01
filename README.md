@@ -84,17 +84,6 @@ When reporting any information, be extremely concise and sacrifice grammar for s
 
 Loaded via `@RTK.md`. Documents the RTK (Rust Token Killer) CLI proxy: meta commands (`rtk gain`, `rtk discover`, `rtk proxy`), installation verification, and hook-based transparent rewriting of common commands (`git`, `grep`, `find`, etc.) for 60–90% token savings.
 
-#### `~/.claude/docs/agents/` (not currently referenced from CLAUDE.md)
-
-Four satellite files exist but are not wired into the global CLAUDE.md. They can be consulted manually or re-linked if desired:
-
-| File | Content |
-|---|---|
-| `code-review.md` | Scope defaults (committed vs working-tree), autonomous fix-and-commit loop. |
-| `task-execution.md` | Deliver-first discipline, multi-phase sub-agent fan-out, autonomous loop behavior. |
-| `search-strategy.md` | `fd`/`rg` vs `mcp-vectors` reference table, pre-condition gate, task-shaped triggers. |
-| `testing.md` | Full suite + lint discipline, staging rules, real test data, file-only logging. |
-
 ### `~/.claude/settings.json` (relevant segments)
 
 **Status line** — displays model name, token count, and a context-window fill bar in the terminal:
