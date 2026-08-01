@@ -627,14 +627,39 @@ Prompt:
 
 ### Finder B — Architecture & Compliance
 
+Pre-read (before reviewing the diff):
+1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
+2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in all findings — not "component," "service," "API," or "boundary."
+3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
+
+Bounded context (before applying the deep-module lens):
+- If PROJECT_MODULE_VIEW is set: for each changed file, identify its module boundary per the MODULE_VIEW document and read all source files in that module.
+- Otherwise: for each changed file, read all source files in its parent directory (package-prefix fallback).
+- READ-ONLY — do not walk the full codebase.
+
 Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture** and **Compliance**:
+> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture**, **Compliance**, and **Deep-Module Detection**:
+>
+> **Architecture & Compliance (unchanged):**
 > - Architecture: module boundary violations, circular dependencies, wrong-layer access (entity leaking beyond repository), field injection anti-patterns, N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
 > - API compliance: HTTP method/path/error-code alignment with PROJECT_API_DEFINITION, OpenAPI annotation completeness, API documentation parity (consistent-or-better vs API Definition text)
 > - Data View compliance: PK/SK prefixes, GSI count/names/projections, attribute naming, access-pattern mapping — validate against PROJECT_DATA_VIEW when DDB entities/repos/configs are changed
 > - Cross-file duplication: identify near-identical logic that can be extracted
 >
-> For each finding, return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`.
+> **Deep-Module Detection (use vocabulary from pre-read skill docs — apply to the diff only, never flag pre-existing debt the diff leaves untouched):**
+>
+> *Scenario 1 — Diff creates a new shallow module:*
+> Apply the deletion test to every new module introduced by the diff: would deleting it concentrate complexity back into callers (deep) or just move it (shallow)? If shallow → MAJOR.
+> Description format: `Module '<name>' is shallow (interface ≈ implementation complexity; deletion test: deleting it moves complexity rather than concentrating it). Deepening sketch: <one-line suggestion using codebase-design vocabulary>.`
+>
+> *Scenario 2 — Diff deepens an existing module:*
+> If the diff reduces interface surface, introduces a seam, or pulls logic behind an interface:
+> - Deepening complete (interface genuinely simpler, implementation absorbs complexity) → POSITIVE.
+>   Description: `Module '<name>' deepened: interface surface reduced — good locality gain. (<vocabulary term> applied correctly.)`
+> - Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
+>   Description: `Module '<name>' partially deepened but seam is still leaky: <what remains exposed>. To complete: <one-line sketch>.`
+>
+> For each finding, return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE).
 > Do NOT include findings you are not confident about.
 
 ### Finder C — Quality & Standards
