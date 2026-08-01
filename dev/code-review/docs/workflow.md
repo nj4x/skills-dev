@@ -9,14 +9,14 @@ Analyze code changes against project standards, security patterns, requirement d
 | `--effort` | `low`, `medium`, `high` | `high` | Analysis depth |
 | `--baseline` | `merge-base`, `merge-preview` | `merge-base` | `merge-base` (default) diffs `origin/<base>...HEAD` to match the GitHub PR view; `merge-preview` merges the base branch in a disposable worktree to surface integration conflicts |
 | `--scope` | `committed`, `working-tree` | `committed` policy, confirm if omitted | `committed` compares branch commits against the PR base branch using the merge-base (three-dot) view; `working-tree` compares uncommitted local changes against `HEAD` |
-| `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only (report only). `autofix` = review + autonomously fix Major/Critical + regression tests + full suite + commit (stops after commit). `review-to-merge` = `autofix` + push + safe merge to main. Mutating modes imply `--effort high`. |
+| `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only (report only). `autofix` = review + autonomously fix Major/Critical + regression tests + selective suite (testing skill; full-suite fallback on uncovered files) + commit (stops after commit). `review-to-merge` = `autofix` + push + safe merge to main. Mutating modes imply `--effort high`. |
 
 ### `--mode` behavior
 
 | Value | Behavior | Terminal action |
 |-------|----------|-----------------|
 | `review` *(default)* | Read-only. Runs the full review and produces the report. No repo mutation. | Report delivered. |
-| `autofix` | Read-only review through the report, then Step 14 phases RTM-1…RTM-5 (forces `--effort high`). Implements Major/Critical fixes, writes regression tests, runs the full suite to green, commits behind a BLOCKING gate. | Stops after commit. |
+| `autofix` | Read-only review through the report, then Step 14 phases RTM-1…RTM-5 (forces `--effort high`). Implements Major/Critical fixes, writes regression tests, runs the testing skill's selective suite to green (full-suite fallback on uncovered files), commits behind a BLOCKING gate. | Stops after commit. |
 | `review-to-merge` | `autofix` + RTM-6…RTM-7. Adversarial final review, push (BLOCKING), safe merge to main (BLOCKING). | Stops after merge, or after push if merge unsafe, or earlier at any failed gate. |
 
 Three distinct values, **no synonyms**. An unrecognized or near-miss `--mode` value is not guessed — list the three valid values and ask. Record `REVIEW_MODE` and, when `autofix`/`review-to-merge`, set `REVIEW_MODE_AUTONOMOUS = YES`. Mutating modes require committed-scope semantics for the merge step (see Step 14 RTM-1). The full mutating spec — phases, iteration caps, consent gates, and recovery rows — lives in **Step 14**.
@@ -1395,7 +1395,7 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 **RTM-2 — Consolidate fix plan + 3 critic passes.** From the Step 4.1-RTM / 4.2 verified findings, filter to Major/Critical and build an ordered fix plan (each entry: finding id, `file:line`, root cause, proposed fix, regression test to add, dependencies/order). Quarantine any finding that requires a genuine product decision — these are the only stop-for-user items in the loop. Then run the three fixed critic passes over the plan (reuse the Step 4.2 adversarial style, retargeted at the plan): (1) impossible assumptions, (2) missing dependencies / schema or contract mismatches (cross-check `PROJECT_DATA_VIEW` / `PROJECT_API_DEFINITION` / `PROJECT_SRS`), (3) test-coverage gaps. Drop or rewrite plan items the critics refute.
 
-**RTM-3 — Implement fixes + regression tests + full suite.** Per accepted finding: implement the fix following the relevant standards docs (kotlin/python/testing/security/architecture), one logical change per fix, traceable to a finding id; add or update a regression test that fails before and passes after (3-attempt cap per finding). After all fixes, run the FULL verification suite using the build command resolved in Step 2. Loop: if any test fails → debug → re-run, within the 3-rerun cap. Hard rule: do not proceed to commit while the suite is red. This is the autonomous fix flow from `~/.claude/CLAUDE.md` (identify Major/Critical → implement → regression tests → full suite → debug to 100% → structured commit), stopping only for genuine product decisions.
+**RTM-3 — Implement fixes + regression tests + selective suite.** Per accepted finding: implement the fix following the relevant standards docs (kotlin/python/testing/security/architecture), one logical change per fix, traceable to a finding id; add or update a regression test that fails before and passes after (3-attempt cap per finding). After all fixes, run the tests via the `testing` skill's selective runner (`--files <changed files from review scope + fix-touched files>`); the testing skill maps those files to their covering tests and **falls back to the full suite automatically when any changed file has zero coverage**, so the safety net is preserved without code-review implementing its own. Loop: if any test fails → debug → re-run, within the 3-rerun cap. Hard rule: do not proceed to commit while the run is red. The user may request a full-suite run explicitly. This is the autonomous fix flow from `~/.claude/CLAUDE.md` (identify Major/Critical → implement → regression tests → run relevant tests → debug to 100% → structured commit), stopping only for genuine product decisions.
 
 **RTM-4 — Summarize changes.** Produce a structured summary: each finding → its fix → its regression test → suite result.
 
@@ -1464,7 +1464,7 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 - [ ] Step 13.6 task tracking offer presented to user after report
 - [ ] **IF mutating mode (`autofix`/`review-to-merge`)**: `--mode` was explicitly requested; `REVIEW_MODE_AUTONOMOUS = YES` recorded; effort forced to `high`
 - [ ] **IF mutating mode**: on a non-`main` feature branch; all read-only gates resolved and `BUILD_STATUS` not `FAILED`/`WAIVED` before any mutation; pre-RTM HEAD SHA captured
-- [ ] **IF mutating mode**: Step 4.1-RTM 4-agent profile used (replacing A/B/C); RTM-2 three critic passes completed; every fix has a regression test; full suite green before commit
+- [ ] **IF mutating mode**: Step 4.1-RTM 4-agent profile used (replacing A/B/C); RTM-2 three critic passes completed; every fix has a regression test; selective suite (testing skill, full-suite fallback on uncovered files) green before commit
 - [ ] **IF mutating mode**: commit/push/merge each gated behind a BLOCKING consent gate; no cap-exhaustion state proceeded to push/merge
 - [ ] **IF `review-to-merge`**: RTM-6 adversarial final review clean; RTM-7 merge-safety gate evaluated and merge performed only if all conditions green
 

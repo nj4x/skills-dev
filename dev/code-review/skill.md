@@ -14,7 +14,7 @@ Review code changes against project standards, security patterns, requirements, 
 | `--effort` | `low`, `medium`, `high` | `high` | Controls analysis depth: `low` = single inline pass, `medium` = 3 parallel Explore agents, `high` = fan-out + adversarial verifier per Critical/Major finding |
 | `--scope` | `committed`, `working-tree` | `committed` policy, confirm if omitted | `committed` reviews branch commits against the PR base branch (merge-base / three-dot view); `working-tree` reviews uncommitted local changes via `git diff HEAD` |
 | `--baseline` | `merge-base`, `merge-preview` | `merge-base` | `merge-base` (default) diffs `origin/<base>...HEAD` to match the GitHub PR view; `merge-preview` (documented follow-up, not yet wired) would merge the base branch in a disposable worktree to surface integration conflicts |
-| `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only review + report (current behavior, no mutation). `autofix` = review, then autonomously implement Major/Critical fixes + regression tests, run the full suite to green, and commit; STOPS after commit. `review-to-merge` = everything `autofix` does, then push and (if safe) merge the working branch into main. Both mutating modes force `--effort high` semantics, require a non-`main` feature branch, and gate commit/push/merge behind BLOCKING consent (see Mutating-Mode Contract). Three distinct values, **no synonyms** — an unrecognized value is not guessed; the skill lists the three and asks. |
+| `--mode` | `review`, `autofix`, `review-to-merge` | `review` | `review` = read-only review + report (current behavior, no mutation). `autofix` = review, then autonomously implement Major/Critical fixes + regression tests, run the testing skill's selective suite to green (full-suite fallback on uncovered files), and commit; STOPS after commit. `review-to-merge` = everything `autofix` does, then push and (if safe) merge the working branch into main. Both mutating modes force `--effort high` semantics, require a non-`main` feature branch, and gate commit/push/merge behind BLOCKING consent (see Mutating-Mode Contract). Three distinct values, **no synonyms** — an unrecognized value is not guessed; the skill lists the three and asks. |
 
 **Common invocations:**
 
@@ -25,7 +25,7 @@ Review code changes against project standards, security patterns, requirements, 
 | `/code-review --effort medium` | 3 fan-out agents (no adversarial verify), committed scope |
 | `/code-review --effort medium --scope working-tree` | 3 fan-out agents, working-tree diff |
 | `/code-review --effort low --scope committed` | Single-pass inline, committed scope, all hard gates active |
-| `/code-review --mode autofix` | Review, then autonomously fix Major/Critical, add regression tests, run suite to green, commit (BLOCKING). Stops after commit. |
+| `/code-review --mode autofix` | Review, then autonomously fix Major/Critical, add regression tests, run selective suite to green (full-suite fallback on uncovered files), commit (BLOCKING). Stops after commit. |
 | `/code-review --mode review-to-merge` | `autofix` + push (BLOCKING) + safe merge to main (BLOCKING). |
 | `/code-review --mode review-to-merge --scope committed` | Full autonomous review-to-merge on committed branch scope, all gates active. |
 
@@ -37,11 +37,13 @@ The default `--mode review` is **read-only** — it reviews and reports, never m
 
 ### Terminal-action table (authoritative)
 
-| Mode | Review | Implement fixes | Regression tests | Full suite | Commit | Push | Merge | Terminal action |
+| Mode | Review | Implement fixes | Regression tests | Test run¹ | Commit | Push | Merge | Terminal action |
 |------|:-:|:-:|:-:|:-:|:-:|:-:|:-:|---|
 | `review` *(default)* | yes | no | no | no | no | no | no | Report delivered. No mutation. |
 | `autofix` | yes | yes | yes | yes | yes (BLOCKING) | no | no | Stops after commit; reports SHA + summary. |
 | `review-to-merge` | yes | yes | yes | yes | yes (BLOCKING) | yes (BLOCKING) | yes if safe (BLOCKING) | Stops after merge, or after push if merge unsafe, or earlier at any failed gate. |
+
+¹ **Test run** = the `testing` skill's selective runner over the changed files (review scope + fix-touched files), which falls back to the full suite automatically when any changed file has zero coverage. The user may request a full-suite run explicitly.
 
 `review` is byte-for-byte unchanged. The mutating phases run **only after** the standard read-only review report (Phase 4) is delivered, so the read-only deliverable always exists even in a mutating run.
 
