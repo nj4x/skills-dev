@@ -44,6 +44,23 @@ Record `REVIEW_SCOPE`, `REVIEW_EFFORT`, and `REVIEW_MODE` at the start of the re
 
 ---
 
+## Gate Invariants
+
+Each gate is a hard stop that enforces one invariant. Multiple enforcement blocks exist by design — an invariant is load-bearing when removing any single block risks silent bypass. This index maps each gate to its invariant and every place it is enforced, so future editors can distinguish load-bearing redundancy from noise.
+
+| Gate | Invariant | Enforced by |
+|------|-----------|-------------|
+| **Scope** | Scope must be resolved before any repo, PR, build, or diff operation. | Scope Resolution section above; skill.md *Scope Resolution Contract*; each Step 1–2 gate opens with a scope check. |
+| **Divergence** (Step 1 / Step 3.5) | When `git status` shows the branch is behind or diverged, the agent must ask the user; never self-decide. | Step 1 "MANDATORY HARD GATE — Branch Divergence Check"; Step 3.5 in the Overview order; ⛔ "NO SELF-DECIDING" block after Step 1. |
+| **PR context** (Step 1.5) | When `gh` is available + committed scope, PR intake must complete (or be explicitly waived) before diff commands; the PR Integration State block must appear verbatim in the response. | Step 1.5 opening ⛔ block; Step 1.5.4 "HARD STOP" print-verbatim gate; Step 3 prerequisite list. |
+| **Build/OpenAPI** (Step 2) | Build must run (or be explicitly waived) and the OpenAPI artifact verified before diff/stat/log commands. Gradle commands must include `openapi3`. | Step 2 opening ⛔ block; Step 2.3 command-compliance check; Step 2.5 artifact verification; Step 3 prerequisite list; skill.md *Hard-Stop Rules*. |
+| **Diff** | No diff/stat/log/file-inspection command before both the PR-context and build gates are resolved. | "Forbidden before the gates are resolved" block (Step 1.5/2 zone); Step 3 prerequisite block; skill.md *Hard-Stop Rules* diff bullets. Multiple blocks because each marks the boundary from a different angle (what-is-forbidden, what-resolves-it, when-you-may-proceed). |
+| **Subagent** (Step 4.9) | All code analysis runs in subagents; never inline in the orchestrator regardless of effort level. | Step 4.9 "MANDATORY TRANSITION" block; ⛔ forbidden list at end of Step 4.9. |
+| **Report** (Step 13) | Once analysis is done, the full structured report must be generated immediately; never ask permission; section headings are mandatory. | Step 13 ⛔ "NON-OPTIONAL" block; skill.md Activation Contract step 8. |
+| **Mutating consent** (Step 14) | Every commit, push, and merge requires a BLOCKING consent gate. Mutating phases start only after all read-only gates are green and the report is delivered. | Step 14 BLOCKING consent table; RTM prerequisite block (in the Overview); skill.md *Hard-Stop Rules* mutating-mode bullets; skill.md terminal-action table. Multiple blocks because the mutating path is post-report and the read-only gate set must apply unchanged to it. |
+
+---
+
 ## Prerequisites
 
 - Git repository
