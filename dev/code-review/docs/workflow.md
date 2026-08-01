@@ -682,7 +682,7 @@ After all 4 finders complete:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
 3. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
-4. If `--effort medium`: proceed to Step 11 (Categorize Findings) with this list.
+4. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
 5. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
 
 ### Mandatory Pre-Report Verification Protocol
@@ -785,7 +785,7 @@ Prompt template:
 
 > MINOR findings are **not** sent to verifiers (cost vs benefit). They proceed directly to Step 11.
 
-After all verifier agents complete, proceed to Step 11 (Categorize Findings) with the verified finding list.
+After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with the verified finding list.
 
 ---
 
@@ -819,9 +819,9 @@ After all verifier agents complete, proceed to Step 11 (Categorize Findings) wit
 >
 > For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Prefer omission over false positives.
 
-Wait for the agent to return findings, then proceed to Step 11 with the unified finding list.
+Wait for the agent to return findings, then proceed to Step 10.5 (Lineage Enforcement), then Step 11 with the unified finding list.
 
-**IF `--effort medium` or `--effort high`**: Steps 5–10 are replaced by Step 4.1 (fan-out agents). You MUST have already completed Step 4.1 (and Step 4.2 for high) before reaching this point. Proceed directly to Step 11 with the synthesized/verified finding list.
+**IF `--effort medium` or `--effort high`**: Steps 5–10 are replaced by Step 4.1 (fan-out agents). You MUST have already completed Step 4.1 (and Step 4.2 for high, which also routes to Step 10.5) before reaching this point. Proceed directly to Step 11 with the synthesized/verified finding list.
 
 > The following are forbidden at this point regardless of effort level:
 > - Doing inline analysis in the orchestrator instead of delegating to a subagent
@@ -830,7 +830,7 @@ Wait for the agent to return findings, then proceed to Step 11 with the unified 
 > - Collecting additional files or commands not required by the current analysis path
 > - Pausing between steps to report intermediate progress
 >
-> Proceed directly to Step 12 (grade) and Step 13 (report) after subagent(s) return. The report is the deliverable — produce it without waiting for user prompts.
+> After subagent(s) return, proceed to Step 10.5 (Lineage Enforcement), then Step 12 (grade) and Step 13 (report). The report is the deliverable — produce it without waiting for user prompts.
 
 ---
 
@@ -1122,6 +1122,34 @@ When reviewing test files, validate against established testing patterns.
 
 ---
 
+## Step 10.5: Lineage Enforcement (ADR-0061)
+
+Run after finding synthesis and verification complete — after Step 4.2 for `--effort high`, Step 4.1 for `--effort medium`, and Step 4.9 for `--effort low` — immediately before Step 11. Findings go in the report's **🔗 Lineage** subsection (Step 13), separate from the other findings sections.
+
+**Resolve the lineage anchor.** Read the ticket's `**Spec**:` slug (spec-linked) or `**Source ADR**:` path (adr-direct) from the diff context, PR body, or the ticket file. If neither anchor is present, record "no lineage anchor found" and skip both checks below.
+
+### 10.5.1 Primary — Code-to-spec alignment (grade-impacting)
+
+Branch on anchor type first:
+
+- **Spec-linked anchor** (`**Spec**:` slug present): read `.scratch/<slug>/spec.md`. **If the file does not exist or has no frontmatter, skip this check entirely** — Group F (Critic) will catch the missing spec; do not escalate here. If resolved, compare the code changes against the spec's acceptance criteria and implementation decisions.
+- **ADR-direct anchor** (`**Source ADR**:` path present, no `**Spec**:` slug): read the referenced ADR file from `docs/adr/`. Compare the code changes against the ADR's Decision and Consequences sections.
+
+In both branches, apply the same two-way comparison:
+  - Code adds behavior not described → **MAJOR**: "Undocumented scope creep: `<behavior>` not in spec."
+  - Code omits required behavior → **MAJOR**: "Incomplete implementation: `<requirement>` specified in spec but not present in code."
+
+These MAJOR findings **count toward the grade** (Step 12) exactly like any other Major finding.
+
+### 10.5.2 Secondary — Spec-to-ADR chain visibility (informational, no grade impact)
+
+- Read the resolved spec's `**Source ADR**:` field.
+- If the field is missing, or any listed ADR path does not resolve to an existing file under `docs/adr/` → **MINOR (informational)**: "Spec lacks valid ADR anchor; ask architect to trace this spec to its source decisions."
+- This finding is purely informational: it **does not subtract from the grade** (exception to the normal −2 per Minor).
+- If the spec was not resolved in 10.5.1 (absent or no frontmatter), skip this check entirely.
+
+---
+
 ## Step 11: Categorize Findings
 
 - 🔴 **CRITICAL**: Security vulnerabilities, data loss risks, hardcoded secrets, entity leaking beyond persistence boundary
@@ -1140,6 +1168,7 @@ When reviewing test files, validate against established testing patterns.
 - Add: 2 per POSITIVE (max +10)
 - Notes do not affect grade
 - **Business logic multiplier**: CRITICAL/MAJOR findings in UseCase classes count 2x
+- **Lineage (ADR-0061)**: code-to-spec MAJOR findings (Step 10.5.1) count as normal Majors (−10 each). The spec-to-ADR MINOR (Step 10.5.2) is informational and does **not** subtract from the grade.
 
 **Grade scale:**
 - A+ (95-100), A (90-94), A- (85-89)
@@ -1160,7 +1189,7 @@ When reviewing test files, validate against established testing patterns.
 > - Ask the user for permission to generate the report
 > - Wait for a user prompt before writing findings
 > - Stop after summarizing issues without producing the full structured report
-> - Produce a free-form report that deviates from the section structure below — **the exact section headings are mandatory**, including `🔎 Build/OpenAPI Verification`, `🧾 API Documentation Consistency Check`, `📊 Data View Compliance Check`, and `🔗 PR Context Intake`; omitting any mandatory section is a workflow violation
+> - Produce a free-form report that deviates from the section structure below — **the exact section headings are mandatory**, including `🔎 Build/OpenAPI Verification`, `🧾 API Documentation Consistency Check`, `📊 Data View Compliance Check`, `🔗 PR Context Intake`, and `🔗 Lineage`; omitting any mandatory section is a workflow violation
 >
 > The report below is the primary deliverable of this skill. Generate it now in your response using the exact structure.
 
@@ -1248,6 +1277,16 @@ When reviewing test files, validate against established testing patterns.
 ### 🔍 Candidate Issues (Not Confirmed) — effort = high only; omit section otherwise
 > These findings were raised but refuted by adversarial verification. They are excluded from the grade. Include for transparency.
 1. **[File]:[Line]** - [Issue] *(Refuted: [reason])*
+
+### 🔗 Lineage (ADR-0061)
+- Lineage anchor: `[**Spec**: <slug> / **Source ADR**: <path> / none found — checks skipped]`
+- Reference resolved: `[.scratch/<slug>/spec.md (spec-linked) / docs/adr/<path> (adr-direct) / not found or no frontmatter — checks skipped]`
+- **Code-to-spec alignment** (grade-impacting; lineage Majors below count −10 each in the grade):
+  - Undocumented scope creep (Major): `[file:line + behavior, or "none"]`
+  - Incomplete implementation (Major): `[requirement, or "none"]`
+- **Spec-to-ADR chain visibility** (informational, no grade impact):
+  - Source ADR: `[present + resolves / missing / dangling: <path>]`
+  - Finding: `[Minor (informational) — "Spec lacks valid ADR anchor; ask architect to trace this spec to its source decisions." / none]`
 
 ---
 
