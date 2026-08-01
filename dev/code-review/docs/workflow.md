@@ -744,9 +744,38 @@ Prompt:
 
 ### Agent 3 — Architecture & Maintainability
 
+Pre-read (before reviewing the diff):
+1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
+2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in all findings — not "component," "service," "API," or "boundary."
+3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
+
+Bounded context (before applying the deep-module lens):
+- If PROJECT_MODULE_VIEW is set: for each changed file, identify its module boundary per the MODULE_VIEW document and read all source files in that module.
+- Otherwise: for each changed file, read all source files in its parent directory (package-prefix fallback).
+- READ-ONLY — do not walk the full codebase.
+
 Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Architecture & Maintainability**: module boundary violations, circular dependencies, wrong-layer access, field-injection anti-patterns, duplication that should be extracted, naming, complexity, dependency direction, dead code, over-engineering.
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`. Omit findings you are not confident about.
+> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture & Maintainability** and **Deep-Module Detection**:
+>
+> **Architecture & Maintainability (baseline):**
+> - Module boundary violations, circular dependencies, wrong-layer access, field-injection anti-patterns, duplication that should be extracted
+> - Naming, complexity, dependency direction, dead code, over-engineering
+> - N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
+>
+> **Deep-Module Detection (use vocabulary from pre-read skill docs — apply to the diff only, never flag pre-existing debt the diff leaves untouched):**
+>
+> *Scenario 1 — Diff creates a new shallow module:*
+> Apply the deletion test to every new module introduced by the diff: would deleting it concentrate complexity back into callers (deep) or just move it (shallow)? If shallow → MAJOR.
+> Description format: `Module '<name>' is shallow (interface ≈ implementation complexity; deletion test: deleting it moves complexity rather than concentrating it). Deepening sketch: <one-line suggestion using codebase-design vocabulary>.`
+>
+> *Scenario 2 — Diff deepens an existing module:*
+> If the diff reduces interface surface, introduces a seam, or pulls logic behind an interface:
+> - Deepening complete (interface genuinely simpler, implementation absorbs complexity) → POSITIVE.
+>   Description: `Module '<name>' deepened: interface surface reduced — good locality gain. (<vocabulary term> applied correctly.)`
+> - Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
+>   Description: `Module '<name>' partially deepened but seam is still leaky: <what remains exposed>. To complete: <one-line sketch>.`
+>
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Omit findings you are not confident about.
 
 ### Agent 4 — Security & Operational Risk
 
@@ -822,6 +851,10 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 - The complete diff text from Step 4
 - All discovered document paths: `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`
 - The `--scope` value (so it knows whether Jira commit-message validation applies)
+- Pre-read instructions:
+  1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
+  2. Read `~/.claude/skills/codebase-design/SKILL.md` — for the canonical vocabulary: **module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**. Use these terms exactly in findings.
+  3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
 - This analysis brief:
 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
@@ -831,6 +864,11 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 > **Kotlin/language standards**: vertical-slice pattern (UseCase `@Service` with `operator fun invoke()`, thin controllers, constructor injection only); three-tier model (API models → Resources → Entities, no entity leaking beyond repository); `@JsonIgnoreProperties(ignoreUnknown = true)` on request models but NOT response models; Kotlin idioms (`data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`); custom validators in `validator/` sub-package; centralized `@RestControllerAdvice`.
 >
 > **Module architecture** (when MODULE_VIEW provided): zero circular dependencies; module boundaries respected per Module View; shared modules have no dependencies on feature modules; cross-module reads go through interfaces.
+>
+> **Deep-Module Detection (apply to the diff only, never flag pre-existing debt):**
+> - *New shallow modules*: Apply the deletion test — would deleting it concentrate complexity back into callers (deep) or just move it (shallow)? If shallow → MAJOR.
+> - *Deepening existing modules*: If diff reduces interface surface, introduces a seam, or pulls logic behind an interface: Deepening complete (interface simpler, implementation absorbs complexity) → POSITIVE. Deepening incomplete (seam still leaky, interface still cluttered) → MAJOR.
+> Use codebase-design vocabulary (module, interface, depth, seam, adapter, leverage, locality) in all deep-module findings.
 >
 > **API compliance** (when API_DEFINITION provided): HTTP method + path matches spec; request/response fields correct; error codes correct; pagination follows project pattern; OpenAPI annotations present; API documentation semantically consistent-or-better vs API Definition.
 >
