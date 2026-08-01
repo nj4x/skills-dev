@@ -26,6 +26,9 @@ The issue tracker and triage label vocabulary should have been provided to you โ
      - **Not Approved**: block finalization and surface which ADR is not yet approved.
    - Store the validated list as `source_adrs`.
 
+   <!-- Note (ADR-0066 ยง4): the `**Status**: Approved` check relies on an informal body-text convention, not a formalized frontmatter field. Formalizing this convention belongs in ADR-0056 in a future pass; this skill only implements the check as currently specified. -->
+
+
 4. Write the spec to a **staging file** at `.scratch/<feature-slug>/draft-spec.md`, using the spec template below. The draft **must** begin with this YAML frontmatter block (required for critic's artifact-type detection):
 
    ```
