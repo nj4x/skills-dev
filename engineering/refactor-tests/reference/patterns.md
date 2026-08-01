@@ -67,10 +67,11 @@ Moving a test file can invalidate **relative** imports (their depth to the sourc
 
 | Language | Parser | What to rewrite |
 |---|---|---|
-| Python | stdlib `ast` (parse, locate `Import`/`ImportFrom`, recompute `level` and module for relative imports, unparse or splice) | relative `from ..x import y` whose depth changed; convert to absolute `from <pkg>.x import y` where the package path is known |
+| Python | `libcst` (comment/format-preserving); fall back to stdlib `ast` splice when libcst is unavailable | relative `from ..x import y` whose depth changed; convert to absolute `from <pkg>.x import y` where the package path is known |
 | TS/JS | TypeScript compiler API or Babel (`@babel/parser` + `@babel/traverse`) | relative `import ... from './x'` / `require('./x')` specifiers; recompute the `./`-relative path from the new location; leave path-alias and package imports untouched |
 | Go | `go/parser` + `go/printer` (or `goimports`) | rarely needed — Go imports are module-absolute; run `goimports` on moved files to fix ordering |
-| Java/Kotlin | `javalang` (Python) or a Kotlin/Java parser | `package` declaration to match the new directory, and any relative-resource references |
+| Java | `JavaParser` (com.github.javaparser) — parse compilation unit, update `PackageDeclaration` node, pretty-print | `package` declaration to match the new directory |
+| Kotlin | Kotlin compiler PSI via `kotlin-compiler-embeddable` — update `KtPackageDirective` node, emit with PSI printer, `ktlint --format` for cleanup | `package` declaration to match the new directory |
 
 Any file the parser cannot process is a **warning** (not a silent skip): record it in the report and leave its imports unchanged for manual follow-up.
 
@@ -78,14 +79,20 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 
 ```json
 {
-  "phase": "discovery|planning|baseline|moving|rewriting|validating|done",
+  "phase": "discovery|planning|baseline|moving|rewriting|validating|simplifying|simplify-validating|done",
   "project_path": "/abs/path",
   "languages": ["python"],
   "source_roots": ["src"],
   "runners": { "python": "pytest" },
   "baseline": { "python": { "passed": 412, "failed": ["tests/test_x.py::test_a"] } },
+  "id_map": { "tests/test_instruments.py::test_parse": "tests/protrading/adapters/test_instruments.py::test_parse" },
   "moves": [ { "from": "tests/test_instruments.py", "to": "tests/protrading/adapters/test_instruments.py", "language": "python", "source_file": "src/protrading/adapters/instruments.py" } ],
-  "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ]
+  "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ],
+  "simplification": {
+    "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
+    "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
+    "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ]
+  }
 }
 ```
 
@@ -105,4 +112,56 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 }
 ```
 
-`plan.json` is the artifact the repeat loop refines; `ledger.json` is the durable execution record written during FINALIZE_STEP.
+`plan.json` is the Phase A artifact the repeat loop refines; `ledger.json` is the durable execution record written during FINALIZE_STEP.
+
+## Simplification plan schema (`.scratch/refactor-tests/simplification-plan.json`)
+
+```json
+{
+  "removals": [
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_parse_instrument_copy",
+      "criterion": "exact-duplicate",
+      "evidence": "body identical to test_parse_instrument (lines 42-51 vs 55-64)"
+    },
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_always_passes",
+      "criterion": "dead-test",
+      "evidence": "no assert/expect statement in body"
+    }
+  ],
+  "parametrizations": [
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "tests": ["test_parse_equity", "test_parse_future", "test_parse_option"],
+      "consolidated_name": "test_parse_instrument_by_type",
+      "consolidated_body_sketch": "@pytest.mark.parametrize('symbol,expected_type', [('AAPL', 'equity'), ('ESZ4', 'future'), ('AAPL241220C200', 'option')])\ndef test_parse_instrument_by_type(symbol, expected_type): ...",
+      "criterion": "parametrize-cluster",
+      "evidence": "all three call parse_instrument(symbol) and assert result.type == expected; same structure, different inputs"
+    }
+  ],
+  "unanalyzable": [
+    { "file": "tests/conftest.py", "reason": "fixture-only file; no test functions" }
+  ]
+}
+```
+
+`simplification-plan.json` is the Phase B artifact the repeat loop refines.
+
+## AST editor guidance (per language)
+
+Test editing must use the same AST-based approach as import rewriting — never blind text deletion.
+
+| Language | Remove test function | Add parametrize decorator | Notes |
+|----------|---------------------|--------------------------|-------|
+| Python | stdlib `ast` — locate `FunctionDef` by name, remove node, unparse with `ast.unparse` | Insert `@pytest.mark.parametrize(argnames, argvalues)` decorator node before function; add `import pytest` if absent | Use `libcst` when round-trip formatting fidelity is required |
+| TS/JS | `@babel/parser` + `@babel/traverse` — locate `describe`/`it`/`test` call by name, remove subtree | Replace with `test.each([...])(...)` or `it.each([...])(...)`; preserve surrounding `describe` block if siblings remain | Reprint with `@babel/generator`; run `prettier` on result if project uses it |
+| Go | `go/ast` + `go/printer` — locate `func Test<Name>(t *testing.T)` by name, remove declaration | Replace N funcs with one table-driven func using a `tests := []struct{...}` slice and `t.Run(tc.name, func(t *testing.T){...})` subtests per entry; `gofmt` after edit | Subtests are mandatory: they preserve per-case test ids and `t.Fatal` isolation |
+| Java | `JavaParser` (com.github.javaparser) — parse compilation unit, locate `@Test` method by name, remove node, pretty-print | Replace with `@ParameterizedTest` + `@MethodSource` (complex args) or `@CsvSource` (primitives/strings); add required imports | JavaParser supports full round-trip source rewriting |
+| Kotlin | Kotlin compiler PSI via `kotlin-compiler-embeddable` — locate `@Test` function by name, remove PSI element | Replace with `@ParameterizedTest` + `@MethodSource`; `ktlint --format` for cleanup | Emit with PSI printer |
+
+**Fallback for removal** (when AST edit would corrupt formatting): fall back to line-range splicing — record line range in ledger, splice lines, warn in final report.
+
+**Fallback for parametrization** (when composite AST edit fails at edit time, not at parse time): skip the entry entirely, record as `skipped` in the ledger, leave the file unchanged, surface in final report as a warning. Do not attempt partial edits (no partial deletions without the consolidated insert).
