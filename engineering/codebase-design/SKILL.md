@@ -19,7 +19,7 @@ Use these terms exactly — don't substitute "component," "service," "API," or "
 
 **Depth** — leverage at the interface: the amount of behaviour a caller (or test) can exercise per unit of interface they have to learn. A module is **deep** when a large amount of behaviour sits behind a small interface, **shallow** when the interface is nearly as complex as the implementation.
 
-**Seam** _(Michael Feathers)_ — a place where you can alter behaviour without editing in that place; the *location* at which a module's interface lives. Where to put the seam is its own design decision, distinct from what goes behind it. _Avoid_: boundary (overloaded with DDD's bounded context).
+**Seam** _(Michael Feathers)_ — a place where you can alter behaviour without editing in that place; where a caller depends on a module's interface (rather than a concrete implementation) — the substitution point at which behavior can vary. Where to put the seam is its own design decision, distinct from what goes behind it. _Avoid_: boundary (overloaded with DDD's bounded context).
 
 **Adapter** — a concrete thing that satisfies an interface at a seam. Describes *role* (what slot it fills), not substance (what's inside).
 
@@ -98,7 +98,7 @@ Good interfaces make testing natural:
 
 - A **Module** has exactly one **Interface** (the surface it presents to callers and tests).
 - **Depth** is a property of a **Module**, measured against its **Interface**.
-- A **Seam** is where a **Module**'s **Interface** lives.
+- A **Seam** is where a caller depends on a **Module**'s **Interface**.
 - An **Adapter** sits at a **Seam** and satisfies the **Interface**.
 - **Depth** produces **Leverage** for callers and **Locality** for maintainers.
 
