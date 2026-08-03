@@ -1,6 +1,6 @@
 ---
 name: refactor-tests
-description: Refactor a project's flat test layout into a source-package-mirrored structure (polyglot — Python, TS/JS, Go, Java/Kotlin) and simplify the suite by removing redundant tests and consolidating parametrizable groups. Use when a project's tests live in one flat directory and you want them reorganized to mirror the source packages so that changed code maps to a small, relevant test subset, and to eliminate exact duplicates, dead tests, and unnecessarily split tests that can be expressed as parametrized cases. Keywords - test refactor, mirror tests, test layout, package-mirrored tests, reorganize tests, redundant tests, test simplification, dead tests, duplicate tests, parametrize.
+description: Reorganize a flat test suite to mirror source packages and prune redundant/dead tests.
 disable-model-invocation: true
 argument-hint: "[project-path]"
 ---

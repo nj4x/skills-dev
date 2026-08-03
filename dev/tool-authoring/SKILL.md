@@ -1,13 +1,11 @@
 ---
 name: tool-authoring
-description: Audit and rewrite MCP tool definitions — descriptions, parameter schemas, error responses, annotations — so an LLM can make correct tool-selection and invocation decisions. Use when descriptions are passive, omit when-NOT-to-call guidance, mention server-config prerequisites the LLM can't set, restate param types, or fail to distinguish sibling tools. Use when asked to "audit tool descriptions", "rewrite tool descriptions", "improve MCP tool descriptions", or "fix tool descriptions".
+description: Audit and rewrite MCP tool definitions so an LLM can select and invoke them correctly.
 argument-hint: "[path/to/server.py]"
 disable-model-invocation: true
 ---
 
 # tool-authoring
-
-Audit and rewrite MCP tool definitions — descriptions, parameters, error responses, names, and annotations — so an LLM can make correct tool-selection and invocation decisions without guessing.
 
 **Core principle: describe observable behavior, never server-config prerequisites.** The LLM cannot set an env var, flag, or startup config on a running server. Every prerequisite must be expressed as an error the caller will *observe in a response*, not a precondition it must satisfy.
 

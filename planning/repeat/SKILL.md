@@ -1,12 +1,9 @@
 ---
 name: repeat
-description: Run a smart autonomous generate→review→refine loop over any artifact with an adversarial reviewer, refining until approved or a max-iteration cap. Use when iterating on a plan, design, spec, or any document that needs adversarial review. Triggers: /repeat, iterative loop, generate-review-refine, smart iterate. Default behavior pauses on architecture, schema-field, external-integration, or otherwise unverifiable decisions to confirm with the user before committing them. Pass `auto` to opt into fully unattended operation (takes safe defaults, records assumptions, never pauses).
+description: Reusable generate→review→refine loop engine; consumed by other skills (e.g. critic) and directly invocable over any artifact.
 disable-model-invocation: true
 arguments: [mode, max_iterations]
-argument-hint: "[auto] [max-iterations]"
 ---
-
-<!-- Note: `arguments` is supported by the Claude Code CLI. The VS Code agent-linter warning is cosmetic and accepted. -->
 
 # The repeat loop contract
 
