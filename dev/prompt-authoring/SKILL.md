@@ -1,6 +1,6 @@
 ---
 name: prompt-authoring
-description: Author reusable markdown prompt artifacts for autonomous research, planning, implementation, debugging, or verification workflows. Defaults to a single self-repeating numbered LOOP (inspect/run → analyze → plan-with-critic → spec-first execution → verify → repeat) with one crisp stop condition. Keeps a lighter HELPER path for simple one-off prompts. Use when the user asks to "create a prompt", "author a prompt", "design an autonomous workflow prompt", "turn this idea into a reusable prompt", or "write me a prompt for Claude Code".
+description: Author reusable markdown prompt artifacts for autonomous research, planning, implementation, debugging, or verification workflows. Defaults to a single self-repeating numbered LOOP (inspect/run → analyze → critic → spec-first execution → verify → repeat) with one crisp stop condition. Keeps a lighter HELPER path for simple one-off prompts. Use when the user asks to "create a prompt", "author a prompt", "design an autonomous workflow prompt", "turn this idea into a reusable prompt", or "write me a prompt for Claude Code".
 disable-model-invocation: true
 ---
 
@@ -26,10 +26,10 @@ This is the single-line stop condition for both archetypes. Do not expand into m
 ## Paradigm skills to promote inline (with round counts)
 
 When synthesizing a LOOP prompt, name relevant skills inside loop steps with explicit round counts:
-- `plan-with-critic (N rounds)`
+- `critic (N rounds)`
 - `FS-skill` (refine existing requirements/spec artifacts)
 - `SRS-skill` (refine derived software requirements against current specs)
-- `data-view skill` (refine use cases and data access patterns)
+- `data-view-skill` (refine use cases and data access patterns)
 - `apply code-review skill to uncommitted code`
 
 Round counts are part of the instruction — they control depth and are not decoration.
@@ -42,11 +42,11 @@ Identify: partial draft / vague idea / concrete request. Note whether the scope 
 
 ### Step 2 — compact intake (3-5 questions)
 
-Ask only what is needed. The 5 canonical questions below are duplicated from the authoritative wording source, `references/question-bank.md`, for friction-free use:
+Ask only what is needed:
 
 1. What exact command, workflow, or artifact does this prompt drive?
 2. What is the goal?
-3. Which skills are involved, with how many critic rounds each? (plan-with-critic, FS-skill, SRS-skill, data-view skill, code-review, etc.)
+3. Which skills are involved, with how many critic rounds each? (critic, FS-skill, SRS-skill, data-view-skill, code-review, etc.)
 4. What real command + log/check verifies each pass or completion?
 5. Any exceptions to the default stop condition?
 
@@ -66,7 +66,7 @@ Check conversation history and any uploaded files for prior skill names, round c
 ### Step 4 — synthesize into final authored prompt
 
 Select the skeleton from `references/prompt-template.md`. Replace generic placeholders with the user's actual:
-- skills and round counts (e.g. `plan-with-critic (3 rounds)`, `FS-skill`, `SRS-skill`, `data-view skill`, `apply code-review skill`)
+- skills and round counts (e.g. `critic (3 rounds)`, `FS-skill`, `SRS-skill`, `data-view-skill`, `apply code-review skill`)
 - existing requirements/spec artifacts to refine, goal, and target command/workflow
 - verification command and log path
 
@@ -76,7 +76,7 @@ For LOOP prompts: emit the loop shape directly. Do not expand into standalone `#
 
 For HELPER prompts: title + mission + ≤5 steps + inline verification + stop line. If code changes are in scope, promote to LOOP so the prompt can stay spec-first.
 
-If the user explicitly wants a rigorous interview or says "grill me", use the `grill-me` skill if available.
+If the user explicitly wants a rigorous interview or says "grill me", use the `grilling` skill if available.
 
 ### Step 5 — pre-write guard + return
 
@@ -84,7 +84,7 @@ Before writing or returning the prompt, check:
 1. Verification step present inline in the loop (or as an inline line for HELPER)?
 2. Canonical stop line present verbatim?
 3. Target/goal explicit in the opening line, including existing requirements/spec artifacts to refine when applicable?
-4. If code changes are in scope, does the prompt include FS-skill + SRS-skill + data-view skill before implementation?
+4. If code changes are in scope, does the prompt include FS-skill + SRS-skill + data-view-skill before implementation?
 
 Fix inline if any check fails. Then return the authored prompt inline, or write to file:
 - User gave an explicit path → write there.
@@ -100,7 +100,6 @@ LOOP: 25-40 lines. HELPER: 10-20 lines. If the prompt grows past the target, com
 ## Additional resources
 
 - [references/prompt-template.md](references/prompt-template.md) — skeletons + canonical stop line
-- [references/question-bank.md](references/question-bank.md) — intake questions (authoritative)
 - [references/interview-framework.md](references/interview-framework.md) — Tier 1/2 interview model
 - [references/anti-patterns-and-defaults.md](references/anti-patterns-and-defaults.md) — what to avoid
 - [references/memory-guidance.md](references/memory-guidance.md) — memory rules

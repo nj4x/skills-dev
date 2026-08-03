@@ -1,12 +1,10 @@
 ---
 name: FS-skill
-description: Assists with requirements engineering tasks including writing, reviewing, analyzing, generating, or modifying Feature Set (FS) requirements using EARS methodology. Use this skill when user asks to build, write, create, generate, analyze, review, or modify requirements, requirements documents, or feature set (FS) specifications from source documents. This skill produces EARS-formatted feature requirements. For creating SRS (Software Requirements Specification) documents from existing FS requirements, use the FS-to-SRS skill instead. This skill REQUIRES user confirmation at multiple checkpoints before completion.
+description: Author or revise Feature-Set (FS) requirements in EARS format. For SRS documents from existing FS, use SRS-skill instead.
 disable-model-invocation: true
 ---
 
 # FS Skill
-
-> **⚠️ IMPORTANT**: This skill has MANDATORY confirmation checkpoints. Do NOT write final requirements to file until user explicitly confirms satisfaction in the Iterative Refinement Loop (Section 6).
 
 This skill helps with requirements engineering using the EARS (Easy Approach to Requirements Syntax) methodology. It can be used for:
 - Writing new requirements from source documents or user input
@@ -16,54 +14,9 @@ This skill helps with requirements engineering using the EARS (Easy Approach to 
 
 ---
 
-## Workflow Summary with Checkpoints
+## 0. Confirm Skill Activation
 
-### Phase 1: Initialization (BLOCKING)
-1. **CHECKPOINT #1** - Confirm skill activation (Section 0)
-   - Action: Ask user to confirm FS skill usage
-   - Condition: WAIT for explicit user confirmation
-   - If user activated via `use_skill` → Skip to Phase 2
-
-### Phase 2: Research & Generation
-2. **Step 1** - Read EARS syntax documentation
-3. **Step 2** - Analyze existing requirements
-4. **Step 3** - Identify categories and groupings
-5. **Step 4** - Generate requirements in EARS format
-6. **Step 5** - Quality check and document contradictions (conflicts, inconsistencies)
-
-### Phase 3: Iterative Refinement Loop (BLOCKING)
-7. **CHECKPOINT #2** - Begin refinement loop (Section 6)
-   - Present draft requirements + improvement suggestions
-   - IF user requests changes → Incorporate feedback
-   - Execute mandatory validation phase
-   - Ask user: "Are you satisfied with these requirements?"
-     - IF NO → Continue loop
-     - IF YES → Proceed to Phase 4
-
-### Phase 4: Finalization
-8. **Step 7** - Write requirements to file (ONLY after explicit user approval)
-
-### Decision Rules
-| Condition | Action |
-|-----------|--------|
-| User has NOT confirmed at Checkpoint #1 | WAIT - Do not proceed |
-| User has NOT approved at Checkpoint #2 | LOOP - Return to refinement |
-| User says "yes", "approved", "satisfied", "proceed" | PROCEED to next phase |
-| User provides feedback or says "no" | INCORPORATE changes, stay in loop |
-
----
-
-## 0. Confirm Skill Activation (MANDATORY CHECKPOINT #1)
-
-**⛔ STOP - Do not proceed without user confirmation**
-
-Before proceeding with ANY requirements work:
-1. Ask the user: "I can help with requirements using EARS format. Would you like me to use the FS skill for this task?"
-2. Briefly explain what the skill will do based on their request
-3. **Wait for explicit user confirmation** (e.g., "yes", "proceed", "go ahead")
-4. Only after receiving confirmation, proceed to step 1
-
-> **Note**: If user's task explicitly mentions "use EARS" or activates this skill via `use_skill`, this checkpoint is satisfied.
+Briefly explain what you'll do and ask the user: "Would you like me to use the FS skill for this task?" Proceed once the user confirms (e.g., "yes", "go ahead"). Skip if the user's task explicitly mentions "use EARS" or invokes this skill directly.
 
 ---
 
@@ -85,9 +38,9 @@ Read [MCP-Usage.md](<skill dir>/docs/MCP-Usage.md) for detailed MCP tool usage i
 
 ## 3. Analyze Existing and New Requirements
 
-### 3.1 Initialize Source Document Access (MANDATORY CHECKPOINT)
+### 3.1 Initialize Source Document Access
 
-> **⛔ PROHIBITED**: Do NOT use `list_files` or `read_file` to explore source directories when a source path is provided. ALWAYS use MCP semantic search tools first.
+When a source path is provided, use MCP semantic search tools first; fall back to `list_files`/`read_file` only when MCP is unavailable.
 
 **Decision Tree:**
 
@@ -107,7 +60,7 @@ IF user request does NOT contain a source directory path
 ```
 
 **MCP Connection Recovery:**
-If MCP tool call fails, ask user: "The MCP server `mcp-vectors` appears disconnected. Please reconnect it in Cline's MCP Servers settings, then let me know when ready." Wait for user confirmation before retrying or falling back.
+If an MCP tool call fails, ask the user to reconnect the `mcp-vectors` server in Claude Code's MCP settings and confirm when ready before retrying.
 
 See [MCP-Usage.md](<skill dir>/docs/MCP-Usage.md) for additional MCP tool details.
 
@@ -163,13 +116,9 @@ Follow [Quality-Check.md](<skill dir>/docs/Quality-Check.md) for:
 
 ---
 
-## 7. Iterative Refinement Loop (MANDATORY CHECKPOINT #2)
+## 7. Iterative Refinement Loop
 
-> **⛔ CRITICAL**: This section is MANDATORY. You MUST NOT skip to Section 8 without completing at least one full iteration and receiving explicit user confirmation.
-
-### 7.1 Present Draft and Ask for Feedback (REQUIRED)
-
-**⛔ STOP - Present requirements and wait for user response**
+### 7.1 Present Draft and Ask for Feedback
 
 1. **Present the draft requirements** to the user (in a readable format, not written to file yet)
 2. **Self-analyze** the generated requirements for:
@@ -180,7 +129,7 @@ Follow [Quality-Check.md](<skill dir>/docs/Quality-Check.md) for:
 3. **Block finalization** for any new or materially edited requirement that defines an invocation or realization mechanism; rewrite it to an outcome, capability, lifecycle behavior, or safety constraint.
 4. **Provide improvement suggestions** to the user
 5. **Ask explicitly**: "Would you like to make any changes, additions, or refinements to these requirements?"
-6. **Wait for user response** - Do NOT proceed until user responds
+6. Proceed only after the user responds
 
 ### 7.2 Generate New Version (if changes requested)
 
@@ -189,7 +138,7 @@ Clearly indicate what changed using:
 - **Modified**: Changed requirements (show before/after)
 - **Removed**: Deleted requirements
 
-### 7.3 Validation Phase (MANDATORY)
+### 7.3 Validation Phase
 
 Follow [Validation-Process.md](<skill dir>/docs/Validation-Process.md) for:
 - Creating validation plan
@@ -197,8 +146,7 @@ Follow [Validation-Process.md](<skill dir>/docs/Validation-Process.md) for:
 - Recording validation results (✓ Validated, ⚠ Partial, ✗ Not Found, ⚡ Contradicts)
 - Applying enforcement rules
 
-**Progressive Source Discovery (REQUIRED):**
-During validation, track `file_path` values from search results in a "Processed Sources" list. When validating subsequent requirements or seeking additional evidence, use the `exclude_files` parameter to skip already-processed documents and discover NEW source materials:
+**Progressive Source Discovery:** Track `file_path` values from search results in a "Processed Sources" list. When validating subsequent requirements or seeking additional evidence, use the `exclude_files` parameter to skip already-processed documents and discover new source materials:
 
 ```
 # First search
@@ -213,7 +161,7 @@ results2 = search_documents(
 processed_sources.extend([r.file_path for r in results2])
 ```
 
-This ensures comprehensive source coverage by progressively discovering all relevant documents rather than repeatedly finding the same top matches.
+This progressively discovers all relevant documents rather than repeatedly finding the same top matches.
 
 **Parallel fan-out (≥3 requirement groups, advisory):** Fan out MCP evidence searches across one Agent subagent per requirement group, launched in a single message. The `exclude_files` progressive chain is maintained *within* each group's subagent (never across subagents). Main thread reconciles evidence tables across groups and checks for cross-group coverage gaps. Fall back to serial validation when fewer than 3 groups exist or any subagent fails.
 
@@ -223,16 +171,14 @@ This ensures comprehensive source coverage by progressively discovering all rele
 - Ensure all updates align with EARS syntax
 - Check for new contradictions (conflicts, inconsistencies) introduced by changes
 
-### 7.5 Confirmation Checkpoint (REQUIRED)
-
-**⛔ STOP - Explicit confirmation required before proceeding**
+### 7.5 Confirmation Checkpoint
 
 Ask the user: **"Are you satisfied with these requirements, or would you like further refinements?"**
 
 - **If user says NO, wants changes, or provides feedback**: Return to step 7.1
 - **If user explicitly says YES, satisfied, approved, or similar**: Proceed to step 8
 
-> **⚠️ BLOCKING RULE**: Do NOT use `write_to_file` or `attempt_completion` until you have received an explicit positive confirmation from the user at this checkpoint.
+Write to file only after receiving explicit user confirmation at this checkpoint.
 
 ### 7.6 Single Refinement Mode (ALTERNATIVE)
 
