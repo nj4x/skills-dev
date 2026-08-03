@@ -1,6 +1,6 @@
 ---
 name: testing
-description: Use when running tests, or committing the changes.
+description: Use when running tests or committing changes. Use when the user says "run tests", "run the suite", "commit this", or asks which tests cover a changed file.
 ---
 
 Always run the full test suite AND lint after code changes.
