@@ -62,7 +62,7 @@ The agent will symlink each skill directory to `~/.claude/skills/<name>` so they
 
 **Dev & email:**
 ```
-/skill-authoring        # create or refine a skill
+/skill-authoring        # create a new skill
 /writing-great-skills   # audit skill quality across the repo
 /prompt-authoring       # refine agent prompts and tool wiring
 /inbox                  # triage email with category rules from prefs.json

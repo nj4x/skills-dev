@@ -92,4 +92,4 @@ Pattern A skills are short because their logic is in code. If your Pattern A SKI
 
 ---
 
-*See [SKILL.md](../SKILL.md) for where these patterns fit in the authoring workflow.*
+*See [skill-authoring](../SKILL.md) for where these patterns fit in the create workflow.*
