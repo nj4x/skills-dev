@@ -77,7 +77,7 @@ Minimal — one universal instruction plus an `@RTK.md` include for token optimi
 ```markdown
 When reporting any information, be extremely concise and sacrifice grammar for sake of concision.
 
-@RTK.md
+[Rust Token Killer](RTK.md) - Token-optimized CLI proxy
 ```
 
 #### `~/.claude/RTK.md`
