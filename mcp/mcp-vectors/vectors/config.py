@@ -208,7 +208,8 @@ class Config:
     def config_fingerprint(self) -> str:
         """Deterministic SHA-256 of enforcement-relevant config fields."""
         canonical = sorted(self.allowed_non_git_roots)
-        payload = f"v2|git-root-enforcement|auto-purge={self.auto_purge_non_git_roots}|{"|".join(canonical)}"
+        joined = "|".join(canonical)
+        payload = f"v2|git-root-enforcement|auto-purge={self.auto_purge_non_git_roots}|{joined}"
         return hashlib.sha256(payload.encode()).hexdigest()
 
     # search_root channel timeout (seconds); validated > 0 at startup, defaults to 60
