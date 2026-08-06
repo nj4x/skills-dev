@@ -17,7 +17,7 @@ Pick the source in this order; stop at the first match:
 
 1. **Explicit path passed as argument.** `/html-view /path/to/file.md` → that file. Resolve relative paths against the cwd. If the file doesn't exist or isn't readable, stop and tell the user.
 2. **`@`-referenced markdown file** in the user's most recent message → that file.
-3. **Most recently modified plan file** under `/Users/rijul/.claude/plans/*.md` — but only if a plan-mode session just exited or the user explicitly says "the plan". Pick by `mtime`, not name.
+3. **Most recently modified plan file** under `~/.claude/plans/*.md` — but only if a plan-mode session just exited or the user explicitly says "the plan". Pick by `mtime`, not name.
 4. **Conversation context** (last resort): assemble a synthesis from the recent conversation. Only use this branch when the prior three failed AND the conversation contains enough material (≥ ~30 substantive turns). Otherwise ask the user what to convert.
 
 Once the source is picked, read the *whole* file (or the relevant conversation slice) before starting the design pass. Don't skim.
@@ -47,13 +47,13 @@ Before emitting a single line of HTML, decide:
 2. **Typography.** System UI stack by default (`-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`) + a monospace stack for code. Use a CDN font (Google Fonts) **only** if the source clearly calls for one and the user is okay with one network reference.
 3. **Color palette.** Always prefer a **colorblind-friendly palette** — never distinguish data by red vs green alone. Use the **Okabe-Ito colorblind-safe palette** from [PALETTE.md](PALETTE.md) as defaults; load it when selecting colors. Aim for AA contrast (≥ 4.5:1 body text). Dark mode via `@media (prefers-color-scheme: dark)`.
 4. **Layout.** Single long-scroll with sticky TOC is the safe default. Use tabs only when sections are genuinely independent (e.g. comparing options). Use a deck layout only when the user asks.
-5. **What becomes what.** Walk through the source and tag each section: prose → `<section>` with `<h2>`; matrix/comparison → `<table>`; flow/architecture → inline `<svg>`; code → `<pre><code>`; warnings/asides → `<aside>` callouts; lists of decisions → definition lists.
+5. **What becomes what.** Walk through the source and tag each section: prose → `<section>` with `<h2>`; matrix/comparison → `<table>`; flow/architecture → a diagram; code → `<pre><code>`; warnings/asides → `<aside>` callouts; lists of decisions → definition lists. For each diagram, route by the rule in the *Diagrams* section below — and decide CDN-Mermaid vs. no-network inline SVG there, since it reshapes the whole file.
 
 If `frontend-design` skill is available, defer aesthetic decisions to it; this skill's job is the structural map.
 
 ## HTML structure rules (non-negotiable)
 
-- **Single `.html` file.** Inline everything: `<style>` in `<head>`, inline `<svg>` for diagrams. No external CSS/JS. A CDN font link is the only allowed network reference.
+- **Single `.html` file.** Inline everything: `<style>` in `<head>`, inline `<svg>` for diagrams. No external CSS/JS — network references are limited per the `file://`-clean rule below (one CDN font; the Mermaid script only if you chose Mermaid).
 - **Self-identifying.** Add `data-generator="html-view"` to the root `<html>` tag so future invocations can detect a regenerable file.
 - **Semantic HTML.** `<header>`, `<nav>`, `<main>`, `<section>`, `<article>`, `<aside>`, `<footer>`. Headings nest properly (one `<h1>` per page, then `<h2>` for sections, `<h3>` for subsections).
 - **CSS custom properties at `:root`** for color + spacing tokens. Use `clamp()` for responsive type sizes.
@@ -61,7 +61,7 @@ If `frontend-design` skill is available, defer aesthetic decisions to it; this s
 - **Print-friendly.** Include `@media print` block — hide nav, hide interactive elements, force light colors, ensure tables don't break mid-row where avoidable.
 - **In-page nav.** Every `<section>` gets a stable `id`. Build a TOC of anchor links to those ids. Smooth-scroll via `scroll-behavior: smooth` on `:root`.
 - **Code blocks.** `<pre><code>` with monospace + a subtle background. Minimal syntax highlighting via hand-emitted `<span class="kw|str|cmt|num">` if it adds value; otherwise leave code unhighlighted. **No** Prism.js, highlight.js, or any runtime script for highlighting.
-- **`file://` clean.** The file must open from disk with zero fetches or module imports. No `<script type="module">`, no `import`, no `fetch()`.
+- **`file://` clean.** No `<script type="module">`, no `import`, no `fetch()`. The single allowed network reference is a CDN **font**. **Diagrams are a decision, not a default:** Mermaid.js via CDN renders sequence/flow/state/class diagrams richly but breaks the zero-fetch promise and fails offline, so hand-drawn inline SVG is the offline-safe default. Pick Mermaid **only** for those four diagram types *and* when the user is fine with one network reference (or asks for Mermaid); otherwise render the diagram as inline SVG. State the choice in the design pass.
 
 ## Slideshow / deck mode
 
@@ -83,17 +83,17 @@ A deck for a 12-section source should land around 30–80 KB. If you're over 100
 The output **must** include:
 
 - At least one **table** — decision log, comparison matrix, file-list, schema, etc. (For deck mode, this can be on a single dedicated "matrix" slide.)
-- At least one **diagram** — architecture, data flow, sequence, state machine. Prefer **Mermaid.js** (client-side rendering via CDN) for sequence diagrams, flowcharts, and state diagrams. Use inline SVG only for custom architecture diagrams that Mermaid can't express. No PNG.
+- At least one **diagram** — architecture, data flow, sequence, state machine. Render it per the `file://`-clean rule above (inline SVG by default; Mermaid only under the stated conditions). No PNG.
 - An **anchor-linked TOC** (sidebar nav, top nav, or — for deck mode — a "contents" slide near the front).
 - A **`<footer>`** with: the source file path, the generation date (ISO), and a small "Generated by html-view" line.
 
 ## Mermaid.js diagrams
 
-When the source contains sequence diagrams, flowcharts, state machines, or class diagrams, use Mermaid.js for client-side rendering. For full setup, syntax rules, safe character reference, PlantUML conversion guide, container styling, and multi-file patterns, see [MERMAID.md](MERMAID.md).
+When you've decided Mermaid (per the `file://`-clean rule), [MERMAID.md](MERMAID.md) carries everything: CDN setup, the strict 11.x syntax rules, the safe-character table, PlantUML conversion, container styling, and the multi-file pattern for large sequence diagrams. Reach for it the moment you write a `<pre class="mermaid">` block.
 
 ## Forbidden patterns
 
-- External script tags or stylesheets to anything off-host (except one CDN font, and the Mermaid.js CDN script when diagrams are present).
+- External script tags or stylesheets to anything off-host. Two allowed exceptions: one CDN **font**, and the Mermaid.js CDN script **only** when you chose Mermaid under the `file://`-clean rule.
 - ASCII art diagrams when an SVG is feasible — that's the markdown trap this skill exists to escape.
 - Emoji unless the source file used emoji.
 - `<details open>` collapsing critical content — readers shouldn't have to hunt.

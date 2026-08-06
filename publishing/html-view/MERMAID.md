@@ -1,6 +1,6 @@
 # Mermaid.js Diagrams
 
-When the source contains sequence diagrams, flowcharts, state machines, or class diagrams, use **Mermaid.js** for client-side rendering instead of hand-drawing inline SVGs. Mermaid produces consistent, well-laid diagrams from a declarative text syntax.
+Read this only after you've decided to use Mermaid (per the `file://`-clean rule in SKILL.md: Mermaid for sequence/flow/state/class diagrams when one network reference is acceptable; hand-drawn inline SVG otherwise). Mermaid renders those four types client-side from declarative text — consistent, well-laid, far less hand-work than SVG — at the cost of a CDN script that breaks the zero-fetch promise and fails offline.
 
 ### Setup
 
@@ -182,6 +182,6 @@ For **large sequence diagrams** (complex flows with many participants, alt branc
 
 ### Multi-file output
 
-When generating multiple HTML pages (e.g., one per use case), each page includes its own Mermaid CDN script. This is acceptable — each page is self-contained and works offline after first load (browser caches the CDN script).
+When generating multiple HTML pages (e.g., one per use case), each page includes its own Mermaid CDN script. Each page stays self-contained apart from that one script; diagrams render only while online (or once the browser has cached the CDN script).
 
 **Parallel fan-out (≥ 2 files):** When producing two or more independent HTML files, launch one Agent subagent per file **in a single message** (parallel execution). Pass each subagent the shared design-system constraints — colour palette, typography scale, layout tokens, and the inter-file nav structure — in its prompt. Each subagent writes its HTML to a unique temp path (avoids returning large HTML through the main context). Main thread reconciles: verify nav links are consistent across all files, check the design tokens are used uniformly, then move the files to their final destinations. Single-file outputs use the existing single-pass path unchanged; if any subagent fails, regenerate that file serially.
