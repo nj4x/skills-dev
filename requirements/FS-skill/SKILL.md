@@ -103,7 +103,7 @@ Once an FS ID (e.g., `GRP-FS-CRUD-001`) is written to file and confirmed by the 
 
 ### 5.4 Parallel Fan-Out (advisory)
 
-**Parallel fan-out (≥3 categories, advisory):** When requirements span ≥3 independent categories, pre-allocate a disjoint requirement-ID range to each category (e.g. 001–049, 050–099) so IDs never collide, then launch one Agent subagent per category **in a single message** (parallel execution). Each subagent receives the source-document pointers, the EARS rules, its category scope, and its ID range; it returns drafted requirements as text and must not write files. After all report back, reconcile: merge drafts, check ID continuity and no duplicates, deduplicate cross-cutting requirements, unify terminology, resolve cross-references — then run the quality check on the merged set. The ≥3 threshold is a floor, not a mandate: fall back to serial main-thread generation when categories share heavy context, fewer than 3 exist, or any subagent fails or returns empty. User checkpoints and file writes always stay in the main conversation.
+**Parallel fan-out (≥3 categories, advisory):** When requirements span ≥3 independent categories, pre-allocate a disjoint requirement-ID range to each category (e.g. 001–049, 050–099) so IDs never collide, then launch one `general-purpose` Agent subagent (`subagent_type: "general-purpose"`) per category **in a single message** (parallel execution). Each subagent receives the source-document pointers, the EARS rules, its category scope, and its ID range; it returns drafted requirements as text and must not write files. After all report back, reconcile: merge drafts, check ID continuity and no duplicates, deduplicate cross-cutting requirements, unify terminology, resolve cross-references — then run the quality check on the merged set. The ≥3 threshold is a floor, not a mandate: fall back to serial main-thread generation when categories share heavy context, fewer than 3 exist, or any subagent fails or returns empty. User checkpoints and file writes always stay in the main conversation.
 
 ---
 
@@ -163,7 +163,7 @@ processed_sources.extend([r.file_path for r in results2])
 
 This progressively discovers all relevant documents rather than repeatedly finding the same top matches.
 
-**Parallel fan-out (≥3 requirement groups, advisory):** Fan out MCP evidence searches across one Agent subagent per requirement group, launched in a single message. The `exclude_files` progressive chain is maintained *within* each group's subagent (never across subagents). Main thread reconciles evidence tables across groups and checks for cross-group coverage gaps. Fall back to serial validation when fewer than 3 groups exist or any subagent fails.
+**Parallel fan-out (≥3 requirement groups, advisory):** Fan out MCP evidence searches across one `general-purpose` Agent subagent (`subagent_type: "general-purpose"`) per requirement group, launched in a single message. The `exclude_files` progressive chain is maintained *within* each group's subagent (never across subagents). Main thread reconciles evidence tables across groups and checks for cross-group coverage gaps. Fall back to serial validation when fewer than 3 groups exist or any subagent fails.
 
 ### 7.4 Quality Re-check
 

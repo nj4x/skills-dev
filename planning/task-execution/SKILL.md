@@ -9,7 +9,7 @@ Deliver plan or research text first; wait for user approval before reading files
 
 ## Fan-out execution
 
-Fan out any multi-file or multi-phase task into independent sub-phases, each to a separate sub-agent, instructed to implement its module, write and pass its own tests, and avoid touching shared files. After all agents report back, run a reconciliation pass — check that interfaces are consistent across every module, fix any mismatches in lockstep, run the full suite, and commit only when all tests pass with zero regressions.
+Fan out any multi-file or multi-phase task into independent sub-phases, each to a separate `general-purpose` sub-agent (`subagent_type: "general-purpose"`), instructed to implement its module, write and pass its own tests, and avoid touching shared files. After all agents report back, run a reconciliation pass — check that interfaces are consistent across every module, fix any mismatches in lockstep, run the full suite, and commit only when all tests pass with zero regressions.
 
 ## Autonomous loops
 

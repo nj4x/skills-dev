@@ -117,7 +117,7 @@ Track progress with `TaskCreate`/`TaskUpdate`. Follow the six steps:
 
 1. **Discover State** — Read `CLAUDE.md`, the task/state file, and `git log --oneline -10`. Identify the next incomplete phase and its requirements.
 2. **Plan with Critic** — Write a detailed plan to the task file. Critique it for spec violations, missing edge cases, and API mismatches with existing code. Revise until sound. Prefer `/critic` for non-trivial phases.
-3. **Implement** — Fan out to sub-agents for 3+ independent files; instruct each to write and pass its own tests without touching shared files. Run a reconciliation pass after fan-out.
+3. **Implement** — Fan out to `general-purpose` sub-agents (`subagent_type: "general-purpose"`) for 3+ independent files; instruct each to write and pass its own tests without touching shared files. Run a reconciliation pass after fan-out.
 4. **Test and Self-Heal** — Run the full suite. On failure: read output → root cause → minimal fix → re-run. Repeat up to **5 cycles**. Surface only if cycles are exhausted or a genuine product decision is required.
 5. **Commit** — Stage ALL changes (`git status` first — modified files, renames, and new files); commit: `feat: [phase] — [N] files, [M] tests passing, [K] new tests added`.
 6. **Update State + Hand Off** — Mark phase complete in the task file. Ask: *"Phase X complete. Shall I proceed to Phase Y autonomously?"*
