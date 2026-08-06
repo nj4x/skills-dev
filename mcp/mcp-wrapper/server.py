@@ -29,15 +29,13 @@ from starlette.routing import Mount, Route
 from mcp import types
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-try:
-    from mcp.server.lowlevel.server import Server
-except ImportError as exc:  # pragma: no cover
-    raise ImportError(
-        "mcp-wrapper requires the low-level Server class (mcp.server.lowlevel.server). "
-        "Please upgrade the 'mcp' package to a version that includes low-level server support."
-    ) from exc
-
+from mcp.server import Server
+from mcp.server.connection import Connection
+from mcp.server.runner import serve_connection
 from mcp.server.streamable_http import StreamableHTTPServerTransport
+from mcp.shared.jsonrpc_dispatcher import JSONRPCDispatcher
+from mcp.shared.transport_context import TransportContext
+from mcp_types import DEFAULT_NEGOTIATED_VERSION
 from mcp_common.streamable_http import (
     build_streamable_http_parser,
     parse_streamable_http_args,
@@ -259,88 +257,54 @@ def _build_proxy_server(
 ) -> tuple[Server, ProxyState]:
     state = ProxyState(child_config, keep_alive=keep_alive, app_exit_stack=app_exit_stack)
 
+    async def on_list_tools(ctx, params=None):
+        return await ctx.lifespan_context.session.list_tools(params=params)
+
+    async def on_call_tool(ctx, params):
+        return await ctx.lifespan_context.session.call_tool(params.name, params.arguments)
+
+    async def on_list_resources(ctx, params=None):
+        return await ctx.lifespan_context.session.list_resources(params=params)
+
+    async def on_list_resource_templates(ctx, params=None):
+        return await ctx.lifespan_context.session.list_resource_templates(params=params)
+
+    async def on_read_resource(ctx, params):
+        return await ctx.lifespan_context.session.read_resource(params.uri)
+
+    async def on_subscribe_resource(ctx, params):
+        return await ctx.lifespan_context.session.subscribe_resource(params.uri)
+
+    async def on_unsubscribe_resource(ctx, params):
+        return await ctx.lifespan_context.session.unsubscribe_resource(params.uri)
+
+    async def on_list_prompts(ctx, params=None):
+        return await ctx.lifespan_context.session.list_prompts(params=params)
+
+    async def on_get_prompt(ctx, params):
+        return await ctx.lifespan_context.session.get_prompt(params.name, params.arguments)
+
+    async def on_completion(ctx, params):
+        argument_payload = {"name": params.argument.name, "value": params.argument.value}
+        context_args = params.context.arguments if params.context else None
+        return await ctx.lifespan_context.session.complete(
+            params.ref, argument_payload, context_arguments=context_args
+        )
+
     server = Server(
         name=f"mcp-wrapper:{child_config.name}",
         instructions=f"Proxy server for '{child_config.name}'.",
-        lifespan=lambda _: _proxy_lifespan(state),
+        on_list_tools=on_list_tools,
+        on_call_tool=on_call_tool,
+        on_list_resources=on_list_resources,
+        on_list_resource_templates=on_list_resource_templates,
+        on_read_resource=on_read_resource,
+        on_subscribe_resource=on_subscribe_resource,
+        on_unsubscribe_resource=on_unsubscribe_resource,
+        on_list_prompts=on_list_prompts,
+        on_get_prompt=on_get_prompt,
+        on_completion=on_completion,
     )
-
-    @server.list_tools()
-    async def list_tools(_request: types.ListToolsRequest | None = None) -> types.ListToolsResult:
-        session = server.request_context.lifespan_context.session
-        params = _request.params if _request else None
-        return await session.list_tools(params=params)
-
-    @server.call_tool()
-    async def call_tool(name: str, arguments: dict | None):
-        session = server.request_context.lifespan_context.session
-        return await session.call_tool(name, arguments)
-
-    @server.list_resources()
-    async def list_resources(_request: types.ListResourcesRequest | None = None) -> types.ListResourcesResult:
-        session = server.request_context.lifespan_context.session
-        params = _request.params if _request else None
-        return await session.list_resources(params=params)
-
-    @server.list_resource_templates()
-    async def list_resource_templates() -> list[types.ResourceTemplate]:
-        session = server.request_context.lifespan_context.session
-        result = await session.list_resource_templates()
-        return getattr(result, "resource_templates", None) or result.resourceTemplates
-
-    @server.read_resource()
-    async def read_resource(uri: str):
-        session = server.request_context.lifespan_context.session
-        result = await session.read_resource(uri)
-        contents = []
-        for item in result.contents:
-            if isinstance(item, types.TextResourceContents):
-                contents.append(
-                    types.ReadResourceContents(content=item.text, mime_type=item.mime_type, meta=item.meta)
-                )
-            else:
-                contents.append(
-                    types.ReadResourceContents(content=item.blob, mime_type=item.mime_type, meta=item.meta)
-                )
-        return contents
-
-    @server.subscribe_resource()
-    async def subscribe_resource(uri: str) -> None:
-        session = server.request_context.lifespan_context.session
-        await session.subscribe_resource(uri)
-
-    @server.unsubscribe_resource()
-    async def unsubscribe_resource(uri: str) -> None:
-        session = server.request_context.lifespan_context.session
-        await session.unsubscribe_resource(uri)
-
-    @server.list_prompts()
-    async def list_prompts(_request: types.ListPromptsRequest | None = None) -> types.ListPromptsResult:
-        session = server.request_context.lifespan_context.session
-        params = _request.params if _request else None
-        return await session.list_prompts(params=params)
-
-    @server.get_prompt()
-    async def get_prompt(name: str, arguments: dict[str, str] | None) -> types.GetPromptResult:
-        session = server.request_context.lifespan_context.session
-        return await session.get_prompt(name, arguments)
-
-    @server.completion()
-    async def complete(
-        ref: types.PromptReference | types.ResourceTemplateReference,
-        argument: types.CompletionArgument,
-        context: types.CompletionContext | None,
-    ) -> types.Completion | None:
-        session = server.request_context.lifespan_context.session
-        argument_payload = {"name": argument.name, "value": argument.value}
-        context_args = context.arguments if context else None
-        result = await session.complete(ref, argument_payload, context_arguments=context_args)
-        return result.completion
-
-    @server.set_logging_level()
-    async def set_logging_level(level: types.LoggingLevel) -> None:
-        session = server.request_context.lifespan_context.session
-        await session.set_logging_level(level)
 
     return server, state
 
@@ -375,33 +339,35 @@ def _build_streamable_http_app(
 
 
 
-def _build_stateless_json_app(proxy_server: Server) -> callable:
+def _build_stateless_json_app(proxy_server: Server, proxy_state: "ProxyState") -> callable:
     async def app(scope, receive, send):
         transport = StreamableHTTPServerTransport(
             mcp_session_id=None,
             is_json_response_enabled=True,
         )
-        async with transport.connect() as streams:
-            read_stream, write_stream = streams
-            init_options = proxy_server.create_initialization_options()
-            
-            # Start the proxy server handling this specific transport's streams
-            async def run_server_safe():
-                try:
-                    await proxy_server.run(
-                        read_stream,
-                        write_stream,
-                        init_options,
-                        False,
-                        True,
-                    )
-                except Exception as e:
-                    logger.exception(f"proxy_server.run crashed: {e}")
 
-            async with anyio.create_task_group() as tg:
-                tg.start_soon(run_server_safe)
-                await transport.handle_request(scope, receive, send)
-                tg.cancel_scope.cancel()
+        async def run_stateless_server(*, task_status=anyio.TASK_STATUS_IGNORED):
+            async with transport.connect() as streams:
+                read_stream, write_stream = streams
+                task_status.started()
+                dispatcher: JSONRPCDispatcher[TransportContext] = JSONRPCDispatcher(
+                    read_stream,
+                    write_stream,
+                    inline_methods=frozenset({"initialize"}),
+                    transport_builder=lambda _md: TransportContext(kind="streamable-http", can_send_request=False),
+                )
+                connection = Connection.from_envelope(DEFAULT_NEGOTIATED_VERSION, None, None)
+                try:
+                    await serve_connection(
+                        proxy_server, dispatcher, connection=connection, lifespan_state=proxy_state
+                    )
+                except Exception:
+                    logger.exception("Stateless session crashed")
+
+        async with anyio.create_task_group() as tg:
+            await tg.start(run_stateless_server)
+            await transport.handle_request(scope, receive, send)
+            tg.cancel_scope.cancel()
         await transport.terminate()
 
     return app
@@ -538,7 +504,7 @@ def main() -> None:
         server_app = Starlette(
             routes=[
                 Route("/health", healthcheck),
-                Mount("/", app=_build_stateless_json_app(proxy_server)),
+                Mount("/", app=_build_stateless_json_app(proxy_server, proxy_state)),
             ],
         )
         routes.append(Mount(server_path, app=server_app))

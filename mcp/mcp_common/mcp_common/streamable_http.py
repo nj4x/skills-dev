@@ -254,7 +254,7 @@ async def run_client_mode(args: StreamableHttpArgs, default_http_port: int = 800
         url = f"http://{args.host}:{port}{args.path}"
     exit_code = 0
     async with streamable_http_client(url) as streams:
-        read_stream, write_stream, _get_session_id = streams
+        read_stream, write_stream = streams
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             if args.client_help:
