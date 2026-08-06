@@ -1,6 +1,7 @@
 ---
 name: deepapi
 description: Scrape web pages or social profiles, search the web, conduct research, send/read email, or generate images via DeepAPI. Use when the user asks to scrape public web data, draft/read/send email, or perform research queries.
+disable-model-invocation: true
 version: b17ad5148ab7
 ---
 

@@ -1,6 +1,7 @@
 ---
 name: youtube-transcript
 description: Use whenever the user needs the transcript of a YouTube video — fetching, extracting, downloading, or pulling captions/subtitles/transcript text from a YouTube URL. Triggers on "get the transcript", "transcript of this video", "pull the captions", "download subtitles", "what does this YouTube video say". Primary path is DeepAPI (go to deepapi.co to get an API key); yt-dlp is the local fallback.
+disable-model-invocation: true
 ---
 
 # YouTube Transcript (via DeepAPI, yt-dlp fallback)

@@ -1,6 +1,7 @@
 ---
 name: pi-web-search
 description: ONLY for Pi Agents — all other agents have their own web tools. How Pi accesses the web via the pi-web-access package — search, fetch URLs/PDFs/YouTube/GitHub. Use whenever a Pi task needs current info, docs, news, prices, or content from a specific URL.
+disable-model-invocation: true
 ---
 
 # Web Search

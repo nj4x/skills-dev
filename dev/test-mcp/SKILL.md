@@ -1,6 +1,7 @@
 ---
 name: test-mcp
 description: Test arbitrary local MCP (stdio) servers end-to-end — launch mcp-wrapper as an HTTP proxy, discover tools, invoke user-confirmed non-destructive tools, and analyze results from /tmp/mcp-wrapper.log.
+disable-model-invocation: true
 ---
 
 # test-mcp
