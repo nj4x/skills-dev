@@ -63,9 +63,10 @@ The agent will symlink each skill directory to `~/.claude/skills/<name>` so they
 **Dev & email:**
 ```
 /skill-authoring        # create a new skill
-/writing-great-skills   # audit skill quality across the repo
+/writing-for-agents     # write any document an agent consumes (skills, AGENTS.md, CLAUDE.md)
 /prompt-authoring       # refine agent prompts and tool wiring
 /inbox                  # triage email with category rules from prefs.json
+/wait-what              # stop, re-pitch that — simpler, with the context I'm missing
 ```
 
 ## Configuration
@@ -203,9 +204,10 @@ The following 19 skills were created originally for this repository:
 - **research**: (none — all research skills are borrowed)
 - **session**: `continue`, `hs`, `mark`
 - **email**: `inbox`, `mail`
-- **learning**: (none — all learning skills are borrowed)
+- **learning**: `grilling`
 - **notifications**: `mute`
 - **dev**: `prompt-authoring`, `skill-authoring`, `test-mcp`, `tool-authoring`
+- **session**: (none — all session skills are borrowed)
 
 ## Borrowed Skills
 
@@ -215,19 +217,19 @@ The following 26 skills were adapted from upstream open-source skill repositorie
 |---|---|---|---|---|
 | `codebase-design` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `codebase-design` | Verbatim adoption. | ~0% |
 | `research` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `research` | Verbatim adoption. | ~0% |
-| `tdd` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `tdd` | Verbatim adoption. | ~0% |
-| `writing-great-skills` (dev) | [mattpocock/skills](https://github.com/mattpocock/skills) | `writing-great-skills` | Verbatim adoption. | ~0% |
+| `tdd` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `tdd` | Added pointer to `/codebase-design` vocabulary. | ~2% |
+| `writing-for-agents` (dev) | [mattpocock/skills](https://github.com/mattpocock/skills) | `writing-for-agents` | Adopted upstream replacement for `writing-great-skills`. Split skill mechanics into `SKILL-MECHANICS.md`; broadened scope to any agent-facing doc. | ~0% |
 | `git-guardrails-claude-code` (dev) | [mattpocock/skills](https://github.com/mattpocock/skills) | `git-guardrails-claude-code` | Verbatim adoption. | ~0% |
 | `improve-codebase-architecture` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `improve-codebase-architecture` | One-line tweaks only. | ~5% |
-| `wayfinder` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `wayfinder` | One-line tweaks only. | ~5% |
+| `wayfinder` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `wayfinder` | Added requirements-lineage section and updated Grilling ticket-type wording. | ~10% |
 | `diagnosing-bugs` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `diagnosing-bugs` | Minor wording edits. | ~5% |
-| `prototype` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `prototype` | Minor wording edits. | ~5% |
+| `prototype` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `prototype` | Updated LOGIC.md to shareable HTML (TUI → free-play buttons + guided walkthroughs); updated SKILL.md descriptions and run-instruction wording. | ~15% |
 | `domain-modeling` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `domain-modeling` | Added upfront `CONTEXT.md` stub creation; sharpened the "term resolved" definition. | ~10% |
 | `teach` (learning) | [mattpocock/skills](https://github.com/mattpocock/skills) | `teach` | Added "Be Very Concise" section; extracted the fluency/storage philosophy into a separate `PHILOSOPHY.md`. | ~20% |
 | `setup-skills` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `setup-matt-pocock-skills` | Renamed skill; added `.data/requirements` and `.data/docs` folder handling and their propagation into `domain.md`. | ~15% |
 | `to-spec` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-spec` | Condensed the spec template; added formal-requirements tracing (REQ-ID inline tags), `docs/agents/domain.md` and `.data/requirements/` wiring; added headless detection, staging with artifact-type frontmatter, critic invocation, and auto-publish on approval (ADR-0034/0035/0037/0039). | ~65% |
 | `implement` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `implement` | Added isolated-subagent code-review flow, issue/spec status transitions, and requirement-ID propagation into commits/PRs (doubled in size). | ~50% |
-| `grilling` (learning) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grilling` | Added ADR-capture phase and an automatic post-grilling `/critic` review handoff (manifest + verdict). | ~55% |
+| `grilling` (learning) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grilling` | Adopted upstream round-based frontier methodology with `❓ **Q1**` question format and sub-agent fact-finding; kept local ADR-capture phase and automatic post-grilling `/critic` review handoff. | ~65% |
 | `grill-with-docs` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grill-with-docs` | Delegates to `/grilling`; added ADR collection and `/critic` audit flow. | ~60% |
 | `to-tickets` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-tickets` | Heavily condensed and rewritten; added requirements-tracing (`Requirements:` field), local-file tracker path, `/implement` frontier guidance; added headless detection, staging with artifact-type frontmatter, manifest, critic invocation, and auto-publish on approval (ADR-0034/0037/0039/0040). | ~75% |
 | `pi-web-search` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `pi-web-search` | Verbatim adoption. | ~0% |
@@ -235,6 +237,7 @@ The following 26 skills were adapted from upstream open-source skill repositorie
 | `short` (session) | [davidondrej/skills](https://github.com/davidondrej/skills) | `short` | Verbatim adoption. | ~0% |
 | `youtube-transcript` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `youtube-transcript` | Minor wording edits. | ~5% |
 | `handoff` (session) | [davidondrej/skills](https://github.com/davidondrej/skills) | `handoff` | Near-verbatim; added a "Suggested Skills" section; removed `disable-model-invocation`. | ~10% |
+| `wait-what` (session) | [mattpocock/skills](https://github.com/mattpocock/skills) | `wait-what` | Verbatim adoption. | ~0% |
 | `browser-harness` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `browser-harness` | Trimmed the Hermes-specific integration and authenticated-extraction sections. | ~5% |
 | `deep-research` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `deep-research` | Light trimming / condensation. | ~10% |
 | `goal-loop` (planning) | [davidondrej/skills](https://github.com/davidondrej/skills) | `goal-loop` | Added `disable-model-invocation`; expanded the 4,000-char contract-limit guidance with compression rules. | ~15% |

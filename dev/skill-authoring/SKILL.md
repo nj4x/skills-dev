@@ -20,11 +20,11 @@ Decide before drafting — it shapes the description you write.
 - **Model-invoked**: agent fires autonomously; other skills can reach it. Pays context load. Omit `disable-model-invocation`.
 - **User-invoked**: you type `/skill-name`; no autonomous reach. Zero context load. Set `disable-model-invocation: true`.
 
-See `writing-great-skills` §Invocation for the full tradeoff.
+See [`SKILL-MECHANICS.md`](../writing-for-agents/SKILL-MECHANICS.md) for the full tradeoff, splitting by invocation, and router skills.
 
 ## 3. Draft SKILL.md
 
-Write description and body against the `writing-great-skills` vocabulary: leading words, information hierarchy, progressive disclosure, completion criteria, pruning.
+Write description and body against the `writing-for-agents` vocabulary: context pointers, the two loads, information hierarchy, progressive disclosure, steps and completion criteria, leading words, pruning.
 
 Place supporting reference under `docs/` and link it with a context pointer.
 
