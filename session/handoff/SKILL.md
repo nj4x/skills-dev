@@ -90,10 +90,21 @@ facts to trust blindly. Then wait for my instructions before taking any action.
 
 ## File Output
 
-Save the handoff to a temporary location outside the working tree so it does not pollute the repo:
+Save the handoff to a temporary location outside the working tree so it does not pollute the repo.
 
-- Preferred: the OS temp directory, e.g. `$TMPDIR/handoff-<random-8-chars>.md` (macOS/Linux) or the system temp dir equivalent.
-- If the user prefers an in-repo record, save to `HANDOFF.md` in the project root instead.
+**Pick a fresh, not-yet-existing path and Write directly to it — do NOT pre-create the file.** Write creates the file for you, and a new-file write needs no prior Read. If you materialize the path first (bare `mktemp` without `-u`, `touch`, `>`, `tempfile`), it then already exists and Write refuses it without a prior Read, surfacing as `Error writing file`.
+
+Compute the path with a pure shell expression — this only prints a string, it creates nothing:
+
+```
+echo "${TMPDIR:-/tmp}/handoff-$(date +%Y%m%d-%H%M%S)-$$-$RANDOM.md"
+```
+
+Then call Write with exactly that path. (Do not use bare `mktemp` — BSD `mktemp` only substitutes *trailing* `X`s, so `mktemp /tmp/handoff-XXXXXXXX.md` creates a literal filename on macOS; use `mktemp -u` if you need a non-random stem, or compute the path without `mktemp`.)
+
+If the user prefers an in-repo record, save to `HANDOFF.md` in the project root instead.
+
+When overwriting an existing handoff file — whether the temp path or `HANDOFF.md` — Read it first before calling Write.
 
 After saving, tell the user the absolute path. The user can then start a fresh session with just:
 
