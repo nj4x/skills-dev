@@ -74,7 +74,7 @@ If markers are ambiguous for a present language, try the candidate commands in t
 
 ## Import rewriting (AST-based, per language)
 
-Moving a test file can invalidate **relative** imports (their depth to the source changes); **absolute/package** imports usually survive. Rewrite with the language's parser, never blind regex.
+Moving a test file can invalidate **relative** imports (their depth to the source changes); **absolute/package** imports usually survive.
 
 | Language | Parser | What to rewrite |
 |---|---|---|
@@ -90,11 +90,12 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 
 ```json
 {
-  "phase": "discovery|planning|baseline|moving|rewriting|validating|pruning|prune-validating|done",
+  "phase": "discovery|baseline|moving|rewriting|validating|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done",
   "project_path": "/abs/path",
   "languages": ["python"],
   "source_roots": ["src"],
   "runners": { "python": "pytest" },
+  "spring_boot": false,
   "baseline": { "python": { "passed": 412, "failed": ["tests/test_x.py::test_a"] } },
   "id_map": { "tests/test_instruments.py::test_parse": "tests/protrading/adapters/test_instruments.py::test_parse" },
   "moves": [
@@ -102,10 +103,17 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
     { "from": "tests/test_end_to_end.py", "to": "tests/integration/test_end_to_end.py", "language": "python", "source_file": null, "cross_cutting": true }
   ],
   "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ],
-  "pruning": {
+  "simplification": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
     "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ]
+  },
+  "spring": {
+    "baseline": { "context_count": 5, "wall_time_seconds": 42.5 },
+    "consolidations": [
+      { "file": "src/test/kotlin/com/org/support/AbstractApiDocumentationTest.kt", "base_class": "AbstractApiDocumentationTest", "annotations_removed": ["@SpringBootTest", "@AutoConfigureWebTestClient", "@AutoConfigureRestDocs"], "mocks_removed": 11 }
+    ],
+    "post_context_cost": { "context_count": 1, "wall_time_seconds": 28.3 }
   }
 }
 ```
@@ -126,9 +134,9 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 }
 ```
 
-`plan.json` is the Phase A artifact the repeat loop refines; `ledger.json` is the durable execution record written during FINALIZE_STEP.
+`plan.json` is the Phase A artifact; `ledger.json` is the durable execution record, rewritten after every side effect so a mid-run compaction can resume.
 
-## Pruning plan schema (`.scratch/refactor-tests/pruning-plan.json`)
+## Simplification plan schema (`.scratch/refactor-tests/simplification-plan.json`)
 
 ```json
 {
@@ -162,11 +170,9 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 }
 ```
 
-`pruning-plan.json` is the Phase B artifact the repeat loop refines.
+`simplification-plan.json` is the Phase B artifact.
 
 ## AST editor guidance (per language)
-
-Test editing must use the same AST-based approach as import rewriting — never blind text deletion.
 
 | Language | Remove test function | Add parametrize decorator | Notes |
 |----------|---------------------|--------------------------|-------|

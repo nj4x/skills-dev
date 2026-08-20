@@ -1,17 +1,20 @@
 ---
 name: refactor-tests
-description: Reorganize a flat test suite to mirror source packages and prune redundant/dead tests.
+description: Reorganize a flat test suite to mirror source packages, prune redundant/dead tests, and cut Spring Boot context startup cost.
 disable-model-invocation: true
 argument-hint: "[project-path]"
 ---
 
-You are refactoring a project's test layout to mirror its source package structure **and** simplifying the suite by removing redundant tests and consolidating parametrizable groups.
+You are refactoring a project's test suite along three axes, each behind its own **health gate**: where test files live, which test functions survive, and what the surviving tests cost to start up.
 
 `PROJECT_PATH`: `$1` (default: `$PWD`)
 
-End state:
-- **Layout**: every test file at the location its language convention dictates for the source it exercises, imports rewritten to stay valid, full test suite passes with zero regressions.
-- **Simplification**: redundant unit tests removed; clusters of tests that call the same function with varying inputs under the same assertion pattern consolidated into parametrized test cases.
+End state — every source file accounted for, every applicable axis reached:
+- **Phase A · Layout**: every test file at the location its language convention dictates for the source it exercises, imports rewritten to stay valid, suite passes with zero regressions.
+- **Phase B · Simplification**: redundant unit tests removed; clusters of tests that call the same function with varying inputs under the same assertion pattern consolidated into parametrized test cases.
+- **Phase C · Context cost** (Spring Boot only): distinct Spring application contexts reduced, per-context background work switched off, suite wall time lower, assertions unchanged.
+
+A gate is **healthy** when zero tests that passed at that phase's baseline now fail. A **regressed** gate stops the run at that phase — the later phases never start.
 
 Read `reference/patterns.md` (beside this SKILL.md) before doing any work — it holds path templates, language-detection heuristics, AST tool guidance, and ledger/plan schemas.
 
@@ -31,7 +34,8 @@ Read `reference/patterns.md` (beside this SKILL.md) before doing any work — it
 2. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`, print the recorded phase and resume from it. Otherwise initialize a fresh ledger with `phase: discovery`.
 3. **Detect languages** by extension scan (respect `.gitignore`; skip `vendor/`, `node_modules/`, `.venv/`, `build/`, `.reference-projects/`, `.scratch/`).
 4. **Detect runner(s)** per language via convention markers in `reference/patterns.md`.
-5. Write detected languages, source roots, and runners into the ledger.
+5. **Spring Boot check** (JVM projects only): set ledger `spring_boot: true` when a Spring Boot dependency and ≥2 context-loading test classes are both present — this enables Phase C. Detection commands are in `reference/springboot.md` Step C0.
+6. Write detected languages, source roots, and runners into the ledger.
 
 ---
 
@@ -44,7 +48,7 @@ For each source file in each detected source root:
 3. If the existing test path differs from the target path, record a move entry `{ from, to, language, source_file }`.
 4. If no test file exists for this source file, skip — do not create empty test files.
 
-**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: conftest/fixture-only files, e2e tests, and tests whose import list spans packages with no dominant module. For each cross-cutting file: compute its target path in the language's integration directory (from `reference/patterns.md`), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`. These are moved to the integration directory — not left in place.
+**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: conftest/fixture-only files, e2e tests, and tests whose import list spans packages with no dominant module. For each cross-cutting file: compute its target path in the language's integration directory (from `reference/patterns.md`), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`.
 
 **When a mapping is ambiguous** (test plausibly belongs to two modules), pick the one whose module name appears first in the test file's import list. Record the decision in the ledger `notes` field; do not stop to ask.
 
@@ -69,15 +73,10 @@ Run the full test suite using the detected runner command. Record into ledger `b
 
 Set ledger `phase: moving`.
 
-For each entry in `plan.json` moves:
-1. Create any missing target directories (including `__init__.py` if the test tree uses package-style dirs — detect by presence of any `tests/**/__init__.py`).
+For each entry in `plan.json` `moves`, then each in `plan.json` `cross_cutting`:
+1. Create any missing target directory (including `__init__.py` if the test tree uses package-style dirs — detect by presence of any `tests/**/__init__.py`).
 2. `git mv <from> <to>` (falls back to `mv` outside git). Hard-stop on non-zero exit.
-3. Record `{ from, to, cross_cutting: false }` in ledger `moves` immediately.
-
-Then for each entry in `plan.json` `cross_cutting`:
-1. Create the integration directory if absent (including `__init__.py` under the same rule as above).
-2. `git mv <from> <to>` (falls back to `mv` outside git). Hard-stop on non-zero exit.
-3. Record `{ from, to, cross_cutting: true }` in ledger `moves` immediately.
+3. Record `{ from, to, cross_cutting }` in ledger `moves` immediately — `true` for the `cross_cutting` entries, `false` for the rest.
 
 Build `id_map` in the ledger: for each moved file (regular and cross-cutting), record the old→new pytest/jest/go test id mapping (replace file path prefix in the id).
 
@@ -86,10 +85,7 @@ Build `id_map` in the ledger: for each moved file (regular and cross-cutting), r
 Set ledger `phase: rewriting`.
 
 For each moved file with a rewrite entry in `plan.json`:
-- Use the language's AST parser/tool (per `reference/patterns.md` → Import rewriting). Never blind regex.
-- For Python: use stdlib `ast` to locate relative imports whose depth changed, convert to absolute `from <pkg>.x import y`.
-- For TS/JS: use `@babel/parser` or TypeScript compiler API to recompute `./`-relative specifiers.
-- For Go: run `goimports` on the moved file.
+- Rewrite with the language's parser and tool per `reference/patterns.md` → Import rewriting.
 - Files the parser cannot process: record as a **warning** in the ledger `warnings` field, leave imports unchanged, surface in the report.
 - Record each completed rewrite in ledger `rewrites`.
 
@@ -99,8 +95,8 @@ Set ledger `phase: validating`.
 
 Re-run the full suite. Regression check: for each test id that passed in `baseline`, map it to its new id via `id_map` (or keep original id if unmoved), verify the mapped id still passes.
 
-- **Healthy** (zero genuine regressions): record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B.
-- **Regressed**: print the regressed test ids. **Do not roll back** — leave the tree for the user. Set `phase: done`. Emit `say_skill_done` and stop. Do not proceed to Phase B.
+- **Healthy**: record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B.
+- **Regressed**: print the regressed test ids, set `phase: done`, emit `say_skill_done`, stop at Phase A.
 
 ---
 
@@ -143,7 +139,7 @@ Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`.
 
 ### Step 8 — Execute simplification
 
-**Removals**: delete each named test function from its file using the language's AST editor — never blind text deletion. Record each in ledger `simplification.removals` after the write. If removing the last test function in a file, delete the file with `git rm`.
+**Removals**: delete each named test function from its file using the language's AST editor. Record each in ledger `simplification.removals` after the write. If removing the last test function in a file, delete the file with `git rm`.
 
 **Parametrizations** (atomic per entry): in a **single file write** — delete all N original test functions, insert the consolidated parametrized function, add any `required_imports` not already present. Record in ledger `simplification.parametrizations` in the same durable step. If the AST editor cannot perform the composite edit, record as `skipped` in the ledger with the error, leave the file unchanged, surface in the report.
 
@@ -153,8 +149,21 @@ Set ledger `phase: simplify-validating`.
 
 Re-run the full suite. Regression check: compare against post-layout baseline. Exclude test ids in `simplification.removals` and replaced ids in `simplification.parametrizations` from the required-passing set. Verify each consolidated parametrized test id appears and passes.
 
-- **Healthy**: set `phase: done`.
-- **Regressed**: record regressed ids. **Do not roll back.** Set `phase: done` with regression flag.
+- **Healthy**: advance to Phase C when ledger `spring_boot` is `true`, otherwise set `phase: done`.
+- **Regressed**: record regressed ids, set `phase: done` with regression flag, stop at Phase B.
+
+---
+
+## Phase C — Context cost (Spring Boot only)
+
+Runs after a healthy Phase B, only when ledger `spring_boot` is `true`. Phases A and B reorganize files and test functions; Phase C cuts the **runtime cost of the Spring application context** the surviving tests load — a separate axis, so it gets its own gate.
+
+**Disclosure: Phase C modifies source code outside the test tree.** It adds `autoStartup = "\${...}"` attributes to `@KafkaListener` annotations and `initialDelayString` to `@Scheduled` annotations in `src/main/` — always with defaults that preserve production behaviour. See Step C3 in `reference/springboot.md` for the knobs and their safety properties.
+
+Read `reference/springboot.md` and execute its Steps C0–C4, setting the ledger `phase` at each: C1 `context-measuring`, C2 `context-consolidating`, C3 `context-switching`, C4 `context-validating`. The baseline for Phase C is the post-simplification suite result plus the context/wall-time numbers from its Step C1.
+
+- **Healthy** (zero regressions and context count fell): set `phase: done`.
+- **Regressed**: record regressed ids, set `phase: done` with regression flag.
 
 ---
 
@@ -167,15 +176,16 @@ Re-run the full suite. Regression check: compare against post-layout baseline. E
 - Baseline: `<N> passed, <M> failed`
 - Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions:` + ids
 
-If Phase A regressed, print:
-> **Phase B not reached** — resolve layout regressions first, then re-run to proceed to simplification.
-
 **Phase B — Simplification:**
 - Tests removed: count by criterion (exact-duplicate, dead, trivially-true, subset)
 - Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
 - Parametrizations skipped (AST editor failures): list with reasons
 - Unanalyzable files (skipped by AST parser): list with reasons
 - Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions:` + ids
+
+**Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; suite wall time before → after; per-context switches applied; clusters skipped with reasons.
+
+Report only the phases that ran. When a gate regressed, name the phase that stopped the run and say the later phases were not reached — resolve those regressions and re-run to continue.
 
 **Warnings**: AST parse/edit failures, imports not rewritten, runner-detection ambiguities
 
@@ -201,8 +211,7 @@ msg="Refactor tests finished${proj_say:+ in ${proj_say}}."
 - Bash non-zero exit = hard abort (emit `say_skill_cancel`, surface the error, stop).
 - Import rewriting and test editing are AST-based per language — never blind regex search-replace.
 - Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
-- On a regressed health gate (either phase), **never** auto-rollback and never `git commit`.
+- Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
 - Update the ledger after every durable side effect so a mid-run compaction is recoverable.
 - `rm -f` any temp file on every exit path, including hard-abort paths.
 - Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
-- **Do not commit.** Leave all changes in the working tree for the user to review and commit.
