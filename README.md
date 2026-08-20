@@ -211,7 +211,7 @@ The following 19 skills were created originally for this repository:
 
 ## Borrowed Skills
 
-The following 26 skills were adapted from upstream open-source skill repositories. Each entry notes the source, the upstream skill name, what was added or changed locally, and the approximate proportion of new content.
+The following 29 skills were adapted from upstream open-source skill repositories. Each entry notes the source, the upstream skill name, what was added or changed locally, and the approximate proportion of new content.
 
 | Local Skill | Source Repo | Upstream Name | Key Modifications | % New Content |
 |---|---|---|---|---|
@@ -232,6 +232,9 @@ The following 26 skills were adapted from upstream open-source skill repositorie
 | `grilling` (learning) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grilling` | Adopted upstream round-based frontier methodology with `❓ **Q1**` question format and sub-agent fact-finding; kept local ADR-capture phase and automatic post-grilling `/critic` review handoff. | ~65% |
 | `grill-with-docs` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `grill-with-docs` | Delegates to `/grilling`; added ADR collection and `/critic` audit flow. | ~60% |
 | `to-tickets` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-tickets` | Heavily condensed and rewritten; added requirements-tracing (`Requirements:` field), local-file tracker path, `/implement` frontier guidance; added headless detection, staging with artifact-type frontmatter, manifest, critic invocation, and auto-publish on approval (ADR-0034/0037/0039/0040). | ~75% |
+| `wizard` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `wizard` | Verbatim adoption. | ~0% |
+| `triage` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `triage` | Renamed `/setup-matt-pocock-skills` reference to `/setup-skills`; added mcp-vectors search guidance; switched Skill-tool invocation phrasing to local `/grilling` `/domain-modeling` convention. | ~5% |
+| `to-questionnaire` (publishing) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-questionnaire` | Verbatim adoption. | ~0% |
 | `pi-web-search` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `pi-web-search` | Verbatim adoption. | ~0% |
 | `research-prompt` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `research-prompt` | Verbatim adoption. | ~0% |
 | `short` (session) | [davidondrej/skills](https://github.com/davidondrej/skills) | `short` | Verbatim adoption. | ~0% |
