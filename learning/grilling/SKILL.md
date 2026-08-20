@@ -1,6 +1,33 @@
 ---
 name: grilling
 description: Relentless design interview — stress-test any plan by walking every branch of the decision tree.
+arguments: [mode]
+---
+
+## Delegated decision-resolution mode
+
+When invoked with `mode` exactly `resolve-decisions`, resolve only the decision set supplied by the calling skill. The caller provides this payload after the mode:
+
+```text
+CONTEXT:
+<artifact/task context>
+
+DECISIONS:
+- ID: <stable decision ID>
+  Decision: <decision requiring user input>
+  Why: <why it cannot be safely inferred>
+  Recommendation: <recommended answer>
+```
+
+1. Treat each supplied decision as a node in the design tree. Ask its dependency-ready frontier using the normal `❓ **Q<n>**` format. Do not introduce unrelated design questions.
+2. Obtain facts from the available context or tools; do not ask the user to supply facts the environment can answer.
+3. After every supplied decision is settled, return exactly:
+   ```text
+   RESOLVED_DECISIONS:
+   - <ID>: <user's answer>
+   ```
+4. Do **not** offer or write Architecture Decision Records, create a manifest, or invoke `/critic`. Return control to the calling skill.
+
 ---
 
 Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.

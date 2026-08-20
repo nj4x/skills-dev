@@ -46,7 +46,7 @@ Initialize to `[]` if absent. After each REVIEW_STEP, upsert severity-prefixed i
 ```
 Assign new IDs sequentially. Match repeats by ID when present, otherwise by normalized claim text; update evidence and severity. Compare only groups active in the current pass when resolving omissions: mark an open issue `fixed` when its owning group ran and no longer returns the claim; leave it unchanged when that group was skipped (for example, Group F after iteration 0). Never upsert issue findings or change issue `status` after GENERATE_STEP — only REVIEW_STEP resolves findings. GENERATE_STEP writes are limited to construct records and confirmed acceptance proposals, per Post-GENERATE_STEP.
 
-The revision agent may propose that an issue be accepted by appending `ACCEPTED: [ID] [reason]`. Extract these annotations alongside `INTRODUCED:`. In guided mode, ask the user to confirm each proposal before setting `status: accepted`; rejected proposals remain open. In auto mode, ignore acceptance proposals and keep those issues open.
+The revision agent may propose that an issue be accepted by appending `ACCEPTED: [ID] [reason]`. Extract these annotations alongside `INTRODUCED:`. In guided mode, confirm each proposal via `/grilling resolve-decisions` (one decision per proposal: accept or keep open, with the proposed reason as context) before setting `status: accepted`; rejected proposals remain open. In auto mode, ignore acceptance proposals and keep those issues open.
 
 After each REVIEW_STEP, recompute `major_count`. On pass 2+, set `halt = true` when `major_count >= prior_pass`. Bind into repeat's STOP_CONDITIONS below.
 
@@ -126,7 +126,7 @@ PYEOF
 On non-zero exit: `rm -f "$tmp"`, then hard abort: `FLAGGED_DECISIONS parse failed at iteration <iteration+1>: <stderr content>`.
 On success: `rm -f "$tmp"`. If line not present or array is empty, `flagged = []`.
 
-If `flagged` is non-empty, the **orchestrator** calls `AskUserQuestion` for each entry (one question per entry, include `why_flagged` as context). Collect answers as `user_answers` for the next revision prompt.
+If `flagged` is non-empty, the **orchestrator** invokes `/grilling resolve-decisions` once with the full list (each entry's decision and `why_flagged` as context). Collect the returned `RESOLVED_DECISIONS` as `user_answers` for the next revision prompt.
 
 **Hard abort conditions:**
 - Agent call fails → "Planner agent failed at iteration `<iteration+1>`."

@@ -78,8 +78,8 @@ The generator applies this protocol before baking any assumption into the artifa
 **Default (`guided`) mode:**
 
 - The generator sub-agent does NOT ask the user directly. Instead it returns a `flagged_decisions` list alongside the artifact text (as a JSON block appended after the artifact, on its own line: `FLAGGED_DECISIONS: [{"decision": "...", "why_flagged": "..."}]`).
-- The **orchestrator** (this skill, not the sub-agent) reads that list and calls `AskUserQuestion` for each flagged decision.
-- Answers are stored as `user_answers` and fed into the next GENERATE_STEP prompt.
+- The **orchestrator** invokes `/grilling resolve-decisions` once for the complete list. Pass the task/artifact context and one stable ID, decision, why, and recommended answer for each entry. The delegated grilling contract returns `RESOLVED_DECISIONS` keyed by ID.
+- Validate that every flagged ID has exactly one non-empty resolved answer. Store the answers as `user_answers` and feed them into the next GENERATE_STEP prompt. A missing `/grilling` skill, malformed result, or unresolved ID is a hard abort; never silently choose a safe default in guided mode.
 - Safe-default decisions are never flagged.
 
 **`auto` mode (opt-in, fully unattended):**
@@ -138,8 +138,8 @@ Hard abort if the call fails or `artifact_text` (after stripping any FLAGGED_DEC
 **In `guided` mode (default)** (FRESH only, after GENERATE_STEP returns):
 
 If `flagged_decisions` is non-empty:
-1. Call `AskUserQuestion` for each flagged decision (one question per decision; include the `why_flagged` reason as context).
-2. Collect answers into `user_answers`.
+1. Invoke `/grilling resolve-decisions` once with the full `flagged_decisions` list (each entry's decision and `why_flagged` reason as context).
+2. Collect the returned `RESOLVED_DECISIONS` into `user_answers`.
 3. Re-invoke GENERATE_STEP with `user_answers` to incorporate the answers before the review.
 
 **2. REVIEW_STEP**
@@ -202,6 +202,6 @@ Callers extend FINALIZE_STEP with artifact-type-specific output (file writes, pl
 - Do NOT launch headless `claude` CLI processes via Bash.
 - Never pass artifact or task text as shell arguments. Write to a temp file if a Bash command needs to read it; use `mktemp -u` so the Write tool creates it fresh.
 - Non-zero Bash exit, unparseable reviewer response, or missing/invalid required field = hard abort. Never treat these as approval or revise.
-- In `guided` mode (default), `AskUserQuestion` is called by the **orchestrator only** — never inside a sub-agent.
+- In `guided` mode (default), `/grilling resolve-decisions` is invoked by the **orchestrator only** — never delegated to a sub-agent.
 - Temp files created during a run must be removed on every exit path, including hard-abort paths.
 - The audio-cue suppression marker (written by `say_skill_start`, removed by `say_skill_done`/`say_skill_cancel`) MUST be cleared on every exit path (normal finalize, cap/backstop finalize, and hard-abort) so a crashed loop never permanently silences the global Stop cue. Use `say_skill_done "$msg"` on paths that should speak; use `say_skill_cancel` on hard-abort paths where speaking is inappropriate.
