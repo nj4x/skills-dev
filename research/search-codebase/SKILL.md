@@ -3,6 +3,14 @@ name: search-codebase
 description: Use when the user wants to find code, asks how X works, where X is defined, or how X relates to Y. Also use before refactoring, changing a signature, implementing multi-file work, or during code review to check blast radius.
 ---
 
+## Unlock
+
+`mcp__mcp-vectors__*` tools are deferred — call before anything below reaches for one:
+
+`ToolSearch query: "select:mcp__mcp-vectors__search_root,mcp__mcp-vectors__index_codebase,mcp__mcp-vectors__clear_index"`
+
+Done when the three schemas load without `InputValidationError`.
+
 | Tool | Use for |
 |---|---|
 | `Bash(fd)` / `Bash(rg)` / `Read` | Exact symbol, literal, or filename lookup. |

@@ -483,7 +483,7 @@ mcp = FastMCP(
 
 Three exposed tools: index_codebase, search_root, clear_index.
 
-Use semantic search for conceptual, cross-file, exploratory retrieval or synthesis. Exact search/read tools remain better for exact symbols, literals, and line-by-line inspection — not for exact symbol/string lookups, use ripgrep/fd instead.
+Use semantic search for conceptual, cross-file, exploratory retrieval or synthesis. Exact search/read tools remain better for exact symbols, literals, and line-by-line inspection.
 
 Workflow:
 1. Use index_codebase to index a project root (pass dry_run=true to check status without indexing).
