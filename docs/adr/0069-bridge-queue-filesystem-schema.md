@@ -185,8 +185,8 @@ This ensures old records do not accumulate unbounded. Terminal records are never
 ## CLI Surface
 
 The `bridge` CLI exposes these subcommands (detailed in #40):
-- `claim-next`: atomically claim the oldest pending request and return its id + question
-- `answer <id> <text>`: write the answer and move the request to `answered/`
+- `claim-next [--wait N]`: atomically claim the oldest pending request and return its id + question. Without `--wait`, returns immediately if the queue is empty. With `--wait N`, blocks the server-side lock-and-scan loop for up to N seconds, returning as soon as work arrives or an empty result if N seconds elapse (see #41).
+- `answer <id> [--file <path>]`: write the answer and move the request to `answered/`. Answer text either from the `<text>` argument (inline, deprecated) or read from `<path>` (safer, see #41).
 - `status`: list pending/claimed/answered/failed counts (for diagnostics)
 
 ## Consequences
