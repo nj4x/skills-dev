@@ -19,3 +19,6 @@ email/inbox/prefs.json
 
 # Scratch artifacts (issue tracker markdown files are committed; only ignore temp/generated)
 .scratch
+
+# Generated index artifacts
+.workspace_rag/

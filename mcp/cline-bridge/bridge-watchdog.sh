@@ -7,7 +7,7 @@ BOOT_GRACE=120
 CHECK_INTERVAL=30
 
 mkdir -p "$HOME/.cline-bridge"
-cp mcp/cline-bridge/worker-prompt.txt "$PROMPT_FILE"
+cp "$(dirname "$0")/worker-prompt.txt" "$PROMPT_FILE"
 
 is_stale() {
   local heartbeat="$HOME/.mcp-bridge/worker.alive"
