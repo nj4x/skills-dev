@@ -95,13 +95,25 @@ def test_fail_marks_pending_request_terminal(queue):
     assert (queue.failed / f"{record['id']}.json").exists()
 
 
-def test_pool_alive_tracks_heartbeat_age_per_slot(queue):
-    assert queue.pool_alive() is False
+def test_pool_offline_tracks_heartbeat_age_per_slot_under_a_live_watchdog(queue):
+    queue.ensure()
+    queue.watchdog_heartbeat.touch()
+    assert queue.pool_offline() is True
     queue.touch_heartbeat(2)
-    assert queue.pool_alive() is True
+    assert queue.pool_offline() is False
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
     os.utime(queue.heartbeat_path(2), (stale, stale))
-    assert queue.pool_alive() is False
+    assert queue.pool_offline() is True
+
+
+def test_pool_is_assumed_live_when_no_watchdog_is_running(queue):
+    queue.ensure()
+    stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
+    queue.touch_heartbeat(1)
+    os.utime(queue.heartbeat_path(1), (stale, stale))
+
+    assert queue.watchdog_alive() is False
+    assert queue.pool_offline() is False
 
 
 def test_worker_slots_report_every_heartbeat_file_in_ascending_order(queue):
@@ -133,7 +145,6 @@ def test_claim_worker_slot_reclaims_a_slot_whose_worker_went_stale(queue):
     os.utime(queue.heartbeat_path(1), (stale, stale))
 
     assert queue.claim_worker_slot() == 1
-    assert queue.pool_alive() is True
 
 
 def test_pool_size_falls_back_to_the_ceiling_when_the_watchdog_has_not_written_it(queue):
@@ -157,7 +168,7 @@ def test_watchdog_alive_tracks_its_own_heartbeat_independently(queue):
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
     os.utime(queue.watchdog_heartbeat, (stale, stale))
     assert queue.watchdog_alive() is False
-    assert queue.pool_alive() is True
+    assert queue.worker_slots() == [(1, True)]
 
 
 def test_gc_removes_only_expired_terminal_records(queue):

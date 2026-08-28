@@ -11,6 +11,12 @@ lineage-rules: exempt
 
 **Status**: Approved
 
+Amended by ADR-0079: the watchdog is opt-in rather than the default posture, and an absent
+watchdog now reads as "assume the pool is live" instead of gating the call. The `watchdog`
+field described below is dropped — under that flip `worker_offline` is reachable only when the
+watchdog is alive, so the field could only ever hold `"alive"`. Everything here still describes
+how the watchdog reports itself while it is running.
+
 **Context**
 
 Issue #48 verified that `bridge-watchdog.sh` restarts a dead worker, which took the human out of the worker-death path entirely: a dead worker self-heals within 330 seconds worst case with nobody watching. ADR-0068 point 3 accepted the watchdog as an unsupervised single point of failure on the reasoning that "a human notices (no questions are moving)" — but after #48 that reasoning no longer holds. Worker deaths no longer stall the queue, so there is nothing for a human to notice. When the watchdog itself dies, the system looks healthy right up until the next worker death, and then stalls indefinitely.

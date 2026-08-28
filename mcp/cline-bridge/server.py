@@ -54,24 +54,18 @@ async def ask_peer_model(question: str, repo_path: str) -> dict:
     for a second opinion or a judgement only that model can give, never for trivia.
 
     Returns {id, status, answer, reason}. `status` is "answered" or "failed"; on failure
-    `reason` is one of timeout, worker_offline, queue_unavailable. `worker_offline` means no
-    worker in the pool is alive, not that one of them died; it also carries `watchdog`:
-    "alive" means a restart is coming, "offline" means nothing will restart the pool until a
-    human does.
+    `reason` is one of timeout, worker_offline, queue_unavailable. `worker_offline` means the
+    watchdog is running and reports no live worker in the pool, so a restart is already due —
+    wait and retry once. It is never returned when no watchdog is running: the pool is then
+    assumed live, and a pool that is in fact down surfaces as `timeout` instead.
     """
     question = _validate(question, repo_path)
 
     queue = BridgeQueue()
     try:
         queue.gc()
-        if not queue.pool_alive():
-            return {
-                "id": None,
-                "status": "failed",
-                "answer": None,
-                "reason": "worker_offline",
-                "watchdog": "alive" if queue.watchdog_alive() else "offline",
-            }
+        if queue.pool_offline():
+            return {"id": None, "status": "failed", "answer": None, "reason": "worker_offline"}
         record = queue.submit(question, repo_path)
     except OSError:
         return {"id": None, "status": "failed", "answer": None, "reason": "queue_unavailable"}

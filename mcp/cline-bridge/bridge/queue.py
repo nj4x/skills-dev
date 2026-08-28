@@ -262,8 +262,15 @@ class BridgeQueue:
             slots.append((slot, self._fresh(path)))
         return sorted(slots)
 
-    def pool_alive(self) -> bool:
-        return any(alive for _, alive in self.worker_slots())
+    def pool_offline(self) -> bool:
+        """Whether the pool is known dead — the only case worth refusing a question over.
+
+        A heartbeat is touched only by a `bridge` call, so a worker deep in a long answer
+        looks exactly like a dead one. That reading is worth acting on only while the
+        watchdog runs to act on it; with no watchdog the pool is assumed live and the
+        request goes through to its own timeout rather than being refused on a guess.
+        """
+        return self.watchdog_alive() and not any(alive for _, alive in self.worker_slots())
 
     @staticmethod
     def _touch(path: Path) -> None:

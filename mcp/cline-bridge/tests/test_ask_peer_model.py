@@ -42,7 +42,8 @@ async def test_round_trip_returns_the_workers_answer(queue):
 
 
 @pytest.mark.asyncio
-async def test_dead_worker_fails_fast_without_enqueuing(queue):
+async def test_dead_worker_under_a_live_watchdog_fails_fast_without_enqueuing(queue):
+    queue.watchdog_heartbeat.touch()
     started = time.monotonic()
     result = await ask_peer_model("why?", REPO)
 
@@ -52,22 +53,21 @@ async def test_dead_worker_fails_fast_without_enqueuing(queue):
         "status": "failed",
         "answer": None,
         "reason": "worker_offline",
-        "watchdog": "offline",
     }
     assert queue.counts()["pending"] == 0
 
 
 @pytest.mark.asyncio
-async def test_dead_worker_with_live_watchdog_reports_a_restart_is_coming(queue):
-    queue.watchdog_heartbeat.touch()
+async def test_without_a_watchdog_a_dead_pool_is_assumed_live_and_times_out_instead(queue):
     result = await ask_peer_model("why?", REPO)
 
-    assert result["reason"] == "worker_offline"
-    assert result["watchdog"] == "alive"
+    assert result["reason"] == "timeout"
+    assert (queue.failed / f"{result['id']}.json").exists()
 
 
 @pytest.mark.asyncio
 async def test_a_pool_of_stale_heartbeats_counts_as_offline(queue):
+    queue.watchdog_heartbeat.touch()
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
     for slot in (1, 2):
         queue.touch_heartbeat(slot)
@@ -77,6 +77,7 @@ async def test_a_pool_of_stale_heartbeats_counts_as_offline(queue):
 
 @pytest.mark.asyncio
 async def test_one_live_slot_keeps_the_pool_up(queue):
+    queue.watchdog_heartbeat.touch()
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
     queue.touch_heartbeat(1)
     os.utime(queue.heartbeat_path(1), (stale, stale))

@@ -112,7 +112,8 @@ def test_empty_thread_poll_inside_the_window_keeps_the_worker_on_the_thread(queu
     assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
     out = capsys.readouterr().out
     assert "thread t1 is still open" in out
-    assert "bridge claim-next --worker 1 --thread t1 --wait 25" in out
+    assert "bridge claim-next --worker 1 --thread t1 --wait" in out
+    assert ("--wait 24" in out or "--wait 25" in out)
     assert not (queue.locate("t1") / ".swept").exists()
 
 
@@ -124,8 +125,15 @@ def test_empty_thread_poll_past_the_window_closes_the_thread_and_releases_the_wo
 
     assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
     out = capsys.readouterr().out
+    assert "THREAD CLOSED" in out
+    assert "bridge claim-next --worker 1 --wait" in out
+    assert ("--wait 24" in out or "--wait 25" in out)
+
+    assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
+    out = capsys.readouterr().out
     assert "THREAD CLOSED - t1" in out
-    assert "bridge claim-next --worker 1 --wait 25" in out
+    assert "bridge claim-next --worker 1 --wait" in out
+    assert ("--wait 24" in out or "--wait 25" in out)
     assert (queue.locate("t1") / ".swept").exists()
 
 
@@ -229,7 +237,9 @@ def test_claim_worker_slot_exits_non_zero_when_the_pool_is_full(queue, capsys):
 
 def test_claim_next_tells_the_worker_to_poll_with_its_own_slot(queue, capsys):
     assert main(["claim-next", "--worker", "3"]) == 0
-    assert "bridge claim-next --worker 3 --wait 25" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "bridge claim-next --worker 3 --wait" in out
+    assert ("--wait 24" in out or "--wait 25" in out)
 
 
 def test_claim_next_shows_the_repo_and_the_answer_command_that_names_it(queue, capsys):

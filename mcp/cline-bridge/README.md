@@ -14,7 +14,8 @@ Design: [ADR-0068](../../docs/adr/0068-cline-bridge-loop-durability-policy.md) (
 [ADR-0074](../../docs/adr/0074-worker-pool-identity-and-lifecycle.md) (worker pool),
 [ADR-0075](../../docs/adr/0075-worker-repo-access-and-delegation-model.md) (repo access),
 [ADR-0076](../../docs/adr/0076-async-submit-and-poll-surface.md) (async surface),
-[ADR-0077](../../docs/adr/0077-thread-bound-worker-loop.md) (thread-bound loop).
+[ADR-0077](../../docs/adr/0077-thread-bound-worker-loop.md) (thread-bound loop),
+[ADR-0079](../../docs/adr/0079-watchdog-optional-assume-live-pool.md) (optional watchdog).
 
 ## Two sides
 
@@ -52,48 +53,57 @@ directory, or point the prompt at `uv --directory <path> run bridge`.
 
 ## Run a round trip
 
-**Start the watchdog first.** It writes `pool.conf`, which is what caps the number of slots;
-a worker that starts before it can take a slot above `POOL_SIZE` (ADR-0074).
+The watchdog is off by default (ADR-0079). Start workers on their own:
 
-1. Start the watchdog, which restarts workers when they die:
-
-   ```sh
-   POOL_SIZE=2 nohup ./bridge-watchdog.sh > ~/.cline-bridge/watchdog.log 2>&1 &
-   ```
-
-   It copies `worker-prompt.txt` into the bridge root, writes `POOL_SIZE` to `pool.conf`, and
-   restarts any worker whose `worker-N.alive` goes stale. It never starts workers on its own:
-   a slot with no heartbeat file was never claimed, so there is nothing to restart.
-2. Start each worker: open a VS Code window, start a Cline task, and paste the contents of
+1. Start each worker: open a VS Code window, start a Cline task, and paste the contents of
    `~/.cline-bridge/worker-prompt.txt` as the first message. YOLO / auto-approve must be on, or
-   the loop stalls on approval. Repeat up to `POOL_SIZE` times — one window per worker. Each
-   task calls `bridge claim-worker-slot` itself and stops if the pool is already full.
-3. Confirm everything is up: `bridge status` reports `worker-N=alive` per slot that has run
-   `claim-next`, and `watchdog=alive` once the watchdog's first check has run.
-4. From the capable agent, call `ask_peer_model("...", repo_path="/abs/path/to/repo")`. The
+   the loop stalls on approval. One window per worker. Each task calls `bridge
+   claim-worker-slot` itself and stops if the pool is already full.
+2. Confirm everything is up: `bridge status` reports `worker-N=alive` per slot that has run
+   `claim-next`.
+3. From the capable agent, call `ask_peer_model("...", repo_path="/abs/path/to/repo")`. The
    worker reads and edits that live tree (ADR-0075) — it is a delegate, not a sandbox, so do
    not point it at a tree holding production credentials.
 
-To shrink the pool, stop the watchdog before closing a window, or delete that window's
-`worker-N.alive` by hand. A stale heartbeat with no owner reads as a dead worker, and the
-restart it triggers can land in another window and kill a live claim (ADR-0074).
+With no watchdog running, nothing writes `pool.conf`, so the slot ceiling falls back to 10
+(ADR-0074). Close a window to shrink the pool; its `worker-N.alive` goes stale on its own and
+the slot is reused by the next worker to claim one.
+
+## Optional: the watchdog
+
+`bridge-watchdog.sh` restarts a worker whose `worker-N.alive` goes stale. Run it when you want
+worker deaths to self-heal unattended, and accept that it can also restart a worker that is
+merely busy — the heartbeat is touched only by `bridge` calls, so a long answer is
+indistinguishable from a death (ADR-0079). Two Cline tasks then share one slot.
+
+**Start it before any worker.** It writes `pool.conf`, which is what caps the number of slots;
+a worker that starts first can take a slot above `POOL_SIZE` (ADR-0074).
+
+```sh
+POOL_SIZE=2 nohup ./bridge-watchdog.sh > ~/.cline-bridge/watchdog.log 2>&1 &
+```
+
+It also re-copies `worker-prompt.txt` into the bridge root. It never starts workers on its own:
+a slot with no heartbeat file was never claimed, so there is nothing to restart.
+
+While it runs, `bridge status` reports `watchdog=alive`, and `ask_peer_model` fails fast with
+`worker_offline` when the whole pool is stale — meaning a restart is already due. It has no
+watchdog of its own (ADR-0068 point 3); `pgrep -f bridge-watchdog.sh` confirms it from a shell,
+and you restart it by hand. To shrink the pool, stop it before closing a window: a stale
+heartbeat with no owner reads as a dead worker, and the restart it triggers can land in another
+window and kill a live claim (ADR-0074).
 
 Upgrading from the single-worker layout: `mv ~/.cline-bridge/worker.alive ~/.cline-bridge/worker-1.alive`
-before starting the new watchdog. Also drain `~/.cline-bridge/queue/` first — records enqueued
-before ADR-0075 carry no `repo_path`, and `claim-next` will not render them.
-
-The watchdog has no watchdog of its own (ADR-0068 point 3). If it dies, the system looks
-healthy until the next worker death, then stalls; `ask_peer_model` surfaces this as
-`watchdog: "offline"` on a `worker_offline` failure (ADR-0072), and `pgrep -f bridge-watchdog.sh`
-confirms it from a shell. Restart it by hand. `worker_offline` means *no* worker in the pool is
-alive — a pool running short of workers still answers.
+first. Also drain `~/.cline-bridge/queue/` — records enqueued before ADR-0075 carry no
+`repo_path`, and `claim-next` will not render them.
 
 ## Environment
 
 - `CLINE_BRIDGE_DIR` — queue root (default `~/.cline-bridge`)
 - `CLINE_BRIDGE_TIMEOUT` — seconds `ask_peer_model` blocks (default `180`)
 - `CLINE_BRIDGE_ASYNC_TIMEOUT` — seconds before an unanswered request is swept to `failed/` (default `1800`)
-- `POOL_SIZE` — slot ceiling, 1–10, read by the watchdog only (default `1`)
+- `POOL_SIZE` — slot ceiling, 1–10, read by the watchdog only (default `1`; with no watchdog
+  running nothing writes `pool.conf` and the ceiling falls back to 10)
 
 The MCP server reads these once at process start. Changing either requires restarting the
 server's registration (e.g. reconnecting it in the capable agent's client) — a long-lived
