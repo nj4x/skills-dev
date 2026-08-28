@@ -6,13 +6,16 @@ STALENESS_THRESHOLD=300
 BOOT_GRACE=120
 CHECK_INTERVAL=30
 
+# Must resolve to the same root as bridge.queue.default_root(), tilde expansion included.
+BRIDGE_DIR="${MCP_BRIDGE_DIR:-$HOME/.mcp-bridge}"
+HEARTBEAT="${BRIDGE_DIR/#\~/$HOME}/worker.alive"
+
 mkdir -p "$HOME/.cline-bridge"
 cp "$(dirname "$0")/worker-prompt.txt" "$PROMPT_FILE"
 
 is_stale() {
-  local heartbeat="$HOME/.mcp-bridge/worker.alive"
-  if [ ! -f "$heartbeat" ]; then return 0; fi
-  local mtime=$(stat -f%m "$heartbeat" 2>/dev/null || echo 0)
+  if [ ! -f "$HEARTBEAT" ]; then return 0; fi
+  local mtime=$(stat -f%m "$HEARTBEAT" 2>/dev/null || echo 0)
   local now=$(date +%s)
   [ $((now - mtime)) -gt "$STALENESS_THRESHOLD" ]
 }
@@ -28,11 +31,14 @@ restart_task() {
   sleep "$BOOT_GRACE"
 }
 
-echo "[watchdog] $(date): monitoring heartbeat at $HOME/.mcp-bridge/worker.alive"
+echo "[watchdog] $(date): monitoring heartbeat at $HEARTBEAT"
 echo "[watchdog] staleness threshold: ${STALENESS_THRESHOLD}s, boot grace: ${BOOT_GRACE}s, check interval: ${CHECK_INTERVAL}s"
 
-# Fire first task
-restart_task
+if is_stale; then
+  restart_task
+else
+  echo "[watchdog] $(date): worker already alive, not starting a second one"
+fi
 
 while true; do
   sleep "$CHECK_INTERVAL"
