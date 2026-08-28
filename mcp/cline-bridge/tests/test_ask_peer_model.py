@@ -10,8 +10,8 @@ from server import ask_peer_model
 
 @pytest.fixture
 def queue(tmp_path, monkeypatch):
-    monkeypatch.setenv("MCP_BRIDGE_DIR", str(tmp_path))
-    monkeypatch.setenv("MCP_BRIDGE_TIMEOUT", "2")
+    monkeypatch.setenv("CLINE_BRIDGE_DIR", str(tmp_path))
+    monkeypatch.setenv("CLINE_BRIDGE_TIMEOUT", "2")
     return BridgeQueue(tmp_path)
 
 

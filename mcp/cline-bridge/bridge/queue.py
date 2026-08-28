@@ -20,7 +20,7 @@ def _now() -> str:
 
 
 def default_root() -> Path:
-    return Path(os.path.expanduser(os.getenv("MCP_BRIDGE_DIR", "~/.mcp-bridge")))
+    return Path(os.path.expanduser(os.getenv("CLINE_BRIDGE_DIR", "~/.cline-bridge")))
 
 
 class BridgeQueue:

@@ -7,7 +7,7 @@ BOOT_GRACE=120
 CHECK_INTERVAL=30
 
 # Must resolve to the same root as bridge.queue.default_root(), tilde expansion included.
-BRIDGE_DIR="${MCP_BRIDGE_DIR:-$HOME/.mcp-bridge}"
+BRIDGE_DIR="${CLINE_BRIDGE_DIR:-$HOME/.cline-bridge}"
 HEARTBEAT="${BRIDGE_DIR/#\~/$HOME}/worker.alive"
 
 mkdir -p "$HOME/.cline-bridge"

@@ -90,5 +90,5 @@ def test_gc_removes_only_expired_terminal_records(queue):
 
 
 def test_root_honours_env_override(tmp_path, monkeypatch):
-    monkeypatch.setenv("MCP_BRIDGE_DIR", str(tmp_path / "elsewhere"))
+    monkeypatch.setenv("CLINE_BRIDGE_DIR", str(tmp_path / "elsewhere"))
     assert BridgeQueue().root == tmp_path / "elsewhere"

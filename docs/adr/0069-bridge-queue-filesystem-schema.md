@@ -22,7 +22,7 @@ The key constraint: this repository runs on macOS, which lacks GNU `flock(1)` (r
 ## Layout and Directory Structure
 
 ```
-~/.mcp-bridge/
+~/.cline-bridge/
 ├── queue/
 │   ├── pending/          # waiting to be claimed
 │   ├── claimed/          # claimed by a worker, awaiting answer
@@ -32,13 +32,13 @@ The key constraint: this repository runs on macOS, which lacks GNU `flock(1)` (r
 └── worker.alive          # heartbeat file, 0 bytes, mtime-driven (ADR-0068 point 2)
 ```
 
-The root path is `os.path.expanduser(os.getenv("MCP_BRIDGE_DIR", "~/.mcp-bridge"))`. Directories are created lazily with `os.makedirs(..., exist_ok=True)` on first access. This follows the established `~/.mcp-vectors/<subsystem>` precedent in this repository's existing MCP servers.
+The root path is `os.path.expanduser(os.getenv("CLINE_BRIDGE_DIR", "~/.cline-bridge"))`. Directories are created lazily with `os.makedirs(..., exist_ok=True)` on first access. This follows the established `~/.mcp-vectors/<subsystem>` precedent in this repository's existing MCP servers.
 
 ## File Naming and Ordering
 
 Request files are named `<unix-millis>-<short-uuid>.json`, e.g. `1756205412345-a3f9c2d1.json`. Lexical sort of filenames gives FIFO order by submission time with no index file needed. The UUID segment (8 hex chars) provides uniqueness when multiple requests arrive within the same millisecond.
 
-**Example**: `~/.mcp-bridge/queue/pending/1756205412345-a3f9c2d1.json`
+**Example**: `~/.cline-bridge/queue/pending/1756205412345-a3f9c2d1.json`
 
 ## Record Schema
 
@@ -75,7 +75,7 @@ A request record carries only immutable data and timestamps; status is encoded i
 
 All writes to queue records happen in two stages to prevent torn writes:
 
-1. Write to `~/.mcp-bridge/tmp/<id>.tmp`
+1. Write to `~/.cline-bridge/tmp/<id>.tmp`
 2. Atomic `os.rename(<tmp-path>, <final-path>)` to move into the queue
 
 The `tmp/` directory is a sibling of `queue/` on the same filesystem, guaranteeing the rename is atomic. `tmp/` is cleaned opportunistically (see below) and is never part of the queue itself.
@@ -84,7 +84,7 @@ The `tmp/` directory is a sibling of `queue/` on the same filesystem, guaranteei
 
 Claiming a request is an atomic operation to prevent two workers from claiming the same request (see Q5 in ticket #39):
 
-1. Acquire exclusive lock on `~/.mcp-bridge/queue.lock` using `fcntl.flock(LOCK_EX)`.
+1. Acquire exclusive lock on `~/.cline-bridge/queue.lock` using `fcntl.flock(LOCK_EX)`.
 2. Scan `pending/` for the oldest file (lexically smallest filename).
 3. If found, `os.rename(pending/<oldest>, claimed/<oldest>)` and set the file's `claimed_at` field in a fresh write.
 4. Release the lock.
@@ -94,7 +94,7 @@ The lock is released immediately after the rename, and the kernel automatically 
 
 ## Heartbeat File
 
-The worker's liveness is a single file at `~/.mcp-bridge/worker.alive`, zero bytes, with mtime as the signal (per ADR-0068 point 2). The CLI touches this file on *every* invocation of `claim-next`, including empty-queue polls. This is the only file updated on every poll; queue records are left unchanged when no work is claimed.
+The worker's liveness is a single file at `~/.cline-bridge/worker.alive`, zero bytes, with mtime as the signal (per ADR-0068 point 2). The CLI touches this file on *every* invocation of `claim-next`, including empty-queue polls. This is the only file updated on every poll; queue records are left unchanged when no work is claimed.
 
 The heartbeat is a sibling of `queue/`, not a record within it, so the queue directory remains free of non-records and a sweep can never trip over it.
 
@@ -119,7 +119,7 @@ This ensures old records do not accumulate unbounded. Terminal records are never
 **Initial state**: `pending/` contains one submitted request.
 
 ```
-~/.mcp-bridge/queue/pending/1756205412345-a3f9c2d1.json
+~/.cline-bridge/queue/pending/1756205412345-a3f9c2d1.json
 
 {
   "id": "1756205412345-a3f9c2d1",
@@ -134,7 +134,7 @@ This ensures old records do not accumulate unbounded. Terminal records are never
 **Worker calls `bridge claim-next`**: The CLI acquires the lock, finds the oldest pending file, moves it to `claimed/`, and sets `claimed_at`.
 
 ```
-~/.mcp-bridge/queue/claimed/1756205412345-a3f9c2d1.json
+~/.cline-bridge/queue/claimed/1756205412345-a3f9c2d1.json
 
 {
   "id": "1756205412345-a3f9c2d1",
@@ -151,7 +151,7 @@ This ensures old records do not accumulate unbounded. Terminal records are never
 **Worker calls `bridge answer <id> <answer-text>`**: The CLI writes the answer into the record and moves it to `answered/`.
 
 ```
-~/.mcp-bridge/queue/answered/1756205412345-a3f9c2d1.json
+~/.cline-bridge/queue/answered/1756205412345-a3f9c2d1.json
 
 {
   "id": "1756205412345-a3f9c2d1",
@@ -168,7 +168,7 @@ This ensures old records do not accumulate unbounded. Terminal records are never
 **Timeout scenario** (if the worker dies while the request is in `claimed/`): After 180 seconds without progress, `submit_request` moves the request to `failed/` and marks its status terminal. The record remains readable for debugging.
 
 ```
-~/.mcp-bridge/queue/failed/1756205412345-a3f9c2d1.json
+~/.cline-bridge/queue/failed/1756205412345-a3f9c2d1.json
 
 {
   "id": "1756205412345-a3f9c2d1",

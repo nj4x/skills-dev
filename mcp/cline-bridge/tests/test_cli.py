@@ -8,7 +8,7 @@ from bridge.queue import BridgeQueue
 
 @pytest.fixture
 def queue(tmp_path, monkeypatch):
-    monkeypatch.setenv("MCP_BRIDGE_DIR", str(tmp_path))
+    monkeypatch.setenv("CLINE_BRIDGE_DIR", str(tmp_path))
     return BridgeQueue(tmp_path)
 
 

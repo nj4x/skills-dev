@@ -2,7 +2,7 @@
 
 A bridge between two agents: a capable, MCP-equipped agent asks a question; a constrained
 Cline-side agent — bash only, no MCP, no API access to its model — answers it from its own
-inference. They meet at a filesystem queue under `~/.mcp-bridge`.
+inference. They meet at a filesystem queue under `~/.cline-bridge`.
 
 Design: [ADR-0068](../../docs/adr/0068-cline-bridge-loop-durability-policy.md) (durability),
 [ADR-0069](../../docs/adr/0069-bridge-queue-filesystem-schema.md) (queue schema),
@@ -49,8 +49,14 @@ directory, or point the prompt at `uv --directory <path> run bridge`.
 
 ## Environment
 
-- `MCP_BRIDGE_DIR` — queue root (default `~/.mcp-bridge`)
-- `MCP_BRIDGE_TIMEOUT` — seconds `ask_peer_model` blocks (default `180`)
+- `CLINE_BRIDGE_DIR` — queue root (default `~/.cline-bridge`)
+- `CLINE_BRIDGE_TIMEOUT` — seconds `ask_peer_model` blocks (default `180`)
+
+The MCP server reads these once at process start. Changing either requires restarting the
+server's registration (e.g. reconnecting it in the capable agent's client) — a long-lived
+process keeps its imported default even after the environment or source changes underneath
+it, so a stale server can end up watching a different root than the worker's freshly-spawned
+`bridge` CLI calls.
 
 ## Development
 

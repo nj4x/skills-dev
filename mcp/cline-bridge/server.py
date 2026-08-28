@@ -1,8 +1,8 @@
 """Cline bridge MCP server — one tool, `ask_peer_model` (ADR-0070).
 
 Environment variables:
-    MCP_BRIDGE_DIR: queue root (default: ~/.mcp-bridge)
-    MCP_BRIDGE_TIMEOUT: seconds to block waiting for an answer (default: 180)
+    CLINE_BRIDGE_DIR: queue root (default: ~/.cline-bridge)
+    CLINE_BRIDGE_TIMEOUT: seconds to block waiting for an answer (default: 180)
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ mcp = MCPServer("cline-bridge")
 
 
 def _timeout() -> float:
-    return float(os.getenv("MCP_BRIDGE_TIMEOUT", "180"))
+    return float(os.getenv("CLINE_BRIDGE_TIMEOUT", "180"))
 
 
 @mcp.tool()
