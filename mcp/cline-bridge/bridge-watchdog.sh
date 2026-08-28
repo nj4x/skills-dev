@@ -1,53 +1,74 @@
 #!/bin/bash
-# Watchdog per ADR-0068 point 3: restarts the Cline task if the worker heartbeat goes stale.
+# Watchdog per ADR-0068 point 3 and ADR-0074: restarts pooled workers whose heartbeats go stale.
 set -u
 STALENESS_THRESHOLD=300
-BOOT_GRACE=120
 CHECK_INTERVAL=30
+RESTART_GAP=20      # spacing between restarts fired in one scan, so a restarted worker claims
+                    # its slot before the next URI lands (ADR-0074 misdirected-restart risk)
+RESTART_GRACE=300   # skip a slot this long after restarting it, so a worker that came back in a
+                    # different slot does not cascade restarts off the old file (ADR-0074 risk 5)
+MAX_POOL_SIZE=10
 
 # Must resolve to the same root as bridge.queue.default_root(), tilde expansion included.
 BRIDGE_DIR="${CLINE_BRIDGE_DIR:-$HOME/.cline-bridge}"
 ROOT="${BRIDGE_DIR/#\~/$HOME}"
-HEARTBEAT="$ROOT/worker.alive"
 WATCHDOG_HEARTBEAT="$ROOT/watchdog.alive"
 PROMPT_FILE="$ROOT/worker-prompt.txt"
+POOL_CONF="$ROOT/pool.conf"
+
+POOL_SIZE="${POOL_SIZE:-1}"
+case "$POOL_SIZE" in
+  ''|*[!0-9]*) POOL_SIZE=0 ;;
+esac
+if [ "$POOL_SIZE" -lt 1 ] || [ "$POOL_SIZE" -gt "$MAX_POOL_SIZE" ]; then
+  echo "[watchdog] POOL_SIZE must be an integer 1..$MAX_POOL_SIZE" >&2
+  exit 1
+fi
 
 mkdir -p "$ROOT"
 cp "$(dirname "$0")/worker-prompt.txt" "$PROMPT_FILE"
+echo "$POOL_SIZE" > "$POOL_CONF"
 
-is_stale() {
-  if [ ! -f "$HEARTBEAT" ]; then return 0; fi
-  local mtime=$(stat -f%m "$HEARTBEAT" 2>/dev/null || echo 0)
-  local now=$(date +%s)
-  [ $((now - mtime)) -gt "$STALENESS_THRESHOLD" ]
+# Seconds since mtime; a missing file reads as infinitely old.
+age() {
+  local mtime
+  mtime=$(stat -f%m "$1" 2>/dev/null) || { echo 999999999; return; }
+  echo $(( $(date +%s) - mtime ))
 }
 
 url_encode() {
   python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read()))" "$@"
 }
 
-restart_task() {
-  local encoded=$(cat "$PROMPT_FILE" | url_encode)
+restart_slot() {
+  local slot=$1
+  local encoded
+  encoded=$(url_encode < "$PROMPT_FILE")
   open "vscode://cline-sr.cline-sr/task?prompt=$encoded"
-  echo "[watchdog] $(date): task restarted"
-  sleep "$BOOT_GRACE"
+  touch "$ROOT/.restart-$slot"
+  echo "[watchdog] $(date): worker-$slot heartbeat stale, task restarted"
 }
 
-echo "[watchdog] $(date): monitoring heartbeat at $HEARTBEAT"
-echo "[watchdog] staleness threshold: ${STALENESS_THRESHOLD}s, boot grace: ${BOOT_GRACE}s, check interval: ${CHECK_INTERVAL}s"
+# Restart every slot whose heartbeat file exists and has gone stale. A slot with no heartbeat
+# file was never claimed, so there is nothing to restart (ADR-0074: POOL_SIZE is a ceiling,
+# not a launch directive).
+scan() {
+  local fired=0 slot
+  for slot in $(seq 1 "$POOL_SIZE"); do
+    [ -e "$ROOT/worker-$slot.alive" ] || continue
+    [ "$(age "$ROOT/worker-$slot.alive")" -gt "$STALENESS_THRESHOLD" ] || continue
+    [ "$(age "$ROOT/.restart-$slot")" -gt "$RESTART_GRACE" ] || continue
+    [ "$fired" -eq 0 ] || sleep "$RESTART_GAP"
+    restart_slot "$slot"
+    fired=$((fired + 1))
+  done
+}
 
-touch "$WATCHDOG_HEARTBEAT"
-if is_stale; then
-  restart_task
-else
-  echo "[watchdog] $(date): worker already alive, not starting a second one"
-fi
+echo "[watchdog] $(date): monitoring up to $POOL_SIZE worker slots under $ROOT"
+echo "[watchdog] staleness: ${STALENESS_THRESHOLD}s, restart grace: ${RESTART_GRACE}s, restart gap: ${RESTART_GAP}s, check interval: ${CHECK_INTERVAL}s"
 
 while true; do
-  sleep "$CHECK_INTERVAL"
   touch "$WATCHDOG_HEARTBEAT"
-  if is_stale; then
-    echo "[watchdog] $(date): heartbeat stale, restarting"
-    restart_task
-  fi
+  scan
+  sleep "$CHECK_INTERVAL"
 done

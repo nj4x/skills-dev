@@ -27,7 +27,7 @@ async def _worker(queue, reply="because"):
 
 @pytest.mark.asyncio
 async def test_round_trip_returns_the_workers_answer(queue):
-    queue.touch_heartbeat()
+    queue.touch_heartbeat(1)
     worker = asyncio.create_task(_worker(queue))
     result = await ask_peer_model("why?")
     await worker
@@ -64,16 +64,30 @@ async def test_dead_worker_with_live_watchdog_reports_a_restart_is_coming(queue)
 
 
 @pytest.mark.asyncio
-async def test_stale_heartbeat_counts_as_offline(queue):
-    queue.touch_heartbeat()
+async def test_a_pool_of_stale_heartbeats_counts_as_offline(queue):
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
-    os.utime(queue.heartbeat, (stale, stale))
+    for slot in (1, 2):
+        queue.touch_heartbeat(slot)
+        os.utime(queue.heartbeat_path(slot), (stale, stale))
     assert (await ask_peer_model("why?"))["reason"] == "worker_offline"
 
 
 @pytest.mark.asyncio
+async def test_one_live_slot_keeps_the_pool_up(queue):
+    stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
+    queue.touch_heartbeat(1)
+    os.utime(queue.heartbeat_path(1), (stale, stale))
+    queue.touch_heartbeat(2)
+
+    worker = asyncio.create_task(_worker(queue))
+    result = await ask_peer_model("why?")
+    await worker
+    assert result["status"] == "answered"
+
+
+@pytest.mark.asyncio
 async def test_silent_worker_times_out_and_marks_the_record_failed(queue):
-    queue.touch_heartbeat()
+    queue.touch_heartbeat(1)
     result = await ask_peer_model("why?")
 
     assert result["status"] == "failed"
@@ -83,7 +97,7 @@ async def test_silent_worker_times_out_and_marks_the_record_failed(queue):
 
 @pytest.mark.asyncio
 async def test_empty_question_is_a_caller_bug(queue):
-    queue.touch_heartbeat()
+    queue.touch_heartbeat(1)
     with pytest.raises(ValueError):
         await ask_peer_model("   ")
 

@@ -1,4 +1,4 @@
-"""Filesystem queue for the Cline bridge (ADR-0069, ADR-0073)."""
+"""Filesystem queue for the Cline bridge (ADR-0069, ADR-0073, ADR-0074)."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 RETENTION_SECONDS = 7 * 24 * 3600
 STALE_HEARTBEAT_SECONDS = 300
 CONTINUATION_IDLE_SECONDS = 300
+MAX_POOL_SIZE = 10
 LIFECYCLE_DIRS = ("pending", "claimed", "answered", "failed")
 
 
@@ -46,7 +47,7 @@ class BridgeQueue:
         self.failed = self.locate(None) / "failed"
         self.tmp = self.root / "tmp"
         self.lock_path = self.root / "queue.lock"
-        self.heartbeat = self.root / "worker.alive"
+        self.pool_conf = self.root / "pool.conf"
         self.watchdog_heartbeat = self.root / "watchdog.alive"
 
     def locate(self, thread_id: str | None) -> Path:
@@ -164,13 +165,53 @@ class BridgeQueue:
         except (OSError, ValueError):
             return None
 
-    def touch_heartbeat(self) -> None:
-        self.ensure()
-        self.heartbeat.touch()
-        os.utime(self.heartbeat, None)
+    def heartbeat_path(self, slot: int) -> Path:
+        return self.root / f"worker-{slot}.alive"
 
-    def worker_alive(self) -> bool:
-        return self._fresh(self.heartbeat)
+    def pool_size(self) -> int:
+        """Slot ceiling the watchdog wrote at startup.
+
+        Absent when a worker starts before the watchdog (ADR-0074 risk 3): the ceiling is
+        then unenforceable, so it falls back to the largest pool the ADR allows.
+        """
+        try:
+            value = int(self.pool_conf.read_text().strip())
+        except (OSError, ValueError):
+            value = MAX_POOL_SIZE
+        return max(1, min(value, MAX_POOL_SIZE))
+
+    def claim_worker_slot(self) -> int | None:
+        """Take the lowest free slot and start its heartbeat, or None if the pool is full."""
+        with self._lock():
+            for slot in range(1, self.pool_size() + 1):
+                path = self.heartbeat_path(slot)
+                if not self._fresh(path):
+                    self._touch(path)
+                    return slot
+            return None
+
+    def touch_heartbeat(self, slot: int) -> None:
+        self.ensure()
+        self._touch(self.heartbeat_path(slot))
+
+    def worker_slots(self) -> list[tuple[int, bool]]:
+        """Every slot with a heartbeat file, ascending, paired with its liveness."""
+        slots = []
+        for path in self.root.glob("worker-*.alive"):
+            try:
+                slot = int(path.name[len("worker-") : -len(".alive")])
+            except ValueError:
+                continue
+            slots.append((slot, self._fresh(path)))
+        return sorted(slots)
+
+    def pool_alive(self) -> bool:
+        return any(alive for _, alive in self.worker_slots())
+
+    @staticmethod
+    def _touch(path: Path) -> None:
+        path.touch()
+        os.utime(path, None)
 
     def watchdog_alive(self) -> bool:
         return self._fresh(self.watchdog_heartbeat)

@@ -7,6 +7,7 @@ import pytest
 
 from bridge.queue import (
     CONTINUATION_IDLE_SECONDS,
+    MAX_POOL_SIZE,
     RETENTION_SECONDS,
     STALE_HEARTBEAT_SECONDS,
     BridgeQueue,
@@ -90,18 +91,61 @@ def test_fail_marks_pending_request_terminal(queue):
     assert (queue.failed / f"{record['id']}.json").exists()
 
 
-def test_worker_alive_tracks_heartbeat_age(queue):
-    assert queue.worker_alive() is False
-    queue.touch_heartbeat()
-    assert queue.worker_alive() is True
+def test_pool_alive_tracks_heartbeat_age_per_slot(queue):
+    assert queue.pool_alive() is False
+    queue.touch_heartbeat(2)
+    assert queue.pool_alive() is True
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
-    os.utime(queue.heartbeat, (stale, stale))
-    assert queue.worker_alive() is False
+    os.utime(queue.heartbeat_path(2), (stale, stale))
+    assert queue.pool_alive() is False
+
+
+def test_worker_slots_report_every_heartbeat_file_in_ascending_order(queue):
+    queue.ensure()
+    stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
+    for slot in (10, 2, 1):
+        queue.touch_heartbeat(slot)
+    os.utime(queue.heartbeat_path(2), (stale, stale))
+
+    assert queue.worker_slots() == [(1, True), (2, False), (10, True)]
+
+
+def test_claim_worker_slot_takes_the_lowest_free_slot(queue):
+    queue.pool_conf.parent.mkdir(parents=True, exist_ok=True)
+    queue.pool_conf.write_text("3")
+
+    assert queue.claim_worker_slot() == 1
+    assert queue.claim_worker_slot() == 2
+    assert queue.claim_worker_slot() == 3
+    assert queue.claim_worker_slot() is None
+
+
+def test_claim_worker_slot_reclaims_a_slot_whose_worker_went_stale(queue):
+    queue.ensure()
+    queue.pool_conf.write_text("2")
+    queue.touch_heartbeat(1)
+    queue.touch_heartbeat(2)
+    stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
+    os.utime(queue.heartbeat_path(1), (stale, stale))
+
+    assert queue.claim_worker_slot() == 1
+    assert queue.pool_alive() is True
+
+
+def test_pool_size_falls_back_to_the_ceiling_when_the_watchdog_has_not_written_it(queue):
+    queue.ensure()
+    assert queue.pool_size() == MAX_POOL_SIZE
+    queue.pool_conf.write_text("99")
+    assert queue.pool_size() == MAX_POOL_SIZE
+    queue.pool_conf.write_text("nonsense")
+    assert queue.pool_size() == MAX_POOL_SIZE
+    queue.pool_conf.write_text("2")
+    assert queue.pool_size() == 2
 
 
 def test_watchdog_alive_tracks_its_own_heartbeat_independently(queue):
     queue.ensure()
-    queue.touch_heartbeat()
+    queue.touch_heartbeat(1)
     assert queue.watchdog_alive() is False
 
     queue.watchdog_heartbeat.touch()
@@ -109,7 +153,7 @@ def test_watchdog_alive_tracks_its_own_heartbeat_independently(queue):
     stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
     os.utime(queue.watchdog_heartbeat, (stale, stale))
     assert queue.watchdog_alive() is False
-    assert queue.worker_alive() is True
+    assert queue.pool_alive() is True
 
 
 def test_gc_removes_only_expired_terminal_records(queue):
