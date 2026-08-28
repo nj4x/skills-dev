@@ -44,11 +44,13 @@ Initialize to `[]` if absent. After each REVIEW_STEP, upsert severity-prefixed i
 ```json
 { "id": "ID-001", "group": "A", "claim": "...", "evidence": "...", "severity": "major", "fix": "...", "status": "open", "introduced_pass": null }
 ```
-Assign new IDs sequentially. Match repeats by ID when present, otherwise by normalized claim text; update evidence and severity. Compare only groups active in the current pass when resolving omissions: mark an open issue `fixed` when its owning group ran and no longer returns the claim; leave it unchanged when that group was skipped (for example, Group F after iteration 0). Never upsert issue findings or change issue `status` after GENERATE_STEP — only REVIEW_STEP resolves findings. GENERATE_STEP writes are limited to construct records and confirmed acceptance proposals, per Post-GENERATE_STEP.
+Assign new IDs sequentially. Match repeats by ID when present, otherwise by **defect class** — the underlying rule, omission, or contract the claim describes, independent of how many instances it names. A pass that re-reports a known class with a longer instance list updates that record's evidence rather than opening a new one, so a widening sweep reads as the same defect it always was. Update evidence and severity on match. Compare only groups active in the current pass when resolving omissions: mark an open issue `fixed` when its owning group ran and no longer returns the claim; leave it unchanged when that group was skipped (for example, Group F after iteration 0). Never upsert issue findings or change issue `status` after GENERATE_STEP — only REVIEW_STEP resolves findings. GENERATE_STEP writes are limited to construct records and confirmed acceptance proposals, per Post-GENERATE_STEP.
 
 The revision agent may propose that an issue be accepted by appending `ACCEPTED: [ID] [reason]`. Extract these annotations alongside `INTRODUCED:`. In guided mode, confirm each proposal via `/grilling resolve-decisions` (one decision per proposal: accept or keep open, with the proposed reason as context) before setting `status: accepted`; rejected proposals remain open. In auto mode, ignore acceptance proposals and keep those issues open.
 
 After each REVIEW_STEP, recompute `major_count`. On pass 2+, set `halt = true` when `major_count >= prior_pass`. Bind into repeat's STOP_CONDITIONS below.
+
+**Closing out a halt.** The guard firing usually means the critic widened its sweep, not that the artifact regressed — the same defect classes came back carrying more instances. Spawning another GENERATE_STEP repeats that trade, so on halt the **orchestrator** closes the remaining majors itself: verify each open major against the repository, apply the fix to the artifact directly, and record it `fixed` with the verification cited in `evidence`. Then finalize. Resolve this way only what you have independently confirmed; carry anything you cannot verify into FINALIZE_STEP's risk list, still `open`, for the human to judge.
 
 ---
 
@@ -163,7 +165,7 @@ Before invoking the agent:
 
 3. Store the raw artifact text as `artifact` (set in step 2 per type above).
 
-4. Resolve review groups before invoking the coordinator: `plan` → `A/B/C/D/E/F`; `design-review` → `A/B/C/F`; `spec` → `A/B/C/D/F` plus `G` only on iteration 0 when `CODEBASE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"` exists and is a readable directory; `tickets` → `A/B/C/D/E/F` plus `G` under the same iteration-0 pre-flight. Store the rendered list as `groups` and `group_g_ok`. Group F (Lineage) always runs. Group G (Codebase Grounding) pre-flight failure is non-fatal; omit G and continue with the remaining groups.
+4. Resolve review groups before invoking the coordinator: `plan` → `A/B/C/D/E/F`; `design-review` → `A/B/C/F`; `spec` → `A/B/C/D/F`; `tickets` → `A/B/C/D/E/F`. Every artifact type additionally gets `G` on iteration 0 when `CODEBASE_ROOT="${CLAUDE_PROJECT_DIR:-$PWD}"` exists and is a readable directory — an artifact that names a file, symbol, line, or key is making a checkable claim whatever its type, and an unchecked one survives to be found several passes later. Store the rendered list as `groups` and `group_g_ok`. Group F (Lineage) always runs. Group G (Codebase Grounding) pre-flight failure is non-fatal; omit G and continue with the remaining groups.
 
 Invoke the Agent tool with:
 - `subagent_type: "claude"`

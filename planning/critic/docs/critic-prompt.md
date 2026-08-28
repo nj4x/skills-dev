@@ -12,6 +12,7 @@ SHARED REVIEW CONTRACT:
 - Approve when no major issue remains. Use `none` when ready as-is, `minor` for optional improvements, and `major` for significant problems.
 - Prefix each issue `[<group>][major|minor] <claim> — <evidence>`.
 - Every major must cite an artifact quote, a `file:line` citation for present-code findings, or a concrete failure scenario tied to the affected artifact section. Speculative concerns are capped at minor.
+- **Sweep each finding to completion.** When a finding names a set — call sites to change, tests that break, docs that go stale, references to retarget — search the repository for every member of that set and list them all in this pass. One issue carries the whole sweep. A finding that reports three of eight instances is an incomplete finding: it sends the reviser off to fix three, and the next pass reports the missing five as if they were new, which stalls the loop on a defect that was always one defect.
 - Use empty issue/fix arrays when none. Do not invent concerns.
 
 [IF iteration >= 1 AND critic_induced_constructs is non-empty]
@@ -150,10 +151,10 @@ For each matched artifact, check for a `lineage-rules` frontmatter key:
 - `lineage-rules: companion of SRS` → restrict Stage-2 to `**Source SRS**:` field only; skip all other Source fields
 - ADR-direct tickets (`ticket-subtype: adr-direct` + `**Source ADR**:` present): `**Spec**:` is optional; skip the missing-anchor Major finding for the Spec field only
 
-[IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_g_ok]
+[IF iteration == 0 AND group_g_ok]
 GROUP G — Codebase Grounding:
 You are an adversarial reviewer focused on CODEBASE GROUNDING. `CODEBASE_ROOT` is provided below. Evaluate ONLY:
-- Verify every named existing function, method, class, config key, schema field, DB column, and type cited by the artifact exists at its cited location.
+- Verify every named existing function, method, class, config key, schema field, DB column, type, key prefix, and line-number citation in the artifact exists at its cited location, reading the file to confirm rather than pattern-matching the name.
 - Do not flag intentionally new artifacts.
 - For an absent artifact, cite the search performed and the artifact quote that names it. A `file:line` citation is mandatory for findings about present code; absence findings instead require the failed search evidence.
 Search source code conceptually and cross-file, search docs and requirements as a document corpus, and for architecture-level questions start with a global search before reading individual files. Use `rg`, `fd`, and Read for exact or local lookups when semantic search is unavailable.
@@ -172,7 +173,7 @@ Return ONLY the merged JSON object — no markdown fences, no preamble:
 
 ---
 
-[IF artifact_type IN {spec, tickets}]
+[IF group_g_ok]
 CODEBASE_ROOT: <CODEBASE_ROOT derived from $CLAUDE_PROJECT_DIR, falling back to $PWD; Group G is omitted when this is not a readable directory>
 [END IF]
 
