@@ -12,7 +12,8 @@ Design: [ADR-0068](../../docs/adr/0068-cline-bridge-loop-durability-policy.md) (
 [ADR-0073](../../docs/adr/0073-thread-scoped-queue-directories.md) (threads),
 [ADR-0074](../../docs/adr/0074-worker-pool-identity-and-lifecycle.md) (worker pool),
 [ADR-0075](../../docs/adr/0075-worker-repo-access-and-delegation-model.md) (repo access),
-[ADR-0076](../../docs/adr/0076-async-submit-and-poll-surface.md) (async surface).
+[ADR-0076](../../docs/adr/0076-async-submit-and-poll-surface.md) (async surface),
+[ADR-0077](../../docs/adr/0077-thread-bound-worker-loop.md) (thread-bound loop).
 
 ## Two sides
 

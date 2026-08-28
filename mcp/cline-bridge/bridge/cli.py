@@ -39,14 +39,31 @@ def denied_component(path: str) -> str | None:
     return None
 
 
-def _next_poll(worker: int) -> str:
-    return f"bridge claim-next --worker {worker} --wait 25"
+def _next_poll(worker: int, thread_id: str | None = None) -> str:
+    thread_flag = f" --thread {thread_id}" if thread_id else ""
+    return f"bridge claim-next --worker {worker}{thread_flag} --wait 25"
 
 
-def _empty_message(worker: int) -> str:
+NO_SLEEP = "Do not prefix it with a sleep - the wait is already inside claim-next."
+
+
+def _empty_message(worker: int, thread_id: str | None, thread_closed: bool) -> str:
+    """What to run next after an empty poll (ADR-0071, ADR-0077).
+
+    The worker keeps no timer of its own: whether a thread still expects a follow-up is
+    decided here, off the record's continuation deadline, and re-stated on every poll so
+    it survives context truncation.
+    """
+    if thread_id is None:
+        return f"EMPTY - no work. Run `{_next_poll(worker)}` again now. {NO_SLEEP}"
+    if thread_closed:
+        return (
+            f"THREAD CLOSED - {thread_id} went idle and no follow-up is coming. "
+            f"Run `{_next_poll(worker)}` now for the next question from any thread."
+        )
     return (
-        f"EMPTY - no work. Run `{_next_poll(worker)}` again now. "
-        "Do not prefix it with a sleep - the wait is already inside claim-next."
+        f"EMPTY - thread {thread_id} is still open. Run `{_next_poll(worker, thread_id)}` "
+        f"again now. {NO_SLEEP}"
     )
 
 
@@ -95,7 +112,8 @@ def claim_next(queue: BridgeQueue, worker: int, wait: float, thread_id: str | No
             print(_render(record, worker))
             return
         if time.monotonic() >= deadline:
-            print(_empty_message(worker))
+            closed = thread_id is not None and queue.close_thread_if_idle(thread_id)
+            print(_empty_message(worker, thread_id, closed))
             return
         time.sleep(min(POLL_INTERVAL, deadline - time.monotonic()))
 
@@ -112,7 +130,14 @@ def answer(
             os.unlink(staging_path(request_id))
         except OSError:
             pass
-        print(f"OK - answered {request_id}. Run `{_next_poll(worker)}` for the next question.")
+        if thread_id is not None:
+            print(
+                f"OK - answered {request_id}. Stay on thread {thread_id}: run "
+                f"`{_next_poll(worker, thread_id)}`. Its follow-ups are invisible to every "
+                "other worker, and the poll tells you when the thread closes."
+            )
+        else:
+            print(f"OK - answered {request_id}. Run `{_next_poll(worker)}` for the next question.")
     else:
         print(
             f"ERROR: {request_id} is not claimed - it timed out or was never claimed. "

@@ -201,6 +201,27 @@ class BridgeQueue:
         records = [record for record in map(self._read, paths) if record.get("thread_id") == thread_id]
         return min(records, key=lambda record: record["id"], default=None)
 
+    def close_thread_if_idle(self, thread_id: str) -> bool:
+        """Tombstone a thread whose continuation window has lapsed (ADR-0077).
+
+        The worker leaving a thread writes the tombstone, not just `gc()`: while it is absent
+        a follow-up still routes into `threads/<id>/pending/`, which only a worker holding the
+        thread ever polls, so an untombstoned departure strands it there until the sweep fails
+        it. Refusing to close while `pending/` holds anything is what lets a follow-up racing
+        the close win — the worker polls once more and claims it.
+        """
+        base = self.locate(thread_id)
+        with self._lock():
+            if not base.is_dir():
+                return True
+            if any((base / "pending").glob("*.json")):
+                return False
+            latest = self._latest_continuation(base)
+            if latest is not None and latest >= time.time():
+                return False
+            (base / ".swept").touch()
+            return True
+
     def heartbeat_path(self, slot: int) -> Path:
         return self.root / f"worker-{slot}.alive"
 
@@ -325,11 +346,14 @@ class BridgeQueue:
             # A held claim means the holder is mid-question; its own deadline is not yet due.
             stale = now - async_timeout_seconds()
             return any((_epoch(self._read(path).get("claimed_at")) or 0) < stale for path in claims)
+        latest = self._latest_continuation(base)
+        return latest is not None and latest < now
+
+    def _latest_continuation(self, base: Path) -> float | None:
         deadlines = [
             _epoch(self._read(path).get("continuation_deadline")) for path in (base / "answered").glob("*.json")
         ]
-        deadlines = [deadline for deadline in deadlines if deadline is not None]
-        return bool(deadlines) and max(deadlines) < now
+        return max((deadline for deadline in deadlines if deadline is not None), default=None)
 
     @staticmethod
     def _read(path: Path) -> dict:

@@ -1,11 +1,15 @@
 ---
 name: ask-peer-model
-description: Consult a second LLM through the cline-bridge MCP tool. Use when you want a design or argument stress-tested by a model that has not seen your context, when deciding whether a question is worth the turn, or when `ask_peer_model` comes back failed and you need to know what to do next.
+description: Consult a second LLM through the cline-bridge MCP tools. Use when you want a design or argument stress-tested by a model that has not seen your context, when delegating work that runs for minutes, when holding a multi-turn conversation with the peer model, when deciding whether a question is worth the turn, or when a call comes back failed and you need to know what to do next.
 ---
 
 # Ask a peer model
 
-`ask_peer_model(question, repo_path)` reaches a different LLM, running as a Cline worker on this machine and unreachable by any API key from this side. It blocks for up to 180 seconds and costs a full turn on the far side.
+Three tools reach a different LLM, running as a Cline worker on this machine and unreachable by any API key from this side. Each costs a full turn on the far side.
+
+- `ask_peer_model(question, repo_path)` — blocks up to 180 seconds. Use it when you want the answer in this turn.
+- `submit_to_peer_model(question, repo_path, thread_id=None)` — returns a handle at once. Use it for work measured in minutes, and to hold a conversation.
+- `poll_peer_model(handle, thread_id=None)` — never blocks; reads the state of a submitted question.
 
 Operator setup — starting the worker, the watchdog, the queue — lives in `mcp/cline-bridge/README.md`.
 
@@ -41,11 +45,28 @@ Self-contained, and long is fine — the cost is the turn, not the tokens. Inclu
 
 Say what you want back — a verdict, a critique, options with tradeoffs.
 
+## Delegating, and holding a thread
+
+Submit instead of asking when the work is bigger than one question — a refactor to carry out, a file to write, anything you would rather not hold a turn open for. `submit_to_peer_model` returns `{handle, status, reason}` immediately; keep the handle and collect the answer with `poll_peer_model` when you next have a reason to check. Submit several before polling any of them if the work is parallel. A request nobody answers within 30 minutes expires and polls back as failed.
+
+Pass a `thread_id` — any string you pick — to keep a follow-up in the **same worker session**, so it still holds the earlier turns and you do not re-send them. Four rules govern a thread:
+
+- **The first message binds `repo_path`.** Every later message must pass the same one, or submit fails with `repo_path_mismatch`.
+- **Send serially.** Wait for one message to come back answered before submitting the next. Two in flight at once are not both reachable, because the thread only becomes a thread once a worker claims into it.
+- **Poll with the same `thread_id` you submitted with.** Without it the handle reads back as `unknown_handle`.
+- **Follow up within five minutes of each answer.** That is the worker's idle window; past it the worker leaves and the thread closes.
+
+Missing the window is not an error and gives you no signal: a later message in a closed thread is still accepted and still answered, but by a fresh worker with none of the conversation. So if the continuity is the point, either have the follow-up ready when the answer lands, or make each message self-contained and treat the thread as a bonus.
+
 ## Reading the result
 
-`{id, status, answer, reason}`.
+`ask_peer_model` returns `{id, status, answer, reason}`; `poll_peer_model` returns the same without `id`, and adds `status: "pending"` — still queued or being worked on, so check back rather than resubmitting.
 
 - **`status: "answered"`** — one opinion from a model that saw only your question. Check it against the repo before you act on it; it holds no authority over what is actually in the code.
 - **`reason: "worker_offline"`** — nobody is running the worker, caught before enqueuing so it returns instantly. This result carries a `watchdog` field saying whether the failure fixes itself. `watchdog: "alive"` means a restart is already due within about five minutes, so wait and retry once. `watchdog: "offline"` means the watchdog is dead too and nothing will bring the worker back — tell the human to start both, and do not retry until they say they have.
 - **`reason: "timeout"`** — the worker took the question and died holding it. Claims are permanent, so that question is terminal and no later worker will ever see it; the record stays under `failed/` for the post-mortem. Resubmit only once you know a fresh worker is up.
 - **`reason: "queue_unavailable"`** — the queue directory is unwritable. A filesystem problem for the human to fix.
+- **`reason: "unknown_handle"`** (poll only) — no such request. Either the `thread_id` does not match the one you submitted with, or the handle is past the 7-day history. Check the `thread_id` before concluding the request is gone.
+- **`reason: "repo_path_mismatch"`** (submit only) — this thread's first message bound a different `repo_path`. Resend with that one, or start a new thread.
+
+Treat any reason you do not recognise as terminal, not as pending.

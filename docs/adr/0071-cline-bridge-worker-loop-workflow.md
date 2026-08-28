@@ -46,6 +46,8 @@ The prompt prescribes a single loop sequence:
 
 This sequence nests a "never call these tools" constraint with a "always call at least one tool per turn" constraint. The model satisfies both by following the loop: every turn has at least one tool call (`claim-next`, `execute_command`, `write_to_file`, or `answer`).
 
+Amended by ADR-0077: steps 1 and 6 are no longer a fixed unfiltered poll. Every `bridge` command prints the exact command to run next, and after a threaded answer that command is a thread-filtered poll; the prompt's loop rule is now "run the command the last output printed." The step sequence is otherwise unchanged.
+
 ## No pacing sleep between empty polls
 
 The original step 2 told the worker to `sleep 5` before retrying. Real usage showed the model
@@ -65,8 +67,8 @@ The 25s wait stays comfortably inside the 30s ceiling. A wider window would need
 ## What the model does not see
 
 The prompt is explicit about the model's scope and blindness:
-- Bash only; no repo access
-- Questions are complete and self-contained
+- Bash only; no repo access — superseded by ADR-0075: the worker reads and edits the caller's live tree at the `repo:` path
+- Questions are complete and self-contained — narrowed by ADR-0077: true of an unthreaded question, while a follow-up in a thread leans on turns already in the task's context
 - No visibility into the peer model
 - Claims are permanent (no re-delivery, no retries)
 

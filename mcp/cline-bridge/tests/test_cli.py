@@ -1,3 +1,4 @@
+import json
 import os
 import time
 from pathlib import Path
@@ -91,6 +92,88 @@ def test_claim_next_on_a_thread_emits_the_thread_flag_and_round_trips(queue, tmp
     assert main(["answer", "--worker", "1", "--repo-path", REPO, follow_up["id"], "--thread", "t1", "--file", str(answer_file)]) == 0
     assert "OK" in capsys.readouterr().out
     assert queue.read_answered(follow_up["id"], thread_id="t1")["answer"] == "two"
+
+
+def test_answering_a_threaded_record_points_the_worker_back_at_the_thread(queue, tmp_path, capsys):
+    record = queue.submit("first", REPO, thread_id="t1")
+    queue.claim_next()
+    answer_file = tmp_path / "answer.txt"
+    answer_file.write_text("one")
+
+    main(["answer", "--worker", "2", "--repo-path", REPO, record["id"], "--thread", "t1", "--file", str(answer_file)])
+    assert "bridge claim-next --worker 2 --thread t1 --wait 25" in capsys.readouterr().out
+
+
+def test_empty_thread_poll_inside_the_window_keeps_the_worker_on_the_thread(queue, capsys):
+    record = queue.submit("first", REPO, thread_id="t1")
+    queue.claim_next()
+    queue.answer(record["id"], "one", thread_id="t1")
+
+    assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
+    out = capsys.readouterr().out
+    assert "thread t1 is still open" in out
+    assert "bridge claim-next --worker 1 --thread t1 --wait 25" in out
+    assert not (queue.locate("t1") / ".swept").exists()
+
+
+def test_empty_thread_poll_past_the_window_closes_the_thread_and_releases_the_worker(queue, capsys):
+    record = queue.submit("first", REPO, thread_id="t1")
+    queue.claim_next()
+    queue.answer(record["id"], "one", thread_id="t1")
+    _expire_continuation(queue, "t1", record["id"])
+
+    assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
+    out = capsys.readouterr().out
+    assert "THREAD CLOSED - t1" in out
+    assert "bridge claim-next --worker 1 --wait 25" in out
+    assert (queue.locate("t1") / ".swept").exists()
+
+
+def test_the_latest_answer_governs_the_window_not_the_oldest(queue, capsys):
+    first = queue.submit("first", REPO, thread_id="t1")
+    queue.claim_next()
+    queue.answer(first["id"], "one", thread_id="t1")
+    _expire_continuation(queue, "t1", first["id"])
+    follow_up = queue.submit("second", REPO, thread_id="t1")
+    queue.claim_next("t1")
+    queue.answer(follow_up["id"], "two", thread_id="t1")
+
+    assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
+    assert "thread t1 is still open" in capsys.readouterr().out
+    assert not (queue.locate("t1") / ".swept").exists()
+
+
+def test_a_follow_up_after_the_thread_closes_lands_in_the_unfiltered_queue(queue, capsys):
+    record = queue.submit("first", REPO, thread_id="t1")
+    queue.claim_next()
+    queue.answer(record["id"], "one", thread_id="t1")
+    _expire_continuation(queue, "t1", record["id"])
+    main(["claim-next", "--worker", "1", "--thread", "t1"])
+    capsys.readouterr()
+
+    follow_up = queue.submit("second", REPO, thread_id="t1")
+    assert (queue.pending / f"{follow_up['id']}.json").exists()
+    assert main(["claim-next", "--worker", "1"]) == 0
+    assert "second" in capsys.readouterr().out
+
+
+def test_a_follow_up_racing_the_close_keeps_the_thread_open(queue, capsys):
+    record = queue.submit("first", REPO, thread_id="t1")
+    queue.claim_next()
+    queue.answer(record["id"], "one", thread_id="t1")
+    _expire_continuation(queue, "t1", record["id"])
+    queue.submit("second", REPO, thread_id="t1")
+
+    assert main(["claim-next", "--worker", "1", "--thread", "t1"]) == 0
+    assert "second" in capsys.readouterr().out
+    assert not (queue.locate("t1") / ".swept").exists()
+
+
+def _expire_continuation(queue, thread_id, request_id):
+    path = queue.locate(thread_id) / "answered" / f"{request_id}.json"
+    record = json.loads(path.read_text())
+    record["continuation_deadline"] = "2000-01-01T00:00:00.000Z"
+    path.write_text(json.dumps(record))
 
 
 def test_answer_removes_the_staging_file(queue, capsys):
