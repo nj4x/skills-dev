@@ -1,16 +1,18 @@
 #!/bin/bash
 # Watchdog per ADR-0068 point 3: restarts the Cline task if the worker heartbeat goes stale.
 set -u
-PROMPT_FILE="$HOME/.cline-bridge/worker-prompt.txt"
 STALENESS_THRESHOLD=300
 BOOT_GRACE=120
 CHECK_INTERVAL=30
 
 # Must resolve to the same root as bridge.queue.default_root(), tilde expansion included.
 BRIDGE_DIR="${CLINE_BRIDGE_DIR:-$HOME/.cline-bridge}"
-HEARTBEAT="${BRIDGE_DIR/#\~/$HOME}/worker.alive"
+ROOT="${BRIDGE_DIR/#\~/$HOME}"
+HEARTBEAT="$ROOT/worker.alive"
+WATCHDOG_HEARTBEAT="$ROOT/watchdog.alive"
+PROMPT_FILE="$ROOT/worker-prompt.txt"
 
-mkdir -p "$HOME/.cline-bridge"
+mkdir -p "$ROOT"
 cp "$(dirname "$0")/worker-prompt.txt" "$PROMPT_FILE"
 
 is_stale() {
@@ -34,6 +36,7 @@ restart_task() {
 echo "[watchdog] $(date): monitoring heartbeat at $HEARTBEAT"
 echo "[watchdog] staleness threshold: ${STALENESS_THRESHOLD}s, boot grace: ${BOOT_GRACE}s, check interval: ${CHECK_INTERVAL}s"
 
+touch "$WATCHDOG_HEARTBEAT"
 if is_stale; then
   restart_task
 else
@@ -42,6 +45,7 @@ fi
 
 while true; do
   sleep "$CHECK_INTERVAL"
+  touch "$WATCHDOG_HEARTBEAT"
   if is_stale; then
     echo "[watchdog] $(date): heartbeat stale, restarting"
     restart_task

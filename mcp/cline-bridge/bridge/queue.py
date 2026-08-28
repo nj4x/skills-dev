@@ -33,6 +33,7 @@ class BridgeQueue:
         self.tmp = self.root / "tmp"
         self.lock_path = self.root / "queue.lock"
         self.heartbeat = self.root / "worker.alive"
+        self.watchdog_heartbeat = self.root / "watchdog.alive"
 
     def ensure(self) -> None:
         for directory in (self.pending, self.claimed, self.answered, self.failed, self.tmp):
@@ -114,8 +115,15 @@ class BridgeQueue:
         os.utime(self.heartbeat, None)
 
     def worker_alive(self) -> bool:
+        return self._fresh(self.heartbeat)
+
+    def watchdog_alive(self) -> bool:
+        return self._fresh(self.watchdog_heartbeat)
+
+    @staticmethod
+    def _fresh(path: Path) -> bool:
         try:
-            return time.time() - self.heartbeat.stat().st_mtime <= STALE_HEARTBEAT_SECONDS
+            return time.time() - path.stat().st_mtime <= STALE_HEARTBEAT_SECONDS
         except OSError:
             return False
 

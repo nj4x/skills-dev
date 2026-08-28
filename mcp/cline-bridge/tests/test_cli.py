@@ -69,3 +69,11 @@ def test_status_reports_counts_and_worker_state(queue, capsys):
     out = capsys.readouterr().out
     assert "pending=1" in out
     assert "worker=offline" in out
+    assert "watchdog=offline" in out
+
+
+def test_status_reports_a_live_watchdog(queue, capsys):
+    queue.ensure()
+    queue.watchdog_heartbeat.touch()
+    assert main(["status"]) == 0
+    assert "watchdog=alive" in capsys.readouterr().out

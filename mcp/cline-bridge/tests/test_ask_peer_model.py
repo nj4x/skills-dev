@@ -44,8 +44,23 @@ async def test_dead_worker_fails_fast_without_enqueuing(queue):
     result = await ask_peer_model("why?")
 
     assert time.monotonic() - started < 1
-    assert result == {"id": None, "status": "failed", "answer": None, "reason": "worker_offline"}
+    assert result == {
+        "id": None,
+        "status": "failed",
+        "answer": None,
+        "reason": "worker_offline",
+        "watchdog": "offline",
+    }
     assert queue.counts()["pending"] == 0
+
+
+@pytest.mark.asyncio
+async def test_dead_worker_with_live_watchdog_reports_a_restart_is_coming(queue):
+    queue.watchdog_heartbeat.touch()
+    result = await ask_peer_model("why?")
+
+    assert result["reason"] == "worker_offline"
+    assert result["watchdog"] == "alive"
 
 
 @pytest.mark.asyncio

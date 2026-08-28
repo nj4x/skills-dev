@@ -95,6 +95,7 @@ def main(argv: list[str] | None = None) -> int:
         counts = queue.counts()
         print(" ".join(f"{name}={count}" for name, count in counts.items()))
         print(f"worker={'alive' if queue.worker_alive() else 'offline'}")
+        print(f"watchdog={'alive' if queue.watchdog_alive() else 'offline'}")
 
     return 0
 

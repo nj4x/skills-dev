@@ -36,7 +36,9 @@ async def ask_peer_model(question: str) -> dict:
     for a second opinion or a judgement only that model can give, never for trivia.
 
     Returns {id, status, answer, reason}. `status` is "answered" or "failed"; on failure
-    `reason` is one of timeout, worker_offline, queue_unavailable.
+    `reason` is one of timeout, worker_offline, queue_unavailable. A worker_offline result
+    also carries `watchdog`: "alive" means a restart is coming, "offline" means nothing will
+    restart the worker until a human does.
     """
     question = question.strip()
     if not question:
@@ -46,7 +48,13 @@ async def ask_peer_model(question: str) -> dict:
     try:
         queue.gc()
         if not queue.worker_alive():
-            return {"id": None, "status": "failed", "answer": None, "reason": "worker_offline"}
+            return {
+                "id": None,
+                "status": "failed",
+                "answer": None,
+                "reason": "worker_offline",
+                "watchdog": "alive" if queue.watchdog_alive() else "offline",
+            }
         record = queue.submit(question)
     except OSError:
         return {"id": None, "status": "failed", "answer": None, "reason": "queue_unavailable"}

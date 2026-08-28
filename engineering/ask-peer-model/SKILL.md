@@ -42,6 +42,6 @@ Say what you want back — a verdict, a critique, options with tradeoffs.
 `{id, status, answer, reason}`.
 
 - **`status: "answered"`** — one opinion from a model that saw only your question. Check it against the repo before you act on it; it holds no authority over what is actually in the code.
-- **`reason: "worker_offline"`** — nobody is running the worker, caught before enqueuing so it returns instantly. Tell the human to start it; one call is enough to learn this.
+- **`reason: "worker_offline"`** — nobody is running the worker, caught before enqueuing so it returns instantly. This result carries a `watchdog` field saying whether the failure fixes itself. `watchdog: "alive"` means a restart is already due within about five minutes, so wait and retry once. `watchdog: "offline"` means the watchdog is dead too and nothing will bring the worker back — tell the human to start both, and do not retry until they say they have.
 - **`reason: "timeout"`** — the worker took the question and died holding it. Claims are permanent, so that question is terminal and no later worker will ever see it; the record stays under `failed/` for the post-mortem. Resubmit only once you know a fresh worker is up.
 - **`reason: "queue_unavailable"`** — the queue directory is unwritable. A filesystem problem for the human to fix.

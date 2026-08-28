@@ -75,6 +75,19 @@ def test_worker_alive_tracks_heartbeat_age(queue):
     assert queue.worker_alive() is False
 
 
+def test_watchdog_alive_tracks_its_own_heartbeat_independently(queue):
+    queue.ensure()
+    queue.touch_heartbeat()
+    assert queue.watchdog_alive() is False
+
+    queue.watchdog_heartbeat.touch()
+    assert queue.watchdog_alive() is True
+    stale = time.time() - STALE_HEARTBEAT_SECONDS - 1
+    os.utime(queue.watchdog_heartbeat, (stale, stale))
+    assert queue.watchdog_alive() is False
+    assert queue.worker_alive() is True
+
+
 def test_gc_removes_only_expired_terminal_records(queue):
     fresh = queue.submit("fresh")
     queue.claim_next()
