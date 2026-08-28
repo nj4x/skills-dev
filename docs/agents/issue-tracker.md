@@ -37,12 +37,21 @@ id=$(gh api repos/{owner}/{repo}/issues/<blocker> --jq .id)
 gh api -X POST repos/{owner}/{repo}/issues/<ticket>/dependencies/blocked_by -F issue_id=$id
 ```
 
-Read the whole map, frontier included — `total_blocked_by == 0` on an open child is takeable:
+Read the whole map:
 
 ```sh
 gh api repos/{owner}/{repo}/issues/<map>/sub_issues \
   --jq '.[] | "\(.number)\t\(.state)\t\(.issue_dependencies_summary.total_blocked_by)\t\(.title)"'
 ```
+
+`total_blocked_by` counts every blocker, closed ones included, so it does not fall back to 0 when a
+blocker is resolved. To decide whether an open child is takeable, read its blockers' states:
+
+```sh
+gh api repos/{owner}/{repo}/issues/<ticket>/dependencies/blocked_by --jq '.[] | "\(.number) \(.state)"'
+```
+
+A child with no open blockers is on the frontier.
 
 Claim a ticket with `gh issue edit <n> --add-assignee @me` before doing any work on it.
 
