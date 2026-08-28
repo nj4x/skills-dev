@@ -9,17 +9,19 @@ description: Consult a second LLM through the cline-bridge MCP tool. Use when yo
 
 Operator setup — starting the worker, the watchdog, the queue — lives in `mcp/cline-bridge/README.md`.
 
-## The far model is blind
+## What the far model can and can't reach
 
-It has bash and nothing else: no repository, no files, no conversation history, no knowledge that this project exists. It cannot look anything up.
+It has bash, and bash reaches the whole filesystem the OS user can read on this machine — not just one repository, and not scoped to any project. If the artifact is a file, **pass an absolute path** rather than pasting its contents; the worker can read it itself.
 
-It also will not tell you when it is guessing. Name a repo-local artifact and it answers confidently from general knowledge, inventing specifics that read exactly like real ones. Measured across this bridge's first five round-trips:
+What it doesn't have: no skills, no MCP tools, no credentialed services (mail, browser auth, this repo's own tooling), and no conversation history or memory of this project beyond what the question states.
+
+It also will not reliably choose to verify before answering, and will not tell you when it is guessing. Name a repo-local artifact without pointing it at a path and it answers confidently from general knowledge, inventing specifics that read exactly like real ones. Measured across this bridge's first five round-trips:
 
 - *"Explain the claim primitive in ADR-0069"* returned a fluent essay on Redis set-if-not-exists and database compare-and-swap. ADR-0069 uses neither.
 - *"The difference between RETENTION_SECONDS and STALE_HEARTBEAT_SECONDS"* returned invented values and a lease-expiry recovery model — the exact design this bridge considered and rejected.
 - The one fully accurate answer quoted text that had been pasted into the worker's own prompt.
 
-So **inline every fact the answer depends on**. Paste the code, the numbers, the constraint, the decision itself. A question that names something instead of quoting it produces fiction that sounds like knowledge.
+So **give the worker a way to ground every fact the answer depends on**: an absolute path it can read for anything already on disk, or the pasted code/numbers/constraint/decision itself for anything that isn't. Reserve full inlining for what the worker cannot reach by reading — a decision not yet written down, prose that only exists in this conversation, ephemeral state. A question that names something without either a path or a quote produces fiction that sounds like knowledge.
 
 ## Worth a turn?
 

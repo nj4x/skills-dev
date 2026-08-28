@@ -29,8 +29,9 @@ async def ask_peer_model(question: str) -> dict:
     """Ask a different LLM a question and wait for its answer.
 
     Reaches a separate model running in another agent session, unreachable by any API key
-    from this side. That model has bash only — no access to this repository, no tools, and
-    no way to look anything up — so the question must carry every piece of context it needs.
+    from this side. That model has bash and full same-machine filesystem access — pass an
+    absolute path for anything it can read itself. It has no skills, no MCP tools, no
+    credentials, and no memory of this conversation, so inline anything it cannot reach on disk.
 
     Blocks for up to 180 seconds and costs a full turn on the far side. Expensive: use it
     for a second opinion or a judgement only that model can give, never for trivia.
