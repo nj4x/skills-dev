@@ -5,13 +5,15 @@ description: Consult a second LLM through the cline-bridge MCP tool. Use when yo
 
 # Ask a peer model
 
-`ask_peer_model(question)` reaches a different LLM, running as a Cline worker on this machine and unreachable by any API key from this side. It blocks for up to 180 seconds and costs a full turn on the far side.
+`ask_peer_model(question, repo_path)` reaches a different LLM, running as a Cline worker on this machine and unreachable by any API key from this side. It blocks for up to 180 seconds and costs a full turn on the far side.
 
 Operator setup — starting the worker, the watchdog, the queue — lives in `mcp/cline-bridge/README.md`.
 
 ## What the far model can and can't reach
 
-It has bash, and bash reaches the whole filesystem the OS user can read on this machine — not just one repository, and not scoped to any project. If the artifact is a file, **pass an absolute path** rather than pasting its contents; the worker can read it itself.
+`repo_path` is required on every call: it is the live working tree you are in right now, uncommitted work and all, and the worker reads **and edits** it. Its edits land in your tree and show up in `git diff` — there is no clone and no staging, so treat a delegated edit as a change you now own and review. It writes nothing outside `repo_path`, nor under `.git/`, `.env*`, or build directories, but that is a convention the worker keeps, not a wall: Cline enforces no path containment at all. Reads inside `repo_path` are unconstrained, so do not delegate a tree holding production credentials.
+
+It also has bash, which reaches the whole filesystem the OS user can read — not just `repo_path`. If the artifact is a file, **pass an absolute path** rather than pasting its contents; the worker can read it itself.
 
 What it doesn't have: no skills, no MCP tools, no credentialed services (mail, browser auth, this repo's own tooling), and no conversation history or memory of this project beyond what the question states.
 

@@ -16,8 +16,8 @@ Design: [ADR-0068](../../docs/adr/0068-cline-bridge-loop-durability-policy.md) (
 
 | Side | Runs | Surface |
 | --- | --- | --- |
-| Capable agent | `cline-bridge` MCP server | `ask_peer_model(question)`, blocks up to 180s |
-| Worker | Cline task following `worker-prompt.txt` | `bridge claim-worker-slot`, `bridge claim-next --worker N --wait 25`, `bridge answer <id> --worker N --file <path>` |
+| Capable agent | `cline-bridge` MCP server | `ask_peer_model(question, repo_path)`, blocks up to 180s |
+| Worker | Cline task following `worker-prompt.txt` | `bridge claim-worker-slot`, `bridge claim-next --worker N --wait 25`, `bridge answer <id> --worker N --repo-path <path> --file <path>` |
 
 A worker is one VS Code window. `POOL_SIZE` of them run side by side, each holding a slot it
 takes at startup and heartbeats to as `worker-N.alive`.
@@ -66,14 +66,17 @@ a worker that starts before it can take a slot above `POOL_SIZE` (ADR-0074).
    task calls `bridge claim-worker-slot` itself and stops if the pool is already full.
 3. Confirm everything is up: `bridge status` reports `worker-N=alive` per slot that has run
    `claim-next`, and `watchdog=alive` once the watchdog's first check has run.
-4. From the capable agent, call `ask_peer_model("...")`.
+4. From the capable agent, call `ask_peer_model("...", repo_path="/abs/path/to/repo")`. The
+   worker reads and edits that live tree (ADR-0075) — it is a delegate, not a sandbox, so do
+   not point it at a tree holding production credentials.
 
 To shrink the pool, stop the watchdog before closing a window, or delete that window's
 `worker-N.alive` by hand. A stale heartbeat with no owner reads as a dead worker, and the
 restart it triggers can land in another window and kill a live claim (ADR-0074).
 
 Upgrading from the single-worker layout: `mv ~/.cline-bridge/worker.alive ~/.cline-bridge/worker-1.alive`
-before starting the new watchdog.
+before starting the new watchdog. Also drain `~/.cline-bridge/queue/` first — records enqueued
+before ADR-0075 carry no `repo_path`, and `claim-next` will not render them.
 
 The watchdog has no watchdog of its own (ADR-0068 point 3). If it dies, the system looks
 healthy until the next worker death, then stalls; `ask_peer_model` surfaces this as

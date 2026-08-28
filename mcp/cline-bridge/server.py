@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
@@ -25,13 +26,19 @@ def _timeout() -> float:
 
 
 @mcp.tool()
-async def ask_peer_model(question: str) -> dict:
+async def ask_peer_model(question: str, repo_path: str) -> dict:
     """Ask a different LLM a question and wait for its answer.
 
     Reaches a separate model running in another agent session, unreachable by any API key
-    from this side. That model has bash and full same-machine filesystem access — pass an
-    absolute path for anything it can read itself. It has no skills, no MCP tools, no
-    credentials, and no memory of this conversation, so inline anything it cannot reach on disk.
+    from this side. It works as a delegate, not a sandbox: `repo_path` (required, an existing
+    directory) is the live working tree it reads and edits — uncommitted work included — so
+    its edits land in your tree and show up in `git diff`. It writes nothing outside
+    `repo_path`, and nothing under `.git/`, `.env*`, or build directories. It also has bash
+    across the whole machine, but no skills, no MCP tools, no credentials, and no memory of
+    this conversation, so inline anything it cannot reach on disk.
+
+    Do not delegate a repo holding production credentials: reads inside `repo_path` are
+    unconstrained, and the rule against reporting secrets is prompt guidance, not enforcement.
 
     Blocks for up to 180 seconds and costs a full turn on the far side. Expensive: use it
     for a second opinion or a judgement only that model can give, never for trivia.
@@ -45,6 +52,8 @@ async def ask_peer_model(question: str) -> dict:
     question = question.strip()
     if not question:
         raise ValueError("question must not be empty")
+    if not Path(repo_path).is_dir():
+        raise ValueError(f"repo_path is not an existing directory: {repo_path}")
 
     queue = BridgeQueue()
     try:
@@ -57,7 +66,7 @@ async def ask_peer_model(question: str) -> dict:
                 "reason": "worker_offline",
                 "watchdog": "alive" if queue.watchdog_alive() else "offline",
             }
-        record = queue.submit(question)
+        record = queue.submit(question, repo_path)
     except OSError:
         return {"id": None, "status": "failed", "answer": None, "reason": "queue_unavailable"}
 

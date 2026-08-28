@@ -83,13 +83,20 @@ class BridgeQueue:
         staging.write_text(json.dumps(record, indent=2))
         os.rename(staging, path)
 
-    def submit(self, question: str, thread_id: str | None = None) -> dict:
+    def submit(self, question: str, repo_path: str, thread_id: str | None = None) -> dict:
         self.ensure()
+        if thread_id is not None:
+            first = self.read_first_in_thread(thread_id)
+            if first is not None and first.get("repo_path") != repo_path:
+                raise ValueError(
+                    f"repo_path mismatch: thread uses {first.get('repo_path')}, got {repo_path}"
+                )
         request_id = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         record = {
             "id": request_id,
             "thread_id": thread_id,
             "question": question,
+            "repo_path": repo_path,
             "submitted_at": _now(),
             "claimed_at": None,
             "claimed_by": None,
@@ -164,6 +171,18 @@ class BridgeQueue:
             return json.loads(path.read_text())
         except (OSError, ValueError):
             return None
+
+    def read_first_in_thread(self, thread_id: str) -> dict | None:
+        """Oldest record of a thread — the one whose `repo_path` binds the rest (ADR-0075).
+
+        Top-level `pending/` is scanned too: a thread's first message lands there and only
+        moves under `threads/<id>/` when a worker claims it (ADR-0073).
+        """
+        base = self.locate(thread_id)
+        paths = [path for name in LIFECYCLE_DIRS for path in (base / name).glob("*.json")]
+        paths += list(self.pending.glob("*.json"))
+        records = [record for record in map(self._read, paths) if record.get("thread_id") == thread_id]
+        return min(records, key=lambda record: record["id"], default=None)
 
     def heartbeat_path(self, slot: int) -> Path:
         return self.root / f"worker-{slot}.alive"

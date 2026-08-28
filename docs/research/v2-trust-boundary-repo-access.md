@@ -1,5 +1,10 @@
 # Trust Boundary Re-Audit: Read-Only Repo Access in v2
 
+> **Superseded by ADR-0075**, which accepts Cline's zero containment and reframes repo access as
+> delegation: the worker reads and edits the capable agent's live tree at a required `repo_path`,
+> with no clone and no immutability. The findings below stay load-bearing — they are why a clone
+> would have bought nothing.
+
 ## Summary
 
 "Read-only" is **not enforceable inside Cline**. The fork offers zero path containment on `read_file`, `write_to_file`, `replace_in_file`, `execute_command`, and related tools. Its permission allowlist (`CLINE_COMMAND_PERMISSIONS`) is dead code — never parsed. YOLO auto-approves writes everywhere.
@@ -95,14 +100,6 @@ Since in-app enforcement does not exist, the checkout must be protected at the f
 3. Do `@terminal` command shortcuts bypass `ToolExecutor` and its constraints?
 
 (These do not block the recommendation, but are worth flagging to the fork maintainers if they are engaged.)
-
----
-
-## Recommendation for v2
-
-**Superseded by ADR-0075.** The v1 approach of provisioning a separate checkout is abandoned. Instead, the worker accesses the live working tree directly, with `repo_path` passed by the capable agent. See ADR-0075 for the full decision and rationale.
-
-The audit findings below remain valid — they explain why a clone would not have provided security and are essential background for understanding the delegation model in ADR-0075.
 
 ---
 
