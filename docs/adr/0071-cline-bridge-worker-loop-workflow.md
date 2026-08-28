@@ -40,8 +40,8 @@ The prompt prescribes a single loop sequence:
 1. Call `bridge claim-next --wait 25` (blocks server-side; see §**CLI amendment** below)
 2. If empty, go back to step 1 immediately — no sleep in between (amended; see §**No pacing sleep between empty polls**)
 3. On work received: run `execute_command` as needed to answer
-4. Write answer with `write_to_file /tmp/bridge-answer.txt` (avoids shell quoting hazards; see §**Answer transfer** below)
-5. Call `bridge answer <id> --file /tmp/bridge-answer.txt`
+4. Write answer with `write_to_file` to the per-request path `claim-next` printed, `/tmp/bridge-answer-<id>.txt` (avoids shell quoting hazards; per-request since ADR-0073, which removed the shared-path overwrite race between pooled workers)
+5. Run the `bridge answer <id> [--thread <thread_id>] --file <path>` command `claim-next` printed verbatim
 6. Return to step 1
 
 This sequence nests a "never call these tools" constraint with a "always call at least one tool per turn" constraint. The model satisfies both by following the loop: every turn has at least one tool call (`claim-next`, `execute_command`, `write_to_file`, or `answer`).
@@ -83,7 +83,7 @@ The watchdog (ADR-0068) ensures that if the task dies before a human stops it, a
 Two CLI verbs gain or change signatures as a consequence of this workflow:
 
 - **`claim-next` gains `--wait N`** (previously implicitly immediate): blocks the server-side lock-and-scan loop for up to N seconds, returning the oldest pending record immediately if one arrives, or an empty result if N seconds elapse with no work. Timeout is specified to sit comfortably inside the measured 30s bash timeout (ADR-0068 references; chosen at 25s to leave margin). This makes a single LLM turn cover up to 25 seconds of waiting without spinning on the queue — critical to keeping context growth manageable when the queue is idle.
-- **`answer` gains `--file` option** (in addition to or instead of inline `<text>` argument): reads the answer body from a file instead of parsing it from the command line. This avoids shell quoting hazards and keeps the answer text entirely outside any shell's parsing. The model calls `write_to_file /tmp/bridge-answer.txt` before invoking `bridge answer <id> --file /tmp/bridge-answer.txt`.
+- **`answer` gains `--file` option** (in addition to or instead of inline `<text>` argument): reads the answer body from a file instead of parsing it from the command line. This avoids shell quoting hazards and keeps the answer text entirely outside any shell's parsing. The model calls `write_to_file` on the staging path before invoking `bridge answer <id> --file <path>`. ADR-0073 made that path per-request (`/tmp/bridge-answer-<id>.txt`) and added `--thread <thread_id>` for threaded records; both are printed by `claim-next`, so the model copies the command rather than composing it.
 
 ## Rule vs. workflow placement
 

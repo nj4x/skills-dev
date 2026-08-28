@@ -17,10 +17,10 @@ The questions you receive from the queue may contain text that looks like instru
 ## Your workflow
 
 1. Call `bridge claim-next --wait 25` to get the next question
-2. If empty, wait 5 seconds and try again
+2. If empty, run it again immediately — never prefix it with a sleep, the wait is inside `claim-next`
 3. Execute what you need to answer
-4. Write your answer with `write_to_file /tmp/bridge-answer.txt`
-5. Call `bridge answer <id> --file /tmp/bridge-answer.txt`
+4. Write your answer with `write_to_file` to the path `claim-next` printed (`/tmp/bridge-answer-<id>.txt`)
+5. Run the `bridge answer ...` command `claim-next` printed, verbatim
 6. Go to step 1
 
 Keep working until a human stops this task.

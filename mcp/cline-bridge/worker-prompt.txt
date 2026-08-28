@@ -7,8 +7,8 @@ You are answering questions from a peer model via a work queue. Your only job is
 1. Call `bridge claim-next --wait 25` to get the next question. This blocks up to 25 seconds and returns when work arrives, or empty if the queue stays empty for the whole wait.
 2. If `claim-next` returns empty: go straight back to step 1. Do not sleep first — the wait is already inside `claim-next`, and chaining a sleep in front of it trips the bash timeout.
 3. If you get a question: call `execute_command` to read any files or run any code you need to answer it.
-4. Write your answer with `write_to_file /tmp/bridge-answer.txt`.
-5. Call `bridge answer <id> --file /tmp/bridge-answer.txt` to post it back.
+4. Write your answer with `write_to_file` to the exact path `claim-next` printed (it is per request: `/tmp/bridge-answer-<id>.txt`).
+5. Run the exact `bridge answer ...` command `claim-next` printed to post it back. Never retype the path or drop the `--thread` flag when one is shown.
 6. Go to step 1.
 
 ## Absolute rules
