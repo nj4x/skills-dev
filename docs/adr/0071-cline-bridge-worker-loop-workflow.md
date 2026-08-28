@@ -38,13 +38,29 @@ These three sentences are not framed as preferences or goals — they are absolu
 The prompt prescribes a single loop sequence:
 
 1. Call `bridge claim-next --wait 25` (blocks server-side; see §**CLI amendment** below)
-2. If empty, `sleep 5` and go back to step 1
+2. If empty, go back to step 1 immediately — no sleep in between (amended; see §**No pacing sleep between empty polls**)
 3. On work received: run `execute_command` as needed to answer
 4. Write answer with `write_to_file /tmp/bridge-answer.txt` (avoids shell quoting hazards; see §**Answer transfer** below)
 5. Call `bridge answer <id> --file /tmp/bridge-answer.txt`
 6. Return to step 1
 
 This sequence nests a "never call these tools" constraint with a "always call at least one tool per turn" constraint. The model satisfies both by following the loop: every turn has at least one tool call (`claim-next`, `execute_command`, `write_to_file`, or `answer`).
+
+## No pacing sleep between empty polls
+
+The original step 2 told the worker to `sleep 5` before retrying. Real usage showed the model
+collapses the instruction into a single chained command, `sleep 5 && bridge claim-next --wait 25`,
+whose combined duration lands at ~30s — exactly Cline's default `execute_command` timeout — so the
+call is killed and its output diverted to a background log. The worker then loses the turn.
+
+The sleep bought nothing: `claim-next --wait N` already blocks server-side and polls the queue at
+`POLL_INTERVAL` (0.5s), so the filesystem lock is paced from inside the CLI, not by the caller. Step 2
+now retries immediately, and both the prompt and the CLI's `EMPTY_MESSAGE` say explicitly not to
+prefix the retry with a sleep — the message is what the model sees on every empty poll, so it is the
+instruction that must survive context truncation.
+
+The 25s wait stays comfortably inside the 30s ceiling. A wider window would need the optional
+`timeout` parameter `execute_command` accepts under YOLO, which is a separate change.
 
 ## What the model does not see
 

@@ -15,7 +15,10 @@ from bridge.queue import BridgeQueue
 
 POLL_INTERVAL = 0.5
 
-EMPTY_MESSAGE = "EMPTY - no work. Wait 5 seconds, then run `bridge claim-next --wait 25` again."
+EMPTY_MESSAGE = (
+    "EMPTY - no work. Run `bridge claim-next --wait 25` again now. "
+    "Do not prefix it with a sleep - the wait is already inside claim-next."
+)
 
 
 def _render(record: dict) -> str:
