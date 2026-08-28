@@ -10,13 +10,15 @@ Design: [ADR-0068](../../docs/adr/0068-cline-bridge-loop-durability-policy.md) (
 [ADR-0071](../../docs/adr/0071-cline-bridge-worker-loop-workflow.md) (worker loop),
 [ADR-0072](../../docs/adr/0072-watchdog-liveness-in-the-failure-path.md) (watchdog liveness),
 [ADR-0073](../../docs/adr/0073-thread-scoped-queue-directories.md) (threads),
-[ADR-0074](../../docs/adr/0074-worker-pool-identity-and-lifecycle.md) (worker pool).
+[ADR-0074](../../docs/adr/0074-worker-pool-identity-and-lifecycle.md) (worker pool),
+[ADR-0075](../../docs/adr/0075-worker-repo-access-and-delegation-model.md) (repo access),
+[ADR-0076](../../docs/adr/0076-async-submit-and-poll-surface.md) (async surface).
 
 ## Two sides
 
 | Side | Runs | Surface |
 | --- | --- | --- |
-| Capable agent | `cline-bridge` MCP server | `ask_peer_model(question, repo_path)`, blocks up to 180s |
+| Capable agent | `cline-bridge` MCP server | `ask_peer_model(question, repo_path)`, blocks up to 180s; `submit_to_peer_model(question, repo_path, thread_id)` + `poll_peer_model(handle, thread_id)`, non-blocking |
 | Worker | Cline task following `worker-prompt.txt` | `bridge claim-worker-slot`, `bridge claim-next --worker N --wait 25`, `bridge answer <id> --worker N --repo-path <path> --file <path>` |
 
 A worker is one VS Code window. `POOL_SIZE` of them run side by side, each holding a slot it
@@ -88,6 +90,7 @@ alive — a pool running short of workers still answers.
 
 - `CLINE_BRIDGE_DIR` — queue root (default `~/.cline-bridge`)
 - `CLINE_BRIDGE_TIMEOUT` — seconds `ask_peer_model` blocks (default `180`)
+- `CLINE_BRIDGE_ASYNC_TIMEOUT` — seconds before an unanswered request is swept to `failed/` (default `1800`)
 - `POOL_SIZE` — slot ceiling, 1–10, read by the watchdog only (default `1`)
 
 The MCP server reads these once at process start. Changing either requires restarting the

@@ -309,6 +309,64 @@ def test_read_first_in_thread_returns_the_oldest_message_wherever_it_sits(queue)
     assert queue.read_first_in_thread("unknown") is None
 
 
+def test_read_record_reports_the_lifecycle_dir_holding_a_record(queue):
+    record = queue.submit("why?", REPO)
+    assert queue.read_record(record["id"])[0] == "pending"
+    queue.claim_next()
+    assert queue.read_record(record["id"])[0] == "claimed"
+
+    queue.answer(record["id"], "because")
+    state, found = queue.read_record(record["id"])
+    assert (state, found["answer"]) == ("answered", "because")
+    assert queue.read_record("no-such-id") is None
+
+
+def test_read_record_finds_a_threads_first_message_before_it_is_claimed(queue):
+    first = queue.submit("first", REPO, thread_id="t1")
+    assert queue.read_record(first["id"], thread_id="t1")[0] == "pending"
+    queue.claim_next()
+    assert queue.read_record(first["id"], thread_id="t1")[0] == "claimed"
+
+
+def test_read_record_rejects_a_handle_belonging_to_another_thread(queue):
+    record = queue.submit("why?", REPO)
+    assert queue.read_record(record["id"], thread_id="t1") is None
+
+
+def test_async_sweep_times_out_stale_top_level_records(queue):
+    claimed = queue.submit("claimed but unanswered", REPO)
+    queue.claim_next()
+    unclaimed = queue.submit("nobody took it", REPO)
+    recent = queue.submit("just submitted", REPO)
+    _backdate(queue.claimed / f"{claimed['id']}.json", submitted_at=_ago(3600))
+    _backdate(queue.pending / f"{unclaimed['id']}.json", submitted_at=_ago(3600))
+
+    queue.gc()
+    assert json.loads((queue.failed / f"{claimed['id']}.json").read_text())["reason"] == "timeout"
+    assert (queue.failed / f"{unclaimed['id']}.json").exists()
+    assert (queue.pending / f"{recent['id']}.json").exists()
+
+
+def test_async_sweep_times_out_an_unclaimed_thread_follow_up(queue):
+    _held_thread(queue)
+    follow_up = queue.submit("second", REPO, thread_id="t1")
+    _backdate(queue.threads / "t1" / "pending" / f"{follow_up['id']}.json", submitted_at=_ago(3600))
+
+    queue.gc()
+    failed = queue.threads / "t1" / "failed" / f"{follow_up['id']}.json"
+    assert json.loads(failed.read_text())["reason"] == "timeout"
+
+
+def test_a_held_thread_claim_outlives_the_blocking_timeout_and_the_async_sweep(queue):
+    first = _held_thread(queue)
+    claimed = queue.threads / "t1" / "claimed" / f"{first['id']}.json"
+    _backdate(claimed, submitted_at=_ago(3600), claimed_at=_ago(600))
+
+    queue.gc()
+    assert claimed.exists()
+    assert not (queue.threads / "t1" / ".swept").exists()
+
+
 def test_root_honours_env_override(tmp_path, monkeypatch):
     monkeypatch.setenv("CLINE_BRIDGE_DIR", str(tmp_path / "elsewhere"))
     assert BridgeQueue().root == tmp_path / "elsewhere"

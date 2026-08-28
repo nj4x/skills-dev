@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from bridge.queue import RETENTION_SECONDS, STALE_HEARTBEAT_SECONDS, BridgeQueue
-from server import ask_peer_model
+from server import ask_peer_model, poll_peer_model, submit_to_peer_model
 
 REPO = str(Path(__file__).parent)
 
@@ -133,3 +133,87 @@ async def test_call_sweeps_expired_terminal_records(queue):
 
     await ask_peer_model("why?", REPO)
     assert not (queue.failed / f"{old['id']}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_submit_hands_back_a_handle_without_waiting_or_a_live_pool(queue):
+    submitted = await submit_to_peer_model("why?", REPO)
+
+    assert submitted["status"] == "submitted"
+    assert submitted["reason"] is None
+    assert await poll_peer_model(submitted["handle"]) == {
+        "status": "pending",
+        "answer": None,
+        "reason": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_poll_returns_the_answer_once_the_worker_posts_it(queue):
+    submitted = await submit_to_peer_model("why?", REPO)
+    await _worker(queue)
+
+    assert await poll_peer_model(submitted["handle"]) == {
+        "status": "answered",
+        "answer": "because: why?",
+        "reason": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_thread_keeps_a_follow_up_pollable_under_the_same_thread_id(queue):
+    first = await submit_to_peer_model("first", REPO, thread_id="t1")
+    assert (await poll_peer_model(first["handle"], thread_id="t1"))["status"] == "pending"
+    queue.answer(queue.claim_next()["id"], "one", thread_id="t1")
+    assert (await poll_peer_model(first["handle"], thread_id="t1"))["answer"] == "one"
+
+    follow_up = await submit_to_peer_model("second", REPO, thread_id="t1")
+    queue.answer(queue.claim_next(thread_id="t1")["id"], "two", thread_id="t1")
+    assert (await poll_peer_model(follow_up["handle"], thread_id="t1"))["answer"] == "two"
+
+
+@pytest.mark.asyncio
+async def test_a_handle_polled_under_the_wrong_thread_is_not_found(queue):
+    submitted = await submit_to_peer_model("why?", REPO)
+
+    assert (await poll_peer_model(submitted["handle"], thread_id="t1"))["reason"] == "unknown_handle"
+    assert (await poll_peer_model("no-such-handle"))["reason"] == "unknown_handle"
+
+
+@pytest.mark.asyncio
+async def test_a_thread_follow_up_naming_another_repo_is_refused(queue, tmp_path):
+    await submit_to_peer_model("first", REPO, thread_id="t1")
+
+    assert await submit_to_peer_model("second", str(tmp_path), thread_id="t1") == {
+        "handle": None,
+        "status": "failed",
+        "reason": "repo_path_mismatch",
+    }
+
+
+@pytest.mark.asyncio
+async def test_poll_reports_timeout_once_the_async_budget_lapses(queue, monkeypatch):
+    monkeypatch.setenv("CLINE_BRIDGE_ASYNC_TIMEOUT", "0")
+    submitted = await submit_to_peer_model("why?", REPO)
+
+    assert await poll_peer_model(submitted["handle"]) == {
+        "status": "failed",
+        "answer": None,
+        "reason": "timeout",
+    }
+
+
+@pytest.mark.asyncio
+async def test_an_ask_peer_model_id_is_a_legal_poll_handle(queue):
+    queue.touch_heartbeat(1)
+    worker = asyncio.create_task(_worker(queue))
+    answered = await ask_peer_model("why?", REPO)
+    await worker
+    assert (await poll_peer_model(answered["id"]))["answer"] == "because: why?"
+
+    timed_out = await ask_peer_model("silence?", REPO)
+    assert await poll_peer_model(timed_out["id"]) == {
+        "status": "failed",
+        "answer": None,
+        "reason": "timeout",
+    }

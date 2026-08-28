@@ -172,6 +172,23 @@ class BridgeQueue:
         except (OSError, ValueError):
             return None
 
+    def read_record(self, request_id: str, thread_id: str | None = None) -> tuple[str, dict] | None:
+        """Lifecycle directory holding a record, and the record (ADR-0076).
+
+        A thread's first message sits in top-level `pending/` until a worker claims it
+        (ADR-0073), so a threaded lookup falls back there rather than reporting nothing.
+        """
+        bases = [self.locate(thread_id)]
+        if thread_id is not None:
+            bases.append(self.locate(None))
+        for base in bases:
+            for state in LIFECYCLE_DIRS:
+                path = base / state / f"{request_id}.json"
+                if path.exists():
+                    record = self._read(path)
+                    return (state, record) if record.get("thread_id") == thread_id else None
+        return None
+
     def read_first_in_thread(self, thread_id: str) -> dict | None:
         """Oldest record of a thread — the one whose `repo_path` binds the rest (ADR-0075).
 
@@ -258,6 +275,7 @@ class BridgeQueue:
         self.ensure()
         now = time.time()
         self._sweep_abandoned_threads(now)
+        self._sweep_async_timeouts(now)
         expired = [self.answered, self.failed, self.tmp]
         for base in self._thread_dirs():
             expired += [base / "answered", base / "failed"]
@@ -271,6 +289,21 @@ class BridgeQueue:
                 except OSError:
                     pass
         return removed
+
+    def _sweep_async_timeouts(self, now: float) -> None:
+        """Retire requests nobody answered inside the async budget (ADR-0076).
+
+        Thread `claimed/` is left out: a held thread is `_sweep_abandoned_threads`'s to judge.
+        """
+        with self._lock():
+            stale = now - async_timeout_seconds()
+            sources = [self.pending, self.claimed]
+            sources += [base / "pending" for base in self._thread_dirs()]
+            for source in sources:
+                for path in source.glob("*.json"):
+                    submitted = _epoch(self._read(path).get("submitted_at"))
+                    if submitted is not None and submitted < stale:
+                        self._mark_failed(path, source.parent / "failed" / path.name, "timeout")
 
     def _thread_dirs(self) -> list[Path]:
         return sorted(path for path in self.threads.glob("*") if path.is_dir())

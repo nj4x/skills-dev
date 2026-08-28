@@ -1,8 +1,9 @@
-"""Cline bridge MCP server — one tool, `ask_peer_model` (ADR-0070).
+"""Cline bridge MCP server — `ask_peer_model` (ADR-0070) and the async pair (ADR-0076).
 
 Environment variables:
     CLINE_BRIDGE_DIR: queue root (default: ~/.cline-bridge)
-    CLINE_BRIDGE_TIMEOUT: seconds to block waiting for an answer (default: 180)
+    CLINE_BRIDGE_TIMEOUT: seconds `ask_peer_model` blocks waiting for an answer (default: 180)
+    CLINE_BRIDGE_ASYNC_TIMEOUT: seconds before an unanswered request is swept (default: 1800)
 """
 
 from __future__ import annotations
@@ -23,6 +24,15 @@ mcp = MCPServer("cline-bridge")
 
 def _timeout() -> float:
     return float(os.getenv("CLINE_BRIDGE_TIMEOUT", "180"))
+
+
+def _validate(question: str, repo_path: str) -> str:
+    question = question.strip()
+    if not question:
+        raise ValueError("question must not be empty")
+    if not Path(repo_path).is_dir():
+        raise ValueError(f"repo_path is not an existing directory: {repo_path}")
+    return question
 
 
 @mcp.tool()
@@ -49,11 +59,7 @@ async def ask_peer_model(question: str, repo_path: str) -> dict:
     "alive" means a restart is coming, "offline" means nothing will restart the pool until a
     human does.
     """
-    question = question.strip()
-    if not question:
-        raise ValueError("question must not be empty")
-    if not Path(repo_path).is_dir():
-        raise ValueError(f"repo_path is not an existing directory: {repo_path}")
+    question = _validate(question, repo_path)
 
     queue = BridgeQueue()
     try:
@@ -77,8 +83,72 @@ async def ask_peer_model(question: str, repo_path: str) -> dict:
         if answered is not None:
             return {"id": record["id"], "status": "answered", "answer": answered["answer"], "reason": None}
 
-    queue.fail(record["id"])
+    queue.fail(record["id"], reason="timeout")
     return {"id": record["id"], "status": "failed", "answer": None, "reason": "timeout"}
+
+
+@mcp.tool()
+async def submit_to_peer_model(question: str, repo_path: str, thread_id: str | None = None) -> dict:
+    """Ask a different LLM a question without waiting for the answer.
+
+    Same peer model and same trust boundary as `ask_peer_model` — see its docstring for what
+    the far side can read and write, and for what is unsafe to delegate. This variant returns
+    at once, so use it for work measured in minutes: you collect the answer later with
+    `poll_peer_model`. Submit several questions before polling any of them if you like.
+
+    Pass `thread_id` (any string you choose) to keep a follow-up in the same worker session,
+    which preserves the context of earlier questions in that thread. Submit serially within a
+    thread: wait for one message to be answered before sending the next, or the follow-up is
+    not reachable by a threaded poll. Every message in a thread must use the same `repo_path`
+    as the first one.
+
+    Returns {handle, status, reason}. `status` is "submitted" or "failed"; on failure `handle`
+    is None and `reason` is queue_unavailable or repo_path_mismatch. Keep the handle and the
+    `thread_id` you used — you need both to poll. A request nobody answers within 30 minutes
+    expires, and polling it then reports failed.
+    """
+    question = _validate(question, repo_path)
+
+    queue = BridgeQueue()
+    try:
+        queue.gc()
+        record = queue.submit(question, repo_path, thread_id)
+    except ValueError:
+        return {"handle": None, "status": "failed", "reason": "repo_path_mismatch"}
+    except OSError:
+        return {"handle": None, "status": "failed", "reason": "queue_unavailable"}
+    return {"handle": record["id"], "status": "submitted", "reason": None}
+
+
+@mcp.tool()
+async def poll_peer_model(handle: str, thread_id: str | None = None) -> dict:
+    """Check whether the peer model has answered a submitted question. Never blocks.
+
+    `handle` is what `submit_to_peer_model` returned, or the `id` from an `ask_peer_model`
+    call — including one that timed out, which is how you recover an answer that arrived just
+    too late. Pass the same `thread_id` you submitted with, or the handle will not be found.
+
+    Returns {status, answer, reason}. `status` is "pending" (still queued or being worked on —
+    check back later), "answered" (`answer` holds the text), or "failed". On failure `reason`
+    is one of timeout (nobody answered within 30 minutes), unknown_handle (no such request:
+    never submitted, expired past the 7-day history, or polled with the wrong `thread_id`), or
+    internal_error. Treat any reason you do not recognise as terminal, not as pending.
+    """
+    queue = BridgeQueue()
+    try:
+        queue.gc()
+        found = queue.read_record(handle, thread_id)
+    except OSError:
+        return {"status": "failed", "answer": None, "reason": "internal_error"}
+    if found is None:
+        return {"status": "failed", "answer": None, "reason": "unknown_handle"}
+
+    state, record = found
+    if state == "answered":
+        return {"status": "answered", "answer": record["answer"], "reason": None}
+    if state == "failed":
+        return {"status": "failed", "answer": None, "reason": record.get("reason") or "internal_error"}
+    return {"status": "pending", "answer": None, "reason": None}
 
 
 def main() -> None:
