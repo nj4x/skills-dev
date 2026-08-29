@@ -1,0 +1,12 @@
+#!/bin/bash
+# vscode-agent-bridge hook v1
+# Forwards this cline-sr lifecycle event to the bridge MCP server's /hook
+# endpoint. BRIDGE_PORT is inherited from the dedicated bridge window's
+# environment; in any other VS Code window it is unset and this hook no-ops.
+input=$(cat)
+if [ -n "$BRIDGE_PORT" ]; then
+  curl -s -m 5 -X POST "http://127.0.0.1:$BRIDGE_PORT/hook" \
+    -H 'Content-Type: application/json' \
+    --data-binary "$input" >/dev/null 2>&1 || true
+fi
+echo '{"cancel": false}'
