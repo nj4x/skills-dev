@@ -18,18 +18,12 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.server import MCPServer
 
-from bridge.hookserver import HookServer
-from bridge.instance import InstanceManager, InstanceUnreachable
-from bridge.queue import BridgeQueue
+from bridge.bridge import Bridge
 
+bridge: Bridge | None = None
 POLL_INTERVAL = 0.25
-SWEEP_INTERVAL = 5.0
-
-queue = BridgeQueue()
-instance = InstanceManager()
-hooks = HookServer(queue, instance)
 
 
 def _ask_timeout() -> float:
@@ -49,35 +43,15 @@ def _validate(question: str, workspace: str) -> str:
     return question
 
 
-async def _pump() -> None:
-    """Dispatch the next queued record, if the window is free to take one."""
-    record = queue.next_dispatchable()
-    if record is None:
-        return
-    try:
-        await instance.ensure_ready(record.workspace, hooks.port)
-        await hooks.dispatch(record.question)
-    except (InstanceUnreachable, OSError):
-        queue.fail(record.id, "instance_down")
-        await _pump()
-
-
-async def _sweeper() -> None:
-    while True:
-        await asyncio.sleep(SWEEP_INTERVAL)
-        queue.sweep_expired(_async_timeout())
-        await _pump()
-
-
 @asynccontextmanager
 async def lifespan(_server: MCPServer):
-    await hooks.start()
-    task = asyncio.create_task(_sweeper())
+    global bridge
+    bridge = Bridge()
+    await bridge.start()
     try:
         yield {}
     finally:
-        task.cancel()
-        await hooks.stop()
+        await bridge.stop()
 
 
 mcp = MCPServer("vscode-agent-bridge", lifespan=lifespan)
@@ -103,20 +77,20 @@ async def ask_peer_agent(question: str, workspace: str) -> dict:
     unknown_handle, internal_error.
     """
     question = _validate(question, workspace)
-    record = queue.submit(question, workspace)
-    await _pump()
+    record = bridge.queue.submit(question, workspace)
+    await bridge._pump(_async_timeout())
 
     loop = asyncio.get_event_loop()
     deadline = loop.time() + _ask_timeout()
     while True:
-        current = queue.get(record.id)
+        current = bridge.queue.get(record.id)
         if current.status == "answered":
             return {"id": record.id, "status": "answered", "answer": current.answer, "command": current.command, "reason": None}
         if current.status == "failed":
             return {"id": record.id, "status": "failed", "answer": None, "command": None, "reason": current.reason}
         remaining = deadline - loop.time()
         if remaining <= 0:
-            queue.fail(record.id, "timeout")
+            bridge.queue.fail(record.id, "timeout")
             return {"id": record.id, "status": "failed", "answer": None, "command": None, "reason": "timeout"}
         await asyncio.sleep(min(POLL_INTERVAL, remaining))
 
@@ -136,8 +110,8 @@ async def submit_to_peer_agent(question: str, workspace: str) -> dict:
     and polling it then reports failed with reason timeout.
     """
     question = _validate(question, workspace)
-    record = queue.submit(question, workspace)
-    await _pump()
+    record = bridge.queue.submit(question, workspace)
+    await bridge._pump(_async_timeout())
     return {"handle": record.id, "status": "submitted", "reason": None}
 
 
@@ -155,7 +129,7 @@ async def poll_peer_agent(handle: str) -> dict:
     actively working from hung), "answered", or "failed". On failure `reason`
     is timeout, instance_down, cancelled, unknown_handle, or internal_error.
     """
-    record = queue.get(handle)
+    record = bridge.queue.get(handle)
     if record is None:
         return {"status": "failed", "answer": None, "command": None, "reason": "unknown_handle", "tool_uses": None, "last_event_at": None}
     if record.status == "answered":
@@ -173,10 +147,10 @@ async def close_peer_agent() -> dict:
     before closing. Returns {status: "closed"} on success or {status: "busy"}
     if the queue is not empty.
     """
-    in_flight = queue.in_flight()
-    if in_flight is not None or queue._pending:
+    in_flight = bridge.queue.in_flight()
+    if in_flight is not None or bridge.queue._pending:
         return {"status": "busy"}
-    instance.close()
+    bridge.instance.close()
     return {"status": "closed"}
 
 

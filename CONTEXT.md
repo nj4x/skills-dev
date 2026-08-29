@@ -59,3 +59,9 @@ _Avoid_: availability check, status check
 **Report Coverage**:
 The classification of how complete a committed Report Build is: `complete` (all communities have prose), `partial` (some failed), `rebuilding` (prose not yet generated), or `failed` (permanently parked after retry exhaustion).
 _Avoid_: report status, completeness
+
+### vscode-agent-bridge
+
+**Bridge**:
+The single orchestration object per MCP server process owning the `BridgeQueue`, `InstanceManager`, and `HookServer`. Exposes `ask()` / `submit()` / `poll()` / `close()` methods for the four MCP tools and runs the pump/sweep loop that dispatches queued tasks to the dedicated VS Code window.
+_Avoid_: orchestrator, facade, coordinator
