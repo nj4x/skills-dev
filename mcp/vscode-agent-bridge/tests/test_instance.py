@@ -13,8 +13,14 @@ from bridge.instance import (
 
 
 class FakeProcess:
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+
     async def wait(self) -> int:
         return 0
+
+    def terminate(self) -> None:
+        pass
 
 
 @pytest.fixture(autouse=True)
@@ -132,6 +138,32 @@ async def test_ensure_ready_seeds_settings_before_spawn(fake_spawn, tmp_data_dir
     await task
 
     assert (tmp_data_dir / "User" / "settings.json").exists()
+
+
+async def test_close_terminates_process(fake_spawn):
+    manager = InstanceManager()
+
+    async def connect_soon():
+        await asyncio.sleep(0)
+        manager.mark_connected()
+
+    task = asyncio.create_task(connect_soon())
+    await manager.ensure_ready("/tmp/repo", port=4321)
+    await task
+
+    assert manager._proc is not None
+    assert manager.alive
+
+    manager.close()
+    assert not manager.alive
+    assert manager._proc.returncode is None  # still running after terminate
+
+
+def test_close_idempotent_when_no_proc():
+    manager = InstanceManager()
+    manager._alive = True
+    manager.close()
+    assert not manager.alive
 
 
 def test_mark_disconnected_clears_alive():

@@ -119,3 +119,31 @@ async def test_ask_peer_agent_times_out(fresh_state, tmp_path, monkeypatch):
     result = await srv.ask_peer_agent("never answered", str(tmp_path))
     assert result["status"] == "failed"
     assert result["reason"] == "timeout"
+
+
+async def test_close_peer_agent_succeeds_when_idle(fresh_state):
+    queue, instance, hooks, ws, tmp_path = fresh_state
+    result = await srv.close_peer_agent()
+    assert result == {"status": "closed"}
+    assert not instance.alive
+
+
+async def test_close_peer_agent_refuses_when_in_flight(fresh_state, tmp_path):
+    queue, instance, hooks, ws, tmp_path = fresh_state
+    await srv.submit_to_peer_agent("task", str(tmp_path))
+    await _drain_submit(ws)
+
+    result = await srv.close_peer_agent()
+    assert result == {"status": "busy"}
+
+
+async def test_close_peer_agent_refuses_when_queued(fresh_state, tmp_path):
+    queue, instance, hooks, ws, tmp_path = fresh_state
+    await srv.submit_to_peer_agent("task1", str(tmp_path))
+    await _drain_submit(ws)
+
+    # Submit second (stays queued)
+    await srv.submit_to_peer_agent("task2", str(tmp_path))
+
+    result = await srv.close_peer_agent()
+    assert result == {"status": "busy"}

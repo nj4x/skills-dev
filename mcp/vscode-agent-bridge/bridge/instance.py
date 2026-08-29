@@ -56,6 +56,7 @@ class InstanceManager:
         self.workspace: str | None = None
         self._alive = False
         self._connected = asyncio.Event()
+        self._proc: asyncio.subprocess.Process | None = None
 
     @property
     def alive(self) -> bool:
@@ -68,6 +69,11 @@ class InstanceManager:
     def mark_disconnected(self) -> None:
         self._alive = False
         self._connected.clear()
+
+    def close(self) -> None:
+        if self._proc is not None and self._proc.returncode is None:
+            self._proc.terminate()
+        self._alive = False
 
     async def ensure_ready(self, workspace: str, port: int) -> None:
         """Spawn or reuse the dedicated window so `workspace` is open in it."""
@@ -82,8 +88,8 @@ class InstanceManager:
 
         _seed_settings()
         env = {**os.environ, "BRIDGE_PORT": str(port)}
-        proc = await asyncio.create_subprocess_exec(*args, env=env)
-        await proc.wait()  # the `code` CLI hands off and exits at once (design/70)
+        self._proc = await asyncio.create_subprocess_exec(*args, env=env)
+        await self._proc.wait()  # the `code` CLI hands off and exits at once (design/70)
 
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=SPAWN_TIMEOUT)

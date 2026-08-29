@@ -165,6 +165,21 @@ async def poll_peer_agent(handle: str) -> dict:
     return {"status": "pending", "answer": None, "command": None, "reason": None, "tool_uses": record.tool_uses, "last_event_at": record.last_event_at}
 
 
+@mcp.tool()
+async def close_peer_agent() -> dict:
+    """Close the dedicated cline-sr window and terminate the bridge session.
+
+    Refuses if a task is in flight or queued. Caller must poll to completion
+    before closing. Returns {status: "closed"} on success or {status: "busy"}
+    if the queue is not empty.
+    """
+    in_flight = queue.in_flight()
+    if in_flight is not None or queue._pending:
+        return {"status": "busy"}
+    instance.close()
+    return {"status": "closed"}
+
+
 def main() -> None:
     mcp.run()
 

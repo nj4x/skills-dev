@@ -33,6 +33,7 @@ const RECONNECT_DELAY_MS = 3000;
 
 let ws: WebSocket | undefined;
 let reconnectTimer: NodeJS.Timeout | undefined;
+let noConnectTimer: NodeJS.Timeout | undefined;
 let disposed = false;
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -53,10 +54,16 @@ export function activate(context: vscode.ExtensionContext): void {
   }
 
   connect(port);
+  noConnectTimer = setTimeout(() => {
+    if (ws === undefined) {
+      vscode.commands.executeCommand("workbench.action.closeWindow");
+    }
+  }, 30_000);
   context.subscriptions.push({
     dispose: () => {
       disposed = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (noConnectTimer) clearTimeout(noConnectTimer);
       ws?.close();
     },
   });
@@ -65,11 +72,19 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   disposed = true;
   if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (noConnectTimer) clearTimeout(noConnectTimer);
   ws?.close();
 }
 
 function connect(port: string): void {
   ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+
+  ws.on("open", () => {
+    if (noConnectTimer) {
+      clearTimeout(noConnectTimer);
+      noConnectTimer = undefined;
+    }
+  });
 
   ws.on("message", (data) => {
     let msg: { type?: string; prompt?: string };
@@ -83,10 +98,16 @@ function connect(port: string): void {
     }
   });
 
+  const closeWindow = () => {
+    vscode.commands.executeCommand("workbench.action.closeWindow");
+  };
+
   const retry = () => {
     ws = undefined;
-    if (disposed) return;
-    reconnectTimer = setTimeout(() => connect(port), RECONNECT_DELAY_MS);
+    if (disposed) {
+      return;
+    }
+    closeWindow();
   };
   ws.on("close", retry);
   ws.on("error", () => {
