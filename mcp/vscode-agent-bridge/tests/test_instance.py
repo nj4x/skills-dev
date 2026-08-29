@@ -1,13 +1,27 @@
 import asyncio
+import json
 
 import pytest
 
-from bridge.instance import InstanceManager, InstanceUnreachable, SPAWN_TIMEOUT
+from bridge.instance import (
+    SEED_SETTINGS,
+    InstanceManager,
+    InstanceUnreachable,
+    SPAWN_TIMEOUT,
+    _seed_settings,
+)
 
 
 class FakeProcess:
     async def wait(self) -> int:
         return 0
+
+
+@pytest.fixture(autouse=True)
+def tmp_data_dir(tmp_path, monkeypatch):
+    data_dir = tmp_path / "data"
+    monkeypatch.setattr("bridge.instance.DATA_DIR", data_dir)
+    return data_dir
 
 
 @pytest.fixture
@@ -77,6 +91,47 @@ async def test_ensure_ready_times_out_if_extension_never_connects(fake_spawn, mo
     with pytest.raises(InstanceUnreachable):
         await manager.ensure_ready("/tmp/repo", port=4321)
     assert not manager.alive
+
+
+def test_seed_settings_creates_file_with_defaults(tmp_data_dir):
+    _seed_settings()
+    written = json.loads((tmp_data_dir / "User" / "settings.json").read_text())
+    assert written == SEED_SETTINGS
+
+
+def test_seed_settings_preserves_existing_overrides(tmp_data_dir):
+    settings_path = tmp_data_dir / "User" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(json.dumps({"update.mode": "manual", "editor.fontSize": 15}))
+
+    _seed_settings()
+    written = json.loads(settings_path.read_text())
+    assert written["update.mode"] == "manual"
+    assert written["editor.fontSize"] == 15
+    assert written["security.workspace.trust.enabled"] is False
+
+
+def test_seed_settings_leaves_unparsable_file_untouched(tmp_data_dir):
+    settings_path = tmp_data_dir / "User" / "settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text("{not json")
+
+    _seed_settings()
+    assert settings_path.read_text() == "{not json"
+
+
+async def test_ensure_ready_seeds_settings_before_spawn(fake_spawn, tmp_data_dir):
+    manager = InstanceManager()
+
+    async def connect_soon():
+        await asyncio.sleep(0)
+        manager.mark_connected()
+
+    task = asyncio.create_task(connect_soon())
+    await manager.ensure_ready("/tmp/repo", port=4321)
+    await task
+
+    assert (tmp_data_dir / "User" / "settings.json").exists()
 
 
 def test_mark_disconnected_clears_alive():

@@ -10,11 +10,40 @@ outcome — it is the companion extension's WebSocket connection, tracked via
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
 
 DATA_DIR = Path(os.path.expanduser("~/.vscode-agent-bridge/data"))
 SPAWN_TIMEOUT = 30.0
+
+# Suppress every first-run interactive prompt so a fresh dedicated window
+# needs no human click before cline-sr can run (task/77).
+SEED_SETTINGS = {
+    "security.workspace.trust.enabled": False,
+    "workbench.startupEditor": "none",
+    "workbench.tips.enabled": False,
+    "workbench.welcomePage.walkthroughs.openOnInstall": False,
+    "extensions.ignoreRecommendations": True,
+    "update.mode": "none",
+    "telemetry.telemetryLevel": "off",
+    "settingsSync.enabled": False,
+    "github.gitAuthentication": False,
+}
+
+
+def _seed_settings() -> None:
+    settings_path = DATA_DIR / "User" / "settings.json"
+    settings_path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if settings_path.exists():
+        try:
+            existing = json.loads(settings_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return  # unreadable user file — leave it untouched
+    merged = {**SEED_SETTINGS, **existing}
+    if merged != existing:
+        settings_path.write_text(json.dumps(merged, indent=2) + "\n")
 
 
 class InstanceUnreachable(RuntimeError):
@@ -51,7 +80,7 @@ class InstanceManager:
             args.append("--reuse-window")
         args.append(workspace)
 
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        _seed_settings()
         env = {**os.environ, "BRIDGE_PORT": str(port)}
         proc = await asyncio.create_subprocess_exec(*args, env=env)
         await proc.wait()  # the `code` CLI hands off and exits at once (design/70)
