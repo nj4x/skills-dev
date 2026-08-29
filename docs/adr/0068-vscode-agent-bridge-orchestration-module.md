@@ -32,3 +32,245 @@ After this change:
 **Negative:**
 - Adds one class and moves ~100 lines of code.
 - Requires learning MCPServer's `Context` injection pattern (but precedent exists in the repo).
+
+## Appendix: End-to-End Sequence Diagram
+
+Full integration flow between Claude Code and the cline-sr peer agent through this Bridge module, covering both the blocking (`ask_peer_agent`) and async (`submit_to_peer_agent` + `poll_peer_agent`) paths, plus cleanup and failure paths.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as Claude Code (MCP Client)
+    participant MCP as MCP Server Tools
+    participant Bridge as Bridge (Orchestrator)
+    participant Queue as Queue (BridgeQueue)
+    participant HookServer as Hook Server (HTTP + WS)
+    participant Instance as Instance (VS Code Manager)
+    participant Extension as VS Code Extension
+    participant Cline as cline-sr (Peer Agent)
+    participant Hooks as Hook Scripts
+
+    rect rgb(245,245,245)
+    Note over MCP,Bridge: Server Lifespan (one-time startup)
+    MCP->>Bridge: start()
+    activate Bridge
+    Bridge->>HookServer: start()
+    HookServer-->>MCP: port (BRIDGE_PORT)
+    Bridge->>Bridge: start sweeper loop
+    Bridge-->>MCP: ready
+    deactivate Bridge
+    end
+
+    rect rgb(235,245,255)
+    Note over Client,Hooks: PATH A - ask_peer_agent (blocking, 180s timeout)
+    Client->>MCP: ask_peer_agent(question, workspace)
+    activate MCP
+    MCP->>Queue: submit(question, workspace)
+    activate Queue
+    Queue-->>MCP: Record(id, status=queued)
+    deactivate Queue
+    MCP->>Bridge: _pump(async_timeout)
+    activate Bridge
+    Bridge->>Queue: next_dispatchable()
+    activate Queue
+    Queue-->>Bridge: Record (status=dispatched)
+    deactivate Queue
+    Bridge->>Instance: ensure_ready(workspace, port)
+    activate Instance
+    alt Instance not alive or different workspace
+        Instance->>Instance: spawn code --user-data-dir workspace
+        Instance->>Extension: WebSocket connect /ws
+        activate Extension
+        Extension->>HookServer: WS open (liveness signal)
+        HookServer->>Instance: mark_connected()
+        Extension-->>Instance: connected
+        deactivate Extension
+    else Instance already ready
+        Instance-->>Bridge: ready (reuse)
+    end
+    Instance-->>Bridge: ready
+    deactivate Instance
+    Bridge->>HookServer: dispatch(question)
+    HookServer->>Extension: WS send {type:submit, prompt}
+    Extension->>Extension: invoke URI handler
+    Extension->>Cline: vscode://cline-sr.cline-sr/task?prompt=...
+    activate Cline
+    Cline-->>Extension: task accepted
+    deactivate Cline
+    Bridge-->>MCP: dispatched
+    deactivate Bridge
+
+    Note over Cline,Hooks: Task Execution and Hook Events Flow Back
+    Cline->>Cline: task starts
+    Cline->>Hooks: TaskStart hook
+    activate Hooks
+    Hooks->>HookServer: POST /hook {hookName:TaskStart}
+    HookServer-->>Hooks: {ok:true}
+    deactivate Hooks
+
+    loop Tool Use Cycle (0..N times)
+        Cline->>Cline: about to use tool
+        Cline->>Hooks: PreToolUse hook
+        activate Hooks
+        Hooks->>HookServer: POST /hook {hookName:PreToolUse}
+        HookServer->>Queue: record_tool_use()
+        activate Queue
+        Queue-->>HookServer: updated
+        deactivate Queue
+        HookServer-->>Hooks: {ok:true}
+        deactivate Hooks
+
+        Cline->>Cline: execute tool
+        Cline->>Hooks: PostToolUse hook
+        activate Hooks
+        Hooks->>HookServer: POST /hook {hookName:PostToolUse}
+        HookServer->>Queue: record_tool_use()
+        activate Queue
+        Queue-->>HookServer: updated
+        deactivate Queue
+        HookServer-->>Hooks: {ok:true}
+        deactivate Hooks
+    end
+
+    Cline->>Cline: task complete
+    Cline->>Hooks: TaskComplete hook
+    activate Hooks
+    Hooks->>HookServer: POST /hook {hookName:TaskComplete, taskComplete:{result, command}}
+    HookServer->>Queue: complete(answer, command)
+    activate Queue
+    Queue-->>HookServer: status=answered
+    deactivate Queue
+    HookServer-->>Hooks: {ok:true}
+    deactivate Hooks
+
+    Note over MCP,Queue: Answer Retrieval (polling loop)
+    loop Poll until answered/failed/timeout
+        MCP->>Queue: get(record.id)
+        activate Queue
+        alt status == answered
+            Queue-->>MCP: Record(status=answered, answer, command)
+            MCP-->>Client: {id, status:answered, answer, command, reason:null}
+        else status == failed
+            Queue-->>MCP: Record(status=failed, reason)
+            MCP-->>Client: {id, status:failed, answer:null, reason}
+        else remaining > 0
+            Queue-->>MCP: Record(status=dispatched/pending)
+            MCP->>MCP: sleep(POLL_INTERVAL)
+        else timeout expired
+            MCP->>Queue: fail(record.id, "timeout")
+            Queue-->>MCP: status=failed
+            MCP-->>Client: {id, status:failed, reason:timeout}
+        end
+        deactivate Queue
+    end
+    deactivate MCP
+    end
+
+    rect rgb(235,255,235)
+    Note over Client,Cline: PATH B - submit_to_peer_agent (async) + poll_peer_agent
+    Client->>MCP: submit_to_peer_agent(question, workspace)
+    activate MCP
+    MCP->>Queue: submit(question, workspace)
+    activate Queue
+    Queue-->>MCP: Record(id, status=queued)
+    deactivate Queue
+    MCP->>Bridge: _pump(async_timeout)
+    activate Bridge
+    Bridge->>Queue: next_dispatchable()
+    activate Queue
+    Queue-->>Bridge: Record (status=dispatched)
+    deactivate Queue
+    Bridge->>Instance: ensure_ready(workspace, port)
+    activate Instance
+    Instance-->>Bridge: ready
+    deactivate Instance
+    Bridge->>HookServer: dispatch(question)
+    HookServer->>Extension: WS send {type:submit, prompt}
+    Extension->>Cline: vscode://cline-sr.cline-sr/task?prompt=...
+    activate Cline
+    Cline-->>Extension: task accepted
+    deactivate Cline
+    MCP-->>Client: {handle:id, status:submitted, reason:null}
+    deactivate Bridge
+    deactivate MCP
+
+    Note over Client,Queue: Later - Poll for Answer
+    Client->>MCP: poll_peer_agent(handle)
+    activate MCP
+    MCP->>Queue: get(handle)
+    activate Queue
+    alt unknown_handle
+        Queue-->>MCP: null
+        MCP-->>Client: {status:failed, reason:unknown_handle}
+    else status == pending
+        Queue-->>MCP: Record(status=dispatched, tool_uses, last_event_at)
+        MCP-->>Client: {status:pending, tool_uses, last_event_at}
+    else status == answered
+        Queue-->>MCP: Record(status=answered, answer, command, tool_uses)
+        MCP-->>Client: {status:answered, answer, command, tool_uses, last_event_at}
+    else status == failed
+        Queue-->>MCP: Record(status=failed, reason, tool_uses)
+        MCP-->>Client: {status:failed, reason, tool_uses, last_event_at}
+    end
+    deactivate Queue
+    deactivate MCP
+    end
+
+    rect rgb(255,245,235)
+    Note over Client,Instance: PATH C - close_peer_agent
+    Client->>MCP: close_peer_agent()
+    activate MCP
+    MCP->>Queue: in_flight()
+    activate Queue
+    Queue-->>MCP: null or Record
+    alt queue not empty (busy)
+        MCP-->>Client: {status:busy}
+    else queue empty
+        MCP->>Instance: close()
+        activate Instance
+        Instance->>Instance: terminate VS Code process
+        Instance-->>MCP: closed
+        deactivate Instance
+        MCP-->>Client: {status:closed}
+    end
+    deactivate Queue
+    deactivate MCP
+    end
+
+    rect rgb(255,235,235)
+    Note over Bridge,Hooks: FAILURE PATHS
+    Note over Bridge,Queue: Timeout (async expiration)
+    Bridge->>Bridge: sweep_loop (every 5s)
+    Bridge->>Queue: sweep_expired(async_timeout=1800s)
+    activate Queue
+    Queue->>Queue: mark expired records as failed(timeout)
+    Queue-->>Bridge: swept
+    deactivate Queue
+
+    Note over Extension,Queue: Instance Down (WS disconnect)
+    Extension->>HookServer: WS close/error
+    HookServer->>HookServer: mark_disconnected()
+    HookServer->>Queue: fail_in_flight("instance_down")
+    activate Queue
+    Queue-->>HookServer: status=failed
+    deactivate Queue
+
+    alt TaskCancel hook received
+        Cline->>Hooks: TaskCancel hook
+        activate Hooks
+        Hooks->>HookServer: POST /hook {hookName:TaskCancel}
+        HookServer->>Queue: cancel("cancelled")
+        activate Queue
+        Queue-->>HookServer: status=failed
+        deactivate Queue
+        HookServer-->>Hooks: {ok:true}
+        deactivate Hooks
+    end
+    end
+
+    Note right of Client: Claude Code MCP client.<br/>Uses ask_peer_agent (blocking),<br/>submit_to_peer_agent + poll_peer_agent (async),<br/>close_peer_agent (cleanup).
+    Note right of HookServer: Two channels:<br/>HTTP POST /hook - lifecycle events<br/>WebSocket /ws - liveness + task submission
+    Note right of Cline: Peer agent in separate VS Code window.<br/>Workspace is LIVE tree (edits show in git diff).<br/>Never delegate production credentials.
+```
+
+Source: `docs/diagrams/vscode-agent-bridge-e2e.puml` (PlantUML original).
