@@ -87,12 +87,12 @@ mcp = MCPServer("vscode-agent-bridge", lifespan=lifespan)
 async def ask_peer_agent(question: str, workspace: str) -> dict:
     """Ask cline-sr, a separate VS Code agent, a question and wait for its answer.
 
-    Reaches a dedicated VS Code window running cline-sr, unreachable by any API
-    key from this side. It works as a delegate, not a sandbox: `workspace`
-    (required, an existing directory) is the live working tree it reads and
-    edits — uncommitted work included — so its edits land in your tree and
-    show up in `git diff`. Never delegate a workspace holding production
-    credentials: reads inside it are unconstrained.
+    Reaches a dedicated VS Code window running cline-sr. It works as a
+    delegate, not a sandbox: `workspace` (required, an existing directory) is
+    the live working tree it reads and edits — uncommitted work included —
+    so its edits land in your tree and show up in `git diff`. Never delegate
+    a workspace holding production credentials: reads inside it are
+    unconstrained.
 
     Blocks for up to 180 seconds and costs a full turn on the far side.
     Expensive: use it for a second opinion or a judgement only that agent can
