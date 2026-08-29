@@ -21,6 +21,10 @@ from pathlib import Path
 from mcp.server.mcpserver.server import MCPServer
 
 from bridge.bridge import Bridge
+from bridge.logsetup import get_logger, set_task_id, setup_logging
+
+setup_logging()
+logger = get_logger("server")
 
 bridge: Bridge | None = None
 POLL_INTERVAL = 0.25
@@ -78,12 +82,14 @@ async def ask_peer_agent(question: str, workspace: str) -> dict:
     """
     question = _validate(question, workspace)
     record = bridge.queue.submit(question, workspace)
+    set_task_id(record.id)
     await bridge._pump(_async_timeout())
 
     loop = asyncio.get_event_loop()
     deadline = loop.time() + _ask_timeout()
     while True:
         current = bridge.queue.get(record.id)
+        logger.debug("ask poll heartbeat: status=%s", current.status)
         if current.status == "answered":
             return {"id": record.id, "status": "answered", "answer": current.answer, "command": current.command, "reason": None}
         if current.status == "failed":
@@ -111,6 +117,7 @@ async def submit_to_peer_agent(question: str, workspace: str) -> dict:
     """
     question = _validate(question, workspace)
     record = bridge.queue.submit(question, workspace)
+    set_task_id(record.id)
     await bridge._pump(_async_timeout())
     return {"handle": record.id, "status": "submitted", "reason": None}
 

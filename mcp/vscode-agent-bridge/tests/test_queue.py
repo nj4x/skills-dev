@@ -119,3 +119,25 @@ def test_sweep_expired_only_touches_queued_and_dispatched(monkeypatch):
 def test_get_unknown_handle_returns_none():
     queue = BridgeQueue()
     assert queue.get("nope") is None
+
+
+def test_status_transitions_logged(caplog):
+    caplog.set_level("INFO", logger="vscode-agent-bridge.queue")
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.complete("done", None)
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(f"task submitted: id={record.id}" in m for m in messages)
+    assert any(f"task {record.id}: queued -> dispatched" in m for m in messages)
+    assert any(f"task {record.id}: dispatched -> answered" in m for m in messages)
+
+
+def test_failure_transition_logged_with_reason(caplog):
+    caplog.set_level("INFO", logger="vscode-agent-bridge.queue")
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.cancel("cancelled")
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(f"task {record.id}: dispatched -> failed (reason=cancelled)" in m for m in messages)

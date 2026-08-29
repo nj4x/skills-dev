@@ -12,6 +12,10 @@ import uuid
 from collections import deque
 from dataclasses import dataclass, field
 
+from bridge.logsetup import get_logger
+
+logger = get_logger("queue")
+
 REASONS = frozenset({"timeout", "instance_down", "cancelled", "unknown_handle", "internal_error"})
 
 QUEUED = "queued"
@@ -44,6 +48,7 @@ class BridgeQueue:
         record = Record(id=uuid.uuid4().hex, question=question, workspace=workspace)
         self._records[record.id] = record
         self._pending.append(record)
+        logger.info("task submitted: id=%s workspace=%s", record.id, workspace)
         return record
 
     def next_dispatchable(self) -> Record | None:
@@ -53,6 +58,7 @@ class BridgeQueue:
         record = self._pending.popleft()
         record.status = DISPATCHED
         self._in_flight = record
+        logger.info("task %s: queued -> dispatched", record.id)
         return record
 
     def in_flight(self) -> Record | None:
@@ -72,6 +78,7 @@ class BridgeQueue:
         record.command = command
         record.last_event_at = time.monotonic()
         self._in_flight = None
+        logger.info("task %s: dispatched -> answered", record.id)
 
     def cancel(self, reason: str = "cancelled") -> None:
         record = self._in_flight
@@ -80,13 +87,16 @@ class BridgeQueue:
         record.status = FAILED
         record.reason = reason
         self._in_flight = None
+        logger.info("task %s: dispatched -> failed (reason=%s)", record.id, reason)
 
     def fail(self, record_id: str, reason: str) -> None:
         record = self._records.get(record_id)
         if record is None or record.status in (ANSWERED, FAILED):
             return
+        prior = record.status
         record.status = FAILED
         record.reason = reason
+        logger.info("task %s: %s -> failed (reason=%s)", record.id, prior, reason)
         if self._in_flight is record:
             self._in_flight = None
         else:

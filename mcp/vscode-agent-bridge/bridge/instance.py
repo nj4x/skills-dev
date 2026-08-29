@@ -14,6 +14,10 @@ import json
 import os
 from pathlib import Path
 
+from bridge.logsetup import get_logger
+
+logger = get_logger("instance")
+
 DATA_DIR = Path(os.path.expanduser("~/.vscode-agent-bridge/data"))
 SPAWN_TIMEOUT = 30.0
 
@@ -89,7 +93,9 @@ class InstanceManager:
         _seed_settings()
         env = {**os.environ, "BRIDGE_PORT": str(port)}
         self._proc = await asyncio.create_subprocess_exec(*args, env=env)
+        logger.info("VS Code spawn: pid=%d workspace=%s port=%d", self._proc.pid, workspace, port)
         await self._proc.wait()  # the `code` CLI hands off and exits at once (design/70)
+        logger.info("`code` CLI exited: code=%s", self._proc.returncode)
 
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=SPAWN_TIMEOUT)

@@ -35,8 +35,22 @@ let ws: WebSocket | undefined;
 let reconnectTimer: NodeJS.Timeout | undefined;
 let noConnectTimer: NodeJS.Timeout | undefined;
 let disposed = false;
+let output: vscode.OutputChannel | undefined;
+
+function log(level: "INFO" | "ERROR", message: string): void {
+  output?.appendLine(`${new Date().toISOString()} [${level}] ${message}`);
+}
 
 export function activate(context: vscode.ExtensionContext): void {
+  // OutputChannel creation failure is non-fatal (ADR-0069): the extension
+  // keeps running; errors then surface only in the developer console.
+  try {
+    output = vscode.window.createOutputChannel("Agent Bridge");
+    context.subscriptions.push(output);
+  } catch (err) {
+    console.error(`vscode-agent-bridge: OutputChannel creation failed: ${err}`);
+  }
+
   installHooks(context);
 
   const port = process.env.BRIDGE_PORT;
@@ -78,8 +92,11 @@ export function deactivate(): void {
 
 function connect(port: string): void {
   ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  let wasOpen = false;
 
   ws.on("open", () => {
+    wasOpen = true;
+    log("INFO", `WS connected to bridge on port ${port}`);
     if (noConnectTimer) {
       clearTimeout(noConnectTimer);
       noConnectTimer = undefined;
@@ -103,6 +120,7 @@ function connect(port: string): void {
   };
 
   const retry = () => {
+    log("INFO", wasOpen ? "WS disconnected from bridge" : "WS failed to connect to bridge");
     ws = undefined;
     if (disposed) {
       return;
@@ -110,16 +128,21 @@ function connect(port: string): void {
     closeWindow();
   };
   ws.on("close", retry);
-  ws.on("error", () => {
+  ws.on("error", (err) => {
     // close fires after error; retry is scheduled there
+    log("ERROR", `WS error: ${err instanceof Error ? err.message : err}`);
   });
 }
 
 function submitToClineSr(prompt: string): void {
+  log("INFO", `cline-sr task URI invoked (prompt length: ${prompt.length})`);
   const uri = vscode.Uri.parse(
     `${vscode.env.uriScheme}://cline-sr.cline-sr/task?prompt=${encodeURIComponent(prompt)}`
   );
   vscode.env.openExternal(uri).then(undefined, (err: unknown) => {
+    // Log the error's message only — never the uri/prompt content (ADR-0069).
+    const detail = err instanceof Error ? err.message : String(err);
+    log("ERROR", `task submission to cline-sr failed: ${detail}`);
     vscode.window.showErrorMessage(
       `vscode-agent-bridge: task submission to cline-sr failed: ${err}`
     );

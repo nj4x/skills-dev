@@ -15,6 +15,7 @@ from bridge.instance import (
 class FakeProcess:
     def __init__(self) -> None:
         self.returncode: int | None = None
+        self.pid = 4242
 
     async def wait(self) -> int:
         return 0

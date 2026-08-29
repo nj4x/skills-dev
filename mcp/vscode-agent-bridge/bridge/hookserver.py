@@ -16,7 +16,10 @@ from __future__ import annotations
 from aiohttp import WSMsgType, web
 
 from bridge.instance import InstanceManager, InstanceUnreachable
+from bridge.logsetup import get_logger, set_task_id
 from bridge.queue import BridgeQueue
+
+logger = get_logger("hookserver")
 
 
 class HookServer:
@@ -58,11 +61,16 @@ class HookServer:
         await ws.prepare(request)
         self._ws = ws
         self._instance.mark_connected()
+        logger.info("WS connected from %s", request.remote)
         try:
             async for msg in ws:
-                if msg.type in (WSMsgType.ERROR, WSMsgType.CLOSE, WSMsgType.CLOSING):
+                if msg.type == WSMsgType.ERROR:
+                    logger.error("unexpected WS close: %s", ws.exception())
+                    break
+                if msg.type in (WSMsgType.CLOSE, WSMsgType.CLOSING):
                     break
         finally:
+            logger.info("WS disconnected")
             self._instance.mark_disconnected()
             self._queue.fail_in_flight("instance_down")
             if self._ws is ws:
@@ -72,6 +80,9 @@ class HookServer:
     async def _handle_hook(self, request: web.Request) -> web.Response:
         payload = await request.json()
         hook_name = payload.get("hookName")
+        in_flight = self._queue.in_flight()
+        set_task_id(in_flight.id if in_flight is not None else None)
+        logger.info("/hook POST: hookName=%s task=%s", hook_name, in_flight.id if in_flight else "-")
 
         if hook_name in ("PreToolUse", "PostToolUse"):
             self._queue.record_tool_use()

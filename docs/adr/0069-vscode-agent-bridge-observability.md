@@ -7,7 +7,7 @@ lineage-rules: exempt
 
 **Date:** 2026-08-29
 
-**Status:** Decided (awaiting implementation)
+**Status:** Implemented
 
 ## Context
 
