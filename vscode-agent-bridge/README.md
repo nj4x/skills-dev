@@ -7,6 +7,10 @@ dedicated VS Code window (wayfinder map
 [#70](https://github.com/nj4x/skills-dev/issues/70) /
 [#71](https://github.com/nj4x/skills-dev/issues/71)).
 
+For end-to-end setup from a fresh clone (prerequisites, MCP server install,
+Claude Code registration, verification), see
+[`mcp/vscode-agent-bridge/README.md`](../mcp/vscode-agent-bridge/README.md).
+
 ## What it does
 
 At `activate()` (every window, `onStartupFinished`):
