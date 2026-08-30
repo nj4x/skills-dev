@@ -64,6 +64,12 @@ class BridgeQueue:
     def in_flight(self) -> Record | None:
         return self._in_flight
 
+    def busy(self) -> bool:
+        return self._in_flight is not None or bool(self._pending)
+
+    def all_records(self) -> list:
+        return list(self._records.values())
+
     def record_tool_use(self) -> None:
         if self._in_flight is not None:
             self._in_flight.tool_uses += 1

@@ -13,47 +13,24 @@ Environment variables:
 
 from __future__ import annotations
 
-import asyncio
-import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from mcp.server.mcpserver.server import MCPServer
+from mcp.server.mcpserver.context import Context
 
 from bridge.bridge import Bridge
-from bridge.logsetup import get_logger, set_task_id, setup_logging
+from bridge.logsetup import get_logger, setup_logging
 
 setup_logging()
 logger = get_logger("server")
 
-bridge: Bridge | None = None
-POLL_INTERVAL = 0.25
-
-
-def _ask_timeout() -> float:
-    return float(os.getenv("BRIDGE_ASK_TIMEOUT", "180"))
-
-
-def _async_timeout() -> float:
-    return float(os.getenv("BRIDGE_ASYNC_TIMEOUT", "1800"))
-
-
-def _validate(question: str, workspace: str) -> str:
-    question = question.strip()
-    if not question:
-        raise ValueError("question must not be empty")
-    if not Path(workspace).is_dir():
-        raise ValueError(f"workspace is not an existing directory: {workspace}")
-    return question
-
 
 @asynccontextmanager
 async def lifespan(_server: MCPServer):
-    global bridge
     bridge = Bridge()
     await bridge.start()
     try:
-        yield {}
+        yield bridge
     finally:
         await bridge.stop()
 
@@ -61,8 +38,15 @@ async def lifespan(_server: MCPServer):
 mcp = MCPServer("vscode-agent-bridge", lifespan=lifespan)
 
 
+def _bridge(ctx: Context) -> Bridge:
+    bridge = ctx.request_context.lifespan_context
+    if not isinstance(bridge, Bridge):
+        raise RuntimeError(f"lifespan_context not a Bridge: {type(bridge)}")
+    return bridge
+
+
 @mcp.tool()
-async def ask_peer_agent(question: str, workspace: str) -> dict:
+async def ask_peer_agent(question: str, workspace: str, ctx: Context) -> dict:
     """Ask cline-sr, a separate VS Code agent, a question and wait for its answer.
 
     Reaches a dedicated VS Code window running cline-sr. It works as a
@@ -80,29 +64,11 @@ async def ask_peer_agent(question: str, workspace: str) -> dict:
     "failed"; on failure `reason` is one of timeout, instance_down,
     unknown_handle, internal_error.
     """
-    question = _validate(question, workspace)
-    record = bridge.queue.submit(question, workspace)
-    set_task_id(record.id)
-    await bridge._pump(_async_timeout())
-
-    loop = asyncio.get_event_loop()
-    deadline = loop.time() + _ask_timeout()
-    while True:
-        current = bridge.queue.get(record.id)
-        logger.debug("ask poll heartbeat: status=%s", current.status)
-        if current.status == "answered":
-            return {"id": record.id, "status": "answered", "answer": current.answer, "command": current.command, "reason": None}
-        if current.status == "failed":
-            return {"id": record.id, "status": "failed", "answer": None, "command": None, "reason": current.reason}
-        remaining = deadline - loop.time()
-        if remaining <= 0:
-            bridge.queue.fail(record.id, "timeout")
-            return {"id": record.id, "status": "failed", "answer": None, "command": None, "reason": "timeout"}
-        await asyncio.sleep(min(POLL_INTERVAL, remaining))
+    return await _bridge(ctx).ask(question, workspace)
 
 
 @mcp.tool()
-async def submit_to_peer_agent(question: str, workspace: str) -> dict:
+async def submit_to_peer_agent(question: str, workspace: str, ctx: Context) -> dict:
     """Ask cline-sr a question without waiting for the answer.
 
     Same peer agent and same trust boundary as `ask_peer_agent` — see its
@@ -115,15 +81,11 @@ async def submit_to_peer_agent(question: str, workspace: str) -> dict:
     the `handle` to poll. A request nobody answers within 30 minutes expires,
     and polling it then reports failed with reason timeout.
     """
-    question = _validate(question, workspace)
-    record = bridge.queue.submit(question, workspace)
-    set_task_id(record.id)
-    await bridge._pump(_async_timeout())
-    return {"handle": record.id, "status": "submitted", "reason": None}
+    return await _bridge(ctx).submit(question, workspace)
 
 
 @mcp.tool()
-async def poll_peer_agent(handle: str) -> dict:
+async def poll_peer_agent(handle: str, ctx: Context) -> dict:
     """Check whether cline-sr has answered a submitted question. Never blocks.
 
     `handle` is what `submit_to_peer_agent` returned, or the `id` from an
@@ -136,33 +98,22 @@ async def poll_peer_agent(handle: str) -> dict:
     actively working from hung), "answered", or "failed". On failure `reason`
     is timeout, instance_down, cancelled, unknown_handle, or internal_error.
     """
-    record = bridge.queue.get(handle)
-    if record is None:
-        return {"status": "failed", "answer": None, "command": None, "reason": "unknown_handle", "tool_uses": None, "last_event_at": None}
-    if record.status == "answered":
-        return {"status": "answered", "answer": record.answer, "command": record.command, "reason": None, "tool_uses": record.tool_uses, "last_event_at": record.last_event_at}
-    if record.status == "failed":
-        return {"status": "failed", "answer": None, "command": None, "reason": record.reason, "tool_uses": record.tool_uses, "last_event_at": record.last_event_at}
-    return {"status": "pending", "answer": None, "command": None, "reason": None, "tool_uses": record.tool_uses, "last_event_at": record.last_event_at}
+    return _bridge(ctx).poll(handle)
 
 
 @mcp.tool()
-async def close_peer_agent() -> dict:
+async def close_peer_agent(ctx: Context) -> dict:
     """Close the dedicated cline-sr window and terminate the bridge session.
 
     Refuses if a task is in flight or queued. Caller must poll to completion
     before closing. Returns {status: "closed"} on success or {status: "busy"}
     if the queue is not empty.
     """
-    in_flight = bridge.queue.in_flight()
-    if in_flight is not None or bridge.queue._pending:
-        return {"status": "busy"}
-    bridge.instance.close()
-    return {"status": "closed"}
+    return _bridge(ctx).close()
 
 
 @mcp.tool()
-async def get_logs_for_session(handle: str | None = None) -> dict:
+async def get_logs_for_session(ctx: Context, handle: str | None = None) -> dict:
     """Get file paths and grep hints for logs related to current bridge session, tasks, and VS Code.
 
     Returns references to all logs generated in the current bridge process lifetime,
@@ -190,7 +141,7 @@ async def get_logs_for_session(handle: str | None = None) -> dict:
         Get logs for a single task:
             result = await get_logs_for_session(handle="abc-123")
     """
-    return bridge.get_logs_for_session(handle)
+    return _bridge(ctx).get_logs_for_session(handle)
 
 
 def main() -> None:
