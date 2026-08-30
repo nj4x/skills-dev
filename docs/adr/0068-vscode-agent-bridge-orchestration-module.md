@@ -33,22 +33,34 @@ After this change:
 - Adds one class and moves ~100 lines of code.
 - Requires learning MCPServer's `Context` injection pattern (but precedent exists in the repo).
 
-## Appendix: End-to-End Sequence Diagram
+## Appendix: End-to-End Sequence Diagrams
 
-Full integration flow between Claude Code and the cline-sr peer agent through this Bridge module, covering both the blocking (`ask_peer_agent`) and async (`submit_to_peer_agent` + `poll_peer_agent`) paths, plus cleanup and failure paths.
+The integration flow between Claude Code and the cline-sr peer agent is split into separate diagrams by use case. Participants are grouped by process boundary:
+- **Claude Code** — MCP client that invokes tools
+- **MCP Server (Bridge)** — Bridge process containing MCP tools, Bridge orchestrator, Queue, HookServer, and Instance manager
+- **VS Code** — Extension, cline-sr peer agent, and hook scripts
+
+---
+
+### Diagram 1: Server Lifespan / Startup
+
+One-time initialization when the MCP server starts. The Bridge orchestrator is created, HookServer begins listening, and the sweeper loop starts.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as Claude Code (MCP Client)
-    participant MCP as MCP Server Tools
-    participant Bridge as Bridge (Orchestrator)
-    participant Queue as Queue (BridgeQueue)
-    participant HookServer as Hook Server (HTTP + WS)
-    participant Instance as Instance (VS Code Manager)
-    participant Extension as VS Code Extension
-    participant Cline as cline-sr (Peer Agent)
-    participant Hooks as Hook Scripts
+    box LightBlue Claude Code
+        participant Client as MCP Client
+    end
+    box LightGreen MCP Server (Bridge)
+        participant MCP as MCP Tools
+        participant Bridge as Bridge (Orchestrator)
+        participant HookServer as Hook Server (HTTP + WS)
+    end
+    box LightYellow VS Code
+        participant Extension as Extension
+        participant Cline as cline-sr (Peer Agent)
+    end
 
     rect rgb(245,245,245)
     Note over MCP,Bridge: Server Lifespan (one-time startup)
@@ -61,8 +73,35 @@ sequenceDiagram
     deactivate Bridge
     end
 
+    Note right of HookServer: HookServer exposes:<br/>- HTTP POST /hook (lifecycle events)<br/>- WebSocket /ws (liveness + task submission)
+```
+
+---
+
+### Diagram 2: Path A — ask_peer_agent (Blocking)
+
+Covers the blocking call path with 180s timeout. Includes dispatch logic and instance spawn/reuse decision.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box LightBlue Claude Code
+        participant Client as MCP Client
+    end
+    box LightGreen MCP Server (Bridge)
+        participant MCP as MCP Tools
+        participant Bridge as Bridge (Orchestrator)
+        participant Queue as Queue (BridgeQueue)
+        participant HookServer as Hook Server (HTTP + WS)
+        participant Instance as Instance (VS Code Manager)
+    end
+    box LightYellow VS Code
+        participant Extension as Extension
+        participant Cline as cline-sr (Peer Agent)
+    end
+
     rect rgb(235,245,255)
-    Note over Client,Hooks: PATH A - ask_peer_agent (blocking, 180s timeout)
+    Note over Client,HookServer: PATH A - ask_peer_agent (blocking, 180s timeout)
     Client->>MCP: ask_peer_agent(question, workspace)
     activate MCP
     MCP->>Queue: submit(question, workspace)
@@ -99,12 +138,43 @@ sequenceDiagram
     deactivate Cline
     Bridge-->>MCP: dispatched
     deactivate Bridge
+    deactivate MCP
+    end
 
-    Note over Cline,Hooks: Task Execution and Hook Events Flow Back
+    Note over HookServer,Queue: All hook POSTs log with task_id= field (ADR-0069)
+```
+
+---
+
+### Diagram 3: Task Execution + Hook Events Flow
+
+Covers the hook event flow from cline-sr back to the Bridge: TaskStart binding, tool-use loop (PreToolUse/PostToolUse), and TaskComplete with filter/recovery branches. Also includes the answer retrieval polling loop.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box LightBlue Claude Code
+        participant Client as MCP Client
+    end
+    box LightGreen MCP Server (Bridge)
+        participant MCP as MCP Tools
+        participant Queue as Queue (BridgeQueue)
+        participant HookServer as Hook Server (HTTP + WS)
+    end
+    box LightYellow VS Code
+        participant Cline as cline-sr (Peer Agent)
+        participant Hooks as Hook Scripts
+    end
+
+    Note over Cline,Hooks: Task Execution & Hook Events Flow
     Cline->>Cline: task starts
     Cline->>Hooks: TaskStart hook
     activate Hooks
-    Hooks->>HookServer: POST /hook {hookName:TaskStart}
+    Hooks->>HookServer: POST /hook {hookName:TaskStart, taskStart:{taskMetadata:{taskId}}}
+    HookServer->>Queue: bind_cline_task(taskId)
+    activate Queue
+    Queue-->>HookServer: bound (record.cline_task_id = taskId)
+    deactivate Queue
     HookServer-->>Hooks: {ok:true}
     deactivate Hooks
 
@@ -135,15 +205,23 @@ sequenceDiagram
     Cline->>Cline: task complete
     Cline->>Hooks: TaskComplete hook
     activate Hooks
-    Hooks->>HookServer: POST /hook {hookName:TaskComplete, taskComplete:{result, command}}
-    HookServer->>Queue: complete(answer, command)
+    Hooks->>HookServer: POST /hook {hookName:TaskComplete, taskComplete:{taskMetadata:{taskId}, result, command}}
+    HookServer->>Queue: complete(answer, command, cline_task_id=taskId)
     activate Queue
-    Queue-->>HookServer: status=answered
+    alt record.cline_task_id matches payload taskId
+        Queue-->>HookServer: status=answered
+    else record unbound or mismatch + failed record exists
+        Queue->>Queue: _recover_completion(taskId) - linear scan
+        Queue-->>HookServer: resurrected failed->answered
+    else mismatch, no recovery
+        Queue-->>HookServer: answer dropped (logged warning)
+    end
     deactivate Queue
     HookServer-->>Hooks: {ok:true}
     deactivate Hooks
 
     Note over MCP,Queue: Answer Retrieval (polling loop)
+    activate MCP
     loop Poll until answered/failed/timeout
         MCP->>Queue: get(record.id)
         activate Queue
@@ -164,6 +242,30 @@ sequenceDiagram
         deactivate Queue
     end
     deactivate MCP
+```
+
+---
+
+### Diagram 4: Path B — submit_to_peer_agent + poll_peer_agent (Async)
+
+Covers the async submission path (non-blocking) and later polling for the answer.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box LightBlue Claude Code
+        participant Client as MCP Client
+    end
+    box LightGreen MCP Server (Bridge)
+        participant MCP as MCP Tools
+        participant Bridge as Bridge (Orchestrator)
+        participant Queue as Queue (BridgeQueue)
+        participant HookServer as Hook Server (HTTP + WS)
+        participant Instance as Instance (VS Code Manager)
+    end
+    box LightYellow VS Code
+        participant Extension as Extension
+        participant Cline as cline-sr (Peer Agent)
     end
 
     rect rgb(235,255,235)
@@ -215,6 +317,28 @@ sequenceDiagram
     deactivate Queue
     deactivate MCP
     end
+```
+
+---
+
+### Diagram 5: Path C — close_peer_agent (Cleanup)
+
+Covers graceful shutdown of the VS Code instance. Checks queue is empty before terminating.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box LightBlue Claude Code
+        participant Client as MCP Client
+    end
+    box LightGreen MCP Server (Bridge)
+        participant MCP as MCP Tools
+        participant Queue as Queue (BridgeQueue)
+        participant Instance as Instance (VS Code Manager)
+    end
+    box LightYellow VS Code
+        participant Extension as Extension
+    end
 
     rect rgb(255,245,235)
     Note over Client,Instance: PATH C - close_peer_agent
@@ -236,9 +360,34 @@ sequenceDiagram
     deactivate Queue
     deactivate MCP
     end
+```
+
+---
+
+### Diagram 6: Failure Paths
+
+Covers three failure scenarios: sweep timeout (async expiration), instance_down (WS disconnect), and TaskCancel with pre-bind/match/mismatch branches.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    box LightBlue Claude Code
+        participant Client as MCP Client
+    end
+    box LightGreen MCP Server (Bridge)
+        participant Bridge as Bridge (Orchestrator)
+        participant Queue as Queue (BridgeQueue)
+        participant HookServer as Hook Server (HTTP + WS)
+    end
+    box LightYellow VS Code
+        participant Extension as Extension
+        participant Cline as cline-sr (Peer Agent)
+        participant Hooks as Hook Scripts
+    end
 
     rect rgb(255,235,235)
     Note over Bridge,Hooks: FAILURE PATHS
+
     Note over Bridge,Queue: Timeout (async expiration)
     Bridge->>Bridge: sweep_loop (every 5s)
     Bridge->>Queue: sweep_expired(async_timeout=1800s)
@@ -258,10 +407,18 @@ sequenceDiagram
     alt TaskCancel hook received
         Cline->>Hooks: TaskCancel hook
         activate Hooks
-        Hooks->>HookServer: POST /hook {hookName:TaskCancel}
-        HookServer->>Queue: cancel("cancelled")
+        Hooks->>HookServer: POST /hook {hookName:TaskCancel, taskCancel:{taskMetadata:{taskId, completionStatus}}}
+        HookServer->>Queue: cancel(reason="cancelled", cline_task_id=taskId)
         activate Queue
-        Queue-->>HookServer: status=failed
+        alt record.cline_task_id is None (pre-bind)
+            Note right of Queue: Previous-task teardown: ignored (ADR-0070)
+            Queue-->>HookServer: ignored (logged warning)
+        else record.cline_task_id matches payload taskId
+            Queue-->>HookServer: status=failed
+        else mismatch
+            Note right of Queue: Mismatch: ignored (logged warning)
+            Queue-->>HookServer: ignored
+        end
         deactivate Queue
         HookServer-->>Hooks: {ok:true}
         deactivate Hooks
@@ -273,4 +430,4 @@ sequenceDiagram
     Note right of Cline: Peer agent in separate VS Code window.<br/>Workspace is LIVE tree (edits show in git diff).<br/>Never delegate production credentials.
 ```
 
-Source: `docs/diagrams/vscode-agent-bridge-e2e.puml` (PlantUML original).
+Source: `docs/diagrams/vscode-agent-bridge-e2e.puml` (PlantUML original, split into 6 diagrams).
