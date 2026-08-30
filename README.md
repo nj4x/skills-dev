@@ -13,6 +13,8 @@ See [Borrowed Skills](#borrowed-skills) for the full attribution table with modi
 
 ## Installation
 
+**Option 1: Manual symlink**
+
 In Claude Code, tell the agent:
 
 ```
@@ -20,6 +22,14 @@ Hey please link all skills-dev skills to ~/.claude/skills.
 ```
 
 The agent will symlink each skill directory to `~/.claude/skills/<name>` so they become available immediately.
+
+**Option 2: Using `npx skills add`** ([vercel-labs/skills](https://github.com/vercel-labs/skills))
+
+```bash
+npx skills add https://github.com/nj4x/skills-dev.git
+```
+
+Prompt show, pick skills to install. Add `--skill '*' --yes` install all, no prompt. Default scope: project (`./.claude/skills/`); add `-g`/`--global` for `~/.claude/skills/`. Default install method: symlink; add `--copy` to copy files instead.
 
 ## Usage
 
