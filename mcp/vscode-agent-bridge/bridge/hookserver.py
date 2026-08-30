@@ -6,9 +6,10 @@ WebSocket `/ws` is held open by the companion extension for the window's
 lifetime: its connection is the liveness signal, and task submission rides
 the same socket (the extension calls cline-sr's URI handler in-process).
 
-Only one task runs at a time, so a hook POST is never disambiguated by a
-request id — whichever record the queue holds in flight is the one it's
-about.
+Lifecycle events that carry `taskMetadata.taskId` (TaskStart, TaskComplete,
+TaskCancel) are correlated to the in-flight record by binding cline-sr's
+task id on TaskStart and filtering later events against it (ADR-0070).
+PreToolUse/PostToolUse payloads carry no id and stay positionally attributed.
 """
 
 from __future__ import annotations
@@ -86,11 +87,18 @@ class HookServer:
 
         if hook_name in ("PreToolUse", "PostToolUse"):
             self._queue.record_tool_use()
+        elif hook_name == "TaskStart":
+            self._queue.bind_cline_task(_cline_task_id(payload, "taskStart"))
         elif hook_name == "TaskComplete":
             meta = payload.get("taskComplete", {}).get("taskMetadata", {})
-            self._queue.complete(meta.get("result", ""), meta.get("command"))
+            self._queue.complete(meta.get("result", ""), meta.get("command"), _cline_task_id(payload, "taskComplete"))
         elif hook_name == "TaskCancel":
-            self._queue.cancel("cancelled")
-        # TaskStart, TaskResume, UserPromptSubmit: no-op — dispatch already marked the record.
+            self._queue.cancel("cancelled", _cline_task_id(payload, "taskCancel"))
+        # TaskResume, UserPromptSubmit: no-op — dispatch already marked the record.
 
         return web.json_response({"ok": True})
+
+
+def _cline_task_id(payload: dict, key: str) -> str | None:
+    task_id = payload.get(key, {}).get("taskMetadata", {}).get("taskId")
+    return task_id or None

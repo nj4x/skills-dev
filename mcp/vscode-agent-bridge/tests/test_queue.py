@@ -39,14 +39,110 @@ def test_complete_frees_in_flight_for_next_dispatch():
     assert queue.next_dispatchable() is second
 
 
-def test_cancel_marks_in_flight_failed():
+def test_cancel_with_bound_matching_id_marks_in_flight_failed():
     queue = BridgeQueue()
     record = queue.submit("q", "/tmp")
     queue.next_dispatchable()
-    queue.cancel("cancelled")
+    queue.bind_cline_task("cline-1")
+    queue.cancel("cancelled", "cline-1")
     assert record.status == FAILED
     assert record.reason == "cancelled"
     assert queue.in_flight() is None
+
+
+def test_cancel_before_bind_is_ignored_as_teardown():
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.cancel("cancelled", "old-cline-task")  # previous task's teardown
+    assert record.status == DISPATCHED
+    assert queue.in_flight() is record
+
+
+def test_cancel_with_mismatched_id_is_ignored():
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.bind_cline_task("cline-1")
+    queue.cancel("cancelled", "cline-other")
+    assert record.status == DISPATCHED
+    assert queue.in_flight() is record
+
+
+def test_cancel_without_payload_id_on_bound_record_applies_positionally():
+    """Cancel without payload ID on a bound record degrades to positional (lost TaskCancel id)."""
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.bind_cline_task("cline-1")
+    queue.cancel("cancelled", None)  # payload taskId missing; apply positionally
+    assert record.status == FAILED
+    assert record.reason == "cancelled"
+
+
+def test_bind_keeps_first_binding():
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.bind_cline_task("cline-1")
+    queue.bind_cline_task("cline-2")
+    assert record.cline_task_id == "cline-1"
+
+
+def test_complete_without_ids_applies_positionally():
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.complete("answer", None)
+    assert record.status == ANSWERED
+
+
+def test_complete_with_matching_id_succeeds():
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.bind_cline_task("cline-1")
+    queue.complete("answer", "pytest", "cline-1")
+    assert record.status == ANSWERED
+    assert record.answer == "answer"
+    assert record.command == "pytest"
+
+
+def test_complete_with_mismatched_id_drops_answer(caplog):
+    caplog.set_level("WARNING", logger="vscode-agent-bridge.queue")
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.bind_cline_task("cline-1")
+    queue.complete("answer", None, "cline-other")
+    assert record.status == DISPATCHED
+    assert record.answer is None
+    assert any("mismatch" in r.getMessage() for r in caplog.records)
+
+
+def test_late_completion_resurrects_failed_bound_record():
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.bind_cline_task("cline-1")
+    queue.fail(record.id, "timeout")  # ask deadline hit while work continues
+    assert record.status == FAILED
+    queue.complete("late answer", "pytest", "cline-1")
+    assert record.status == ANSWERED
+    assert record.answer == "late answer"
+    assert record.command == "pytest"
+    assert record.reason is None
+
+
+def test_late_completion_without_match_is_dropped(caplog):
+    caplog.set_level("WARNING", logger="vscode-agent-bridge.queue")
+    queue = BridgeQueue()
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+    queue.fail(record.id, "timeout")  # never bound
+    queue.complete("late answer", None, "cline-1")
+    assert record.status == FAILED
+    assert any("answer dropped" in r.getMessage() for r in caplog.records)
 
 
 def test_record_tool_use_only_touches_in_flight():
@@ -138,6 +234,7 @@ def test_failure_transition_logged_with_reason(caplog):
     queue = BridgeQueue()
     record = queue.submit("q", "/tmp")
     queue.next_dispatchable()
-    queue.cancel("cancelled")
+    queue.bind_cline_task("cline-1")
+    queue.cancel("cancelled", "cline-1")
     messages = [r.getMessage() for r in caplog.records]
     assert any(f"task {record.id}: dispatched -> failed (reason=cancelled)" in m for m in messages)

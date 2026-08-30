@@ -36,6 +36,7 @@ class Record:
     tool_uses: int = 0
     last_event_at: float | None = None
     submitted_at: float = field(default_factory=time.monotonic)
+    cline_task_id: str | None = None
 
 
 class BridgeQueue:
@@ -75,9 +76,48 @@ class BridgeQueue:
             self._in_flight.tool_uses += 1
             self._in_flight.last_event_at = time.monotonic()
 
-    def complete(self, answer: str, command: str | None) -> None:
+    def bind_cline_task(self, cline_task_id: str | None) -> None:
+        """Bind the in-flight record to cline-sr's own task id (ADR-0070)."""
         record = self._in_flight
         if record is None:
+            logger.warning("TaskStart with no task in flight; nothing to bind (payload taskId=%s)", cline_task_id or "-")
+            return
+        if not cline_task_id:
+            logger.warning("task %s: TaskStart carried no taskId; record stays unbound", record.id)
+            return
+        if record.cline_task_id is not None:
+            if record.cline_task_id != cline_task_id:
+                logger.warning(
+                    "task %s: TaskStart taskId mismatch: bound=%s payload=%s; keeping original bind",
+                    record.id, record.cline_task_id, cline_task_id,
+                )
+            return
+        record.cline_task_id = cline_task_id
+        record.last_event_at = time.monotonic()
+        logger.info("task %s: bound to cline task %s", record.id, cline_task_id)
+
+    def complete(self, answer: str, command: str | None, cline_task_id: str | None = None) -> None:
+        record = self._in_flight
+        if record is None:
+            if self._recover_completion(cline_task_id, answer, command):
+                return
+            logger.warning("TaskComplete with no task in flight; answer dropped (payload taskId=%s)", cline_task_id or "-")
+            return
+        # Attempt recovery if the in-flight record is unbound and payload carries a taskId
+        # that matches a failed record. This handles late completion for earlier tasks.
+        if not record.cline_task_id and cline_task_id:
+            if self._recover_completion(cline_task_id, answer, command):
+                return
+        # A mismatch requires both sides present: a completion without an id
+        # (or against an unbound record) still applies, so a lost TaskStart
+        # degrades to today's positional behavior instead of losing the answer.
+        if record.cline_task_id and cline_task_id and record.cline_task_id != cline_task_id:
+            if self._recover_completion(cline_task_id, answer, command):
+                return
+            logger.warning(
+                "task %s: TaskComplete taskId mismatch: bound=%s payload=%s; answer dropped",
+                record.id, record.cline_task_id, cline_task_id,
+            )
             return
         record.status = ANSWERED
         record.answer = answer
@@ -86,9 +126,43 @@ class BridgeQueue:
         self._in_flight = None
         logger.info("task %s: dispatched -> answered", record.id)
 
-    def cancel(self, reason: str = "cancelled") -> None:
+    def _recover_completion(self, cline_task_id: str | None, answer: str, command: str | None) -> bool:
+        """Resurrect a failed record whose bound cline taskId matches (ADR-0070 point 4)."""
+        if not cline_task_id:
+            return False
+        for record in self._records.values():
+            if record.status == FAILED and record.cline_task_id == cline_task_id:
+                prior_reason = record.reason
+                record.status = ANSWERED
+                record.answer = answer
+                record.command = command
+                record.reason = None
+                record.last_event_at = time.monotonic()
+                logger.info(
+                    "task %s: failed (reason=%s) -> answered (late completion, cline task %s)",
+                    record.id, prior_reason, cline_task_id,
+                )
+                return True
+        return False
+
+    def cancel(self, reason: str = "cancelled", cline_task_id: str | None = None) -> None:
         record = self._in_flight
         if record is None:
+            logger.warning("TaskCancel with no task in flight; ignored (payload taskId=%s)", cline_task_id or "-")
+            return
+        if record.cline_task_id is None:
+            # Pre-bind cancel is the previous cline task's teardown, not a
+            # cancellation of the record just dispatched (ADR-0070 point 3).
+            logger.warning(
+                "task %s: TaskCancel before TaskStart bind treated as previous-task teardown; ignored (payload taskId=%s)",
+                record.id, cline_task_id or "-",
+            )
+            return
+        if record.cline_task_id is not None and cline_task_id is not None and record.cline_task_id != cline_task_id:
+            logger.warning(
+                "task %s: TaskCancel taskId mismatch: bound=%s payload=%s; ignored",
+                record.id, record.cline_task_id, cline_task_id,
+            )
             return
         record.status = FAILED
         record.reason = reason

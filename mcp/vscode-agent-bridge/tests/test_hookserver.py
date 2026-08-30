@@ -85,22 +85,66 @@ async def test_hook_task_complete_resolves_in_flight(wired):
     assert queue.in_flight() is None
 
 
-async def test_hook_task_cancel_fails_in_flight(wired):
+async def test_hook_task_cancel_after_bind_fails_in_flight(wired):
     queue, instance, server, client = wired
     record = queue.submit("q", "/tmp")
     queue.next_dispatchable()
 
-    resp = await client.post("/hook", json={"hookName": "TaskCancel", "taskCancel": {"taskMetadata": {}}})
+    await client.post("/hook", json={"hookName": "TaskStart", "taskStart": {"taskMetadata": {"taskId": "ct-1"}}})
+    resp = await client.post("/hook", json={"hookName": "TaskCancel", "taskCancel": {"taskMetadata": {"taskId": "ct-1"}}})
     assert resp.status == 200
     assert record.status == "failed"
     assert record.reason == "cancelled"
 
 
-async def test_hook_task_start_is_a_noop(wired):
+async def test_hook_task_start_binds_cline_task_id(wired):
     queue, instance, server, client = wired
     record = queue.submit("q", "/tmp")
     queue.next_dispatchable()
 
-    resp = await client.post("/hook", json={"hookName": "TaskStart"})
+    resp = await client.post("/hook", json={"hookName": "TaskStart", "taskStart": {"taskMetadata": {"taskId": "ct-1"}}})
     assert resp.status == 200
     assert record.status == "dispatched"
+    assert record.cline_task_id == "ct-1"
+
+
+async def test_spurious_teardown_cancel_race_is_survived(wired):
+    """Reproduces the ADR-0070 race: old task's TaskCancel ~150ms after dispatch."""
+    queue, instance, server, client = wired
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+
+    # cline-sr tears down its previous task before starting the new one
+    resp = await client.post("/hook", json={"hookName": "TaskCancel", "taskCancel": {"taskMetadata": {"taskId": "old-task", "completionStatus": "abandoned"}}})
+    assert resp.status == 200
+    assert record.status == "dispatched"  # NOT failed
+
+    # the real task then starts, works, and completes
+    await client.post("/hook", json={"hookName": "TaskStart", "taskStart": {"taskMetadata": {"taskId": "new-task"}}})
+    await client.post("/hook", json={"hookName": "PreToolUse", "preToolUse": {"toolName": "read_file"}})
+    await client.post("/hook", json={"hookName": "PostToolUse", "postToolUse": {"toolName": "read_file"}})
+    await client.post("/hook", json={
+        "hookName": "TaskComplete",
+        "taskComplete": {"taskMetadata": {"taskId": "new-task", "result": "the answer", "command": None}},
+    })
+
+    assert record.status == "answered"
+    assert record.answer == "the answer"
+    assert record.tool_uses == 2
+
+
+async def test_late_completion_recovers_timed_out_record(wired):
+    queue, instance, server, client = wired
+    record = queue.submit("q", "/tmp")
+    queue.next_dispatchable()
+
+    await client.post("/hook", json={"hookName": "TaskStart", "taskStart": {"taskMetadata": {"taskId": "ct-1"}}})
+    queue.fail(record.id, "timeout")  # ask deadline expired while cline-sr kept working
+    assert record.status == "failed"
+
+    await client.post("/hook", json={
+        "hookName": "TaskComplete",
+        "taskComplete": {"taskMetadata": {"taskId": "ct-1", "result": "late answer"}},
+    })
+    assert record.status == "answered"
+    assert record.answer == "late answer"
