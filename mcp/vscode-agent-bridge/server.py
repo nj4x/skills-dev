@@ -161,6 +161,38 @@ async def close_peer_agent() -> dict:
     return {"status": "closed"}
 
 
+@mcp.tool()
+async def get_logs_for_session(handle: str | None = None) -> dict:
+    """Get file paths and grep hints for logs related to current bridge session, tasks, and VS Code.
+
+    Returns references to all logs generated in the current bridge process lifetime,
+    allowing you to inspect what happened during task execution.
+
+    Args:
+        handle: optional task_id to filter to a single task's logs.
+                if None, returns references for all tasks in the current session.
+
+    Returns dict with keys:
+        - status: "ok" or "unknown_handle"
+        - session_log: path to ~/.vscode-agent-bridge/logs/vscode-agent-bridge.log
+                       grep with "task_id=<task_id>" to filter to a single task
+        - tasks: list of {id, grep_hint, status} for each task (or just the specified handle)
+        - vscode_exthost_log: path to latest ~/.vscode-agent-bridge/data/logs/<timestamp>/,
+                              or null if VS Code has not been spawned yet
+
+    Example:
+        Get all logs in the session:
+            result = await get_logs_for_session()
+            # result["session_log"] = "~/.vscode-agent-bridge/logs/vscode-agent-bridge.log"
+            # result["tasks"][0] = {id: "abc-123", grep_hint: "task_id=abc-123", status: "answered"}
+            # Run: rg "task_id=abc-123" ~/.vscode-agent-bridge/logs/vscode-agent-bridge.log
+
+        Get logs for a single task:
+            result = await get_logs_for_session(handle="abc-123")
+    """
+    return bridge.get_logs_for_session(handle)
+
+
 def main() -> None:
     mcp.run()
 
