@@ -231,3 +231,17 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 **Fallback for removal** (when AST edit would corrupt formatting): fall back to line-range splicing — record line range in ledger, splice lines, warn in final report.
 
 **Fallback for parametrization** (when composite AST edit fails at edit time, not at parse time): skip the entry entirely, record as `skipped` in the ledger, leave the file unchanged, surface in final report as a warning. Do not attempt partial edits (no partial deletions without the consolidated insert).
+
+---
+
+## Log assertion (Kotlin / Log4j2)
+
+Prefer a real in-memory appender to `mockkStatic(LoggerFactory)`:
+
+1. Implement `BeforeEachCallback`/`AfterEachCallback`. In `beforeEach`: attach an `AbstractAppender` to the named logger via `LoggerContext.getContext(false)` and `Configurator.setLevel`. In `afterEach`: stop the appender and call `Configurator.reconfigure()` to restore the original configuration.
+2. Store captured events in a `CopyOnWriteArrayList<LogEvent>` for thread safety.
+3. Expose `count(level: Level)` and `assertCount(expected, level)` helpers.
+4. Name the appender with a unique suffix (e.g., `System.nanoTime()`) to avoid collisions when multiple extension instances are active in the same JVM.
+5. Register via `@RegisterExtension val logs = Log4j2ListAppenderExtension.of(MyService::class)`.
+
+This approach works with async loggers, does not require power-mock classloader tricks, and does not leak between tests because `Configurator.reconfigure()` fully restores the Log4j2 state.

@@ -179,6 +179,16 @@ On regressed ids in Phase C, **re-run the full suite once** (not just the ids in
 
 ---
 
+## Follow-up: Assertion-API enforcement (optional)
+
+After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUnit Jupiter for Kotlin projects), lock it in with a static-analysis rule that fails the build on banned imports. This prevents Phase B invariants from drifting in future PRs without any code review burden.
+
+**Kotlin/Gradle:** Add a `ForbiddenImport` rule set to a `detekt-test.yml` config targeting `src/test/`. Make the `test` task depend on `detektTest`. The rule set lists every JUnit import that the project decided to replace with `kotlin.test` equivalents, with a `reason` pointing to the replacement. Example from the reference project (commit 22759691): ban `org.junit.jupiter.api.Test`, `org.junit.jupiter.api.Assertions.*`, `org.junit.jupiter.api.BeforeEach`, etc. in favour of `kotlin.test.Test`, `kotlin.test.assertEquals`, `kotlin.test.BeforeTest`.
+
+**Java/Maven:** Equivalent with Checkstyle `IllegalImport`.
+
+---
+
 ## Final report
 
 **Phase A — Layout:**

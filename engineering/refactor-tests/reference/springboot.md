@@ -87,6 +87,8 @@ Do this before any edit. Record the numbers in the ledger under `spring.baseline
 
 **Cache eviction check:** if `missCount` exceeds the number of distinct keys you can account for, contexts are being evicted. Either `@DirtiesContext` is in play, or the key count exceeded `spring.test.context.cache.maxSize` (default 32) and the LRU cache is thrashing. `[S]` Raising `maxSize` is a legitimate fix only when key count is genuinely irreducible — reduce keys first.
 
+**Alternative: in-process listener.** Register an `AbstractTestExecutionListener` subclass via `META-INF/spring.factories` under `org.springframework.test.context.TestExecutionListener`. The listener captures `System.identityHashCode(testContext.applicationContext)` in `prepareTestInstance` to group classes by context, and `TimeSource.Monotonic` marks in `beforeTestClass`/`afterTestClass` to separate context startup overhead from per-method time. A JVM shutdown hook writes the grouped report to `build/reports/`. A CI step cats it into `$GITHUB_STEP_SUMMARY` with `if: always()` so it publishes even on a failing run. This approach measures what actually happened, not what the cache statistics claim should happen, and it persists across runs as a CI artifact.
+
 ---
 
 ## Step C2 — Base-class consolidation (highest leverage)
@@ -185,7 +187,7 @@ Each item below is paid **once per cached context** and is usually blocking. App
 | `spring.cloud.bootstrap.enabled=false` | **System property on the test task** — see Trap 1 below | Skips building a separate bootstrap `ApplicationContext` per test context `[C]` |
 | `spring.cloud.config.enabled=false` | test `application.yml` | No Config server is reachable from a test run; avoids the fetch and its retries `[C]` |
 | `spring.kafka.listener.auto-startup=false` | test `application.yml` | Application `@KafkaListener`s otherwise start consumer threads per context, all reconnect-looping against an absent broker `[C]` |
-| `autoStartup = "\${spring.kafka.listener.auto-startup:true}"` | on each `@KafkaListener` in **main source** | Makes the flag above reach listeners declared with explicit attributes; `:true` default keeps production behaviour `[C]` |
+| `autoStartup = "\${spring.kafka.listener.auto-startup:true}"` | on each `@KafkaListener` in **main source** | Makes the flag above reach listeners declared with explicit attributes; `:true` default keeps production behaviour `[C]` When is the annotation attribute required? Only when the `@KafkaListener` already carries an explicit `autoStartup` attribute that overrides the factory default. If no `@KafkaListener` in the codebase sets `autoStartup` explicitly, the factory property alone is sufficient. Adding the annotation attribute is still recommended — it makes the configurability explicit and prevents a future `autoStartup = "true"` from silently defeating the test switch. |
 | Per-listener concurrency in test config | test `application.yml` | Concurrency is a thread multiplier; the reference project reduced it 10 → 1 per listener `[C]` |
 | `management.metrics.export.statsd.enabled=false` | test `application.yml` | Avoids a StatsD registry, UDP client, and publisher thread per context `[C]` |
 | `initialDelayString` on `@Scheduled` + a long initial delay in test config | annotation in **main source**, value in test `application.yml` | See Trap 2 below `[C]` |
