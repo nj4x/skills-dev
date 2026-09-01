@@ -198,18 +198,18 @@ Each item below is paid **once per cached context** and is usually blocking. App
 
 Zero behaviour change is the bar. Re-run the full suite and record the post-C2/C3 context count and wall time in the ledger under `spring.post_context_cost`. Every check below must pass; mocked beans fail loudly when a test relied on the real implementation, catching the C2.5 risk here.
 
-| Check | Pass condition |
-|---|---|
-| Suite green | Full suite re-run matches the Phase B baseline test-for-test: same passing ids, same failing ids. Any newly failing id is a regression. |
-| Context count fell | `missCount` (Step C1 method) is strictly lower than baseline; record both numbers. |
-| Wall time fell | Second warm run, same machine as baseline. |
-| No new eviction | Final cache `size` ≤ `maxSize`; no context built twice for the same key. |
-| Production config untouched | `git diff` on main-source config: every new property has a default preserving current behaviour (`:0`, `:true`). Main-source `application.yml` unchanged. |
-| Disabled components unasserted | For each switch flipped in Step C3, `rg` confirms no test asserts on that component, or that class carries a local override. |
-| Mock union safe | For each mock newly inherited by a class that did not declare it, no test in that class exercised the real bean. |
+| Check | Pass condition | Gate decision |
+|---|---|---|
+| Suite green | Full suite re-run matches the Phase B baseline test-for-test: same passing ids, same failing ids. Any newly failing id is a regression. | **Gate: MUST PASS** |
+| Context count | `missCount` (Step C1 method) is recorded; compare to baseline. | Reported but not gated; context count may not fall if all clusters were skipped. |
+| Wall time | Second warm run, same machine as baseline. Reported as before → after. | Reported but not gated; wall time is machine-noisy and hard to reproduce reliably. |
+| No new eviction | Final cache `size` ≤ `maxSize`; no context built twice for the same key. | Informational check. |
+| Production config untouched | `git diff` on main-source config: every new property has a default preserving current behaviour (`:0`, `:true`). Main-source `application.yml` unchanged. | **Gate: MUST PASS** |
+| Disabled components unasserted | For each switch flipped in Step C3, `rg` confirms no test asserts on that component, or that class carries a local override. | **Gate: MUST PASS** |
+| Mock union safe | For each mock newly inherited by a class that did not declare it, no test in that class exercised the real bean. | **Gate: MUST PASS** |
 
-- **Healthy** (every check passes): Phase C is done.
-- **Regressed** (a new failure, or context count rose): record which consolidations caused the failures and which classes to drop from the cluster.
+- **Healthy** (suite green + production config untouched + disabled components unasserted + mock union safe): set `phase: done`.
+- **Regressed** (a new suite failure, or a gate check fails): record which consolidations caused the failures and which classes to drop from the cluster. Set `phase: failed-context`.
 
 Record the post-C4 ledger state so a resume mid-Phase-C has the consolidation history.
 

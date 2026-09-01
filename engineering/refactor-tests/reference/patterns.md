@@ -60,17 +60,45 @@ Cross-cutting tests are moved to a dedicated integration directory — not left 
 | Go | `<name>_test.go` |
 | Java/Kotlin | `<Name>Test.java` / `<Name>Test.kt` |
 
+## Assertion vocabulary (dead-test detection)
+
+The dead-test criterion flags tests with no assertion statements. Use this vocabulary per language to identify assertions; a test with none of these is a candidate for the `review_candidates` array:
+
+| Language | Assertion keywords |
+|---|---|
+| Python | `assert`, `pytest.raises`, `pytest.warns` |
+| TypeScript/JavaScript | `expect`, `assert` (chai), `should` (should.js), `.to.throw` (chai), `.toThrow` (jest) |
+| Go | `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `require.*`, `assert.*` (testify) |
+| Java | `assertThat`, `assertTrue`, `assertEquals`, `fail` (JUnit/AssertJ) |
+| Kotlin | `assertThat`, `assertTrue`, `assertEquals`, `fail` (same as Java) |
+
+When a test body contains none of the vocabulary for its language, classify it as `dead-test` (not auto-removed; flagged for user review).
+
+## Per-runner output formats
+
+Capturing test ids requires machine-readable output from the test runner. Use these commands to get a structured list of test ids:
+
+| Language | Command | Output file | Parse notes |
+|---|---|---|---|
+| Python | `pytest --junitxml=<file> [paths...]` | JUnit XML | Parse `<testcase classname="..." name="...">` elements; id = `classname::name` |
+| TS/JS | `npm test -- --json --outputFile=<file>` | JSON via Jest | Extract `testResults[].assertionResults[].fullName`; id = `<file>::<fullName>` |
+| Go | `go test -json ./... > <file>` | JSON | Parse `{"Test":"..."}` events; id = package + `::` + test name |
+| Java (Maven) | `mvn test -Dorg.slf4j.simpleLogger.defaultLogLevel=info` (output to file) | Surefire XML in `target/surefire-reports/TEST-*.xml` | Parse `<testcase classname="..." name="...">` elements; id = `classname::name` |
+| Java/Kotlin (Gradle) | `./gradlew test --rerun-tasks` (or `gradle test`) | Gradle test report | Parse `build/test-results/test/*/TEST-*.xml` files; id = `classname::name` |
+
+Record runner output to a consistent temp location between baseline and validation runs; diff the id sets to detect regressions.
+
 ## Runner detection (convention markers)
 
 | Language | Marker files (any) | Command |
 |---|---|---|
 | Python | `pytest.ini`, `pyproject.toml`, `setup.cfg`, `tox.ini` | `pytest` |
 | TS/JS | `package.json` (has a `test` script) | `npm test` (or `yarn test` if `yarn.lock` exists, `pnpm test` if `pnpm-lock.yaml`) |
-| Go | `go.mod` | `go test ./...` |
+| Go | `go.mod` | `go test -json ./...` (use `-json` for structured id capture) |
 | Java | `pom.xml` | `mvn test` |
-| Java/Kotlin | `build.gradle`, `build.gradle.kts` | `gradle test` |
+| Java/Kotlin | `build.gradle`, `build.gradle.kts` | `gradle test` (or `./gradlew test` in root) |
 
-If markers are ambiguous for a present language, try the candidate commands in table order and use the first that runs. Record the resolved command in the ledger so validation reuses the exact baseline command.
+If markers are ambiguous for a present language, try the candidate commands in table order and use the first that runs. Record the **exact resolved command** in the ledger so validation reuses the same baseline command.
 
 ## Import rewriting (AST-based, per language)
 
@@ -80,17 +108,33 @@ Moving a test file can invalidate **relative** imports (their depth to the sourc
 |---|---|---|
 | Python | `libcst` (comment/format-preserving); fall back to stdlib `ast` splice when libcst is unavailable | relative `from ..x import y` whose depth changed; convert to absolute `from <pkg>.x import y` where the package path is known |
 | TS/JS | TypeScript compiler API or Babel (`@babel/parser` + `@babel/traverse`) | relative `import ... from './x'` / `require('./x')` specifiers; recompute the `./`-relative path from the new location; leave path-alias and package imports untouched |
-| Go | `go/parser` + `go/printer` (or `goimports`) | rarely needed — Go imports are module-absolute; run `goimports` on moved files to fix ordering |
+| Go | `go/parser` + `go/printer` (or `goimports`) | rarely needed — Go imports are module-absolute; run `goimports` on moved files to fix ordering; cross-cutting tests use `//go:build integration` tags instead of path moves (see below) |
 | Java | `JavaParser` (com.github.javaparser) — parse compilation unit, update `PackageDeclaration` node, pretty-print | `package` declaration to match the new directory |
 | Kotlin | Kotlin compiler PSI via `kotlin-compiler-embeddable` — update `KtPackageDirective` node, emit with PSI printer, `ktlint --format` for cleanup | `package` declaration to match the new directory |
 
 Any file the parser cannot process is a **warning** (not a silent skip): record it in the report and leave its imports unchanged for manual follow-up.
 
+### Go cross-cutting tests — build tags instead of moves
+
+Go's one-directory-one-package rule makes moving cross-cutting tests across packages into a single `integration/` directory problematic (compile errors). Instead, **pin Go cross-cutting tests in place and add a build tag**:
+
+```go
+//go:build integration
+
+package foo_test
+
+// test code
+```
+
+This preserves the package (compilation works) and allows filtering: `go test ./...` excludes them; `go test -tags integration ./...` includes them. In Phase A, for Go cross-cutting tests: do not move, add `//go:build integration` to the top of each file, and record as non-moved in the ledger.
+
 ## Ledger schema (`.scratch/refactor-tests/ledger.json`)
 
 ```json
 {
-  "phase": "discovery|baseline|moving|rewriting|validating|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done",
+  "phase": "discovery|baseline|moving|rewriting|validating|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
+  "dry_run": false,
+  "phases_requested": ["A", "B", "C"],
   "project_path": "/abs/path",
   "languages": ["python"],
   "source_roots": ["src"],
@@ -106,6 +150,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
   "simplification": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
+    "review_candidates": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_always_passes", "criterion": "dead-test" } ],
     "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ]
   },
   "spring": {
@@ -134,7 +179,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 }
 ```
 
-`plan.json` is the Phase A artifact; `ledger.json` is the durable execution record, rewritten after every side effect so a mid-run compaction can resume.
+`plan.json` is the Phase A artifact; `baseline-ids.json` stores the baseline test id sets; `ledger.json` is the durable execution record, rewritten after every side effect so a mid-run compaction can resume. Archival of failed ledgers uses `ledger.YYYY-MM-DDTHH-MM-SS.json` naming.
 
 ## Simplification plan schema (`.scratch/refactor-tests/simplification-plan.json`)
 
@@ -146,12 +191,14 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
       "test_name": "test_parse_instrument_copy",
       "criterion": "exact-duplicate",
       "evidence": "body identical to test_parse_instrument (lines 42-51 vs 55-64)"
-    },
+    }
+  ],
+  "review_candidates": [
     {
       "file": "tests/protrading/adapters/test_instruments.py",
       "test_name": "test_always_passes",
       "criterion": "dead-test",
-      "evidence": "no assert/expect statement in body"
+      "evidence": "no assertion statement in body; executes code but no verify call"
     }
   ],
   "parametrizations": [
@@ -159,7 +206,8 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
       "file": "tests/protrading/adapters/test_instruments.py",
       "tests": ["test_parse_equity", "test_parse_future", "test_parse_option"],
       "consolidated_name": "test_parse_instrument_by_type",
-      "consolidated_body_sketch": "@pytest.mark.parametrize('symbol,expected_type', [('AAPL', 'equity'), ('ESZ4', 'future'), ('AAPL241220C200', 'option')])\ndef test_parse_instrument_by_type(symbol, expected_type): ...",
+      "consolidated_body": "@pytest.mark.parametrize('symbol,expected_type', [('AAPL', 'equity'), ('ESZ4', 'future'), ('AAPL241220C200', 'option')])\ndef test_parse_instrument_by_type(symbol, expected_type):\n    result = parse_instrument(symbol)\n    assert result.type == expected_type",
+      "required_imports": ["pytest"],
       "criterion": "parametrize-cluster",
       "evidence": "all three call parse_instrument(symbol) and assert result.type == expected; same structure, different inputs"
     }
@@ -170,7 +218,7 @@ Any file the parser cannot process is a **warning** (not a silent skip): record 
 }
 ```
 
-`simplification-plan.json` is the Phase B artifact.
+`simplification-plan.json` is the Phase B artifact. Note: `review_candidates` (dead-test flags) are not auto-removed; the user sees them in the report and decides whether to delete after inspection. The `consolidated_body` field contains concrete parametrized code, not a sketch.
 
 ## AST editor guidance (per language)
 

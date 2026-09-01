@@ -31,11 +31,12 @@ Read `reference/patterns.md` (beside this SKILL.md) before doing any work — it
 ## Step 1 — Resolve project and detect stack
 
 1. `PROJECT_PATH` defaults to `$PWD`. Resolve to absolute path; hard-stop if not a directory.
-2. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`, print the recorded phase and resume from it. Otherwise initialize a fresh ledger with `phase: discovery`.
-3. **Detect languages** by extension scan (respect `.gitignore`; skip `vendor/`, `node_modules/`, `.venv/`, `build/`, `.reference-projects/`, `.scratch/`).
-4. **Detect runner(s)** per language via convention markers in `reference/patterns.md`.
-5. **Spring Boot check** (JVM projects only): set ledger `spring_boot: true` when a Spring Boot dependency and ≥2 context-loading test classes are both present — this enables Phase C. Detection commands are in `reference/springboot.md` Step C0.
-6. Write detected languages, source roots, and runners into the ledger.
+2. **Parse command-line arguments**: `--dry-run` (skip file mutations, stop after plan), `--phases=A,B` (run only specified phases, default all available).
+3. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`/`failed-*`, print the recorded phase and resume from it. On resume from `failed-*`, archive the old ledger to `ledger.YYYY-MM-DDTHH-MM-SS.json` and reuse the stored `baseline`. Otherwise initialize a fresh ledger with `phase: discovery`.
+4. **Detect languages** by extension scan (respect `.gitignore`; skip `vendor/`, `node_modules/`, `.venv/`, `build/`, `.reference-projects/`, `.scratch/`).
+5. **Detect runner(s)** per language via convention markers in `reference/patterns.md`. Record the resolved command exactly.
+6. **Spring Boot check** (JVM projects only): set ledger `spring_boot: true` when a Spring Boot dependency and ≥2 context-loading test classes are both present — this enables Phase C. Detection commands are in `reference/springboot.md` Step C0.
+7. Write detected languages, source roots, and runners into the ledger.
 
 ---
 
@@ -48,7 +49,7 @@ For each source file in each detected source root:
 3. If the existing test path differs from the target path, record a move entry `{ from, to, language, source_file }`.
 4. If no test file exists for this source file, skip — do not create empty test files.
 
-**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: conftest/fixture-only files, e2e tests, and tests whose import list spans packages with no dominant module. For each cross-cutting file: compute its target path in the language's integration directory (from `reference/patterns.md`), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`.
+**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: e2e tests and tests whose import list spans packages with no dominant module. **Exception: location-scoped fixtures** (`conftest.py`, jest setup files referenced in config paths, Go `TestMain` functions) are pinned in place — do not relocate them, even if not assigned to a source. For each cross-cutting file: compute its target path in the language's integration directory (from `reference/patterns.md`), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`.
 
 **When a mapping is ambiguous** (test plausibly belongs to two modules), pick the one whose module name appears first in the test file's import list. Record the decision in the ledger `notes` field; do not stop to ask.
 
@@ -60,10 +61,13 @@ Write `$PROJECT_PATH/.scratch/refactor-tests/plan.json` with the full move list,
 
 Set ledger `phase: baseline`.
 
-Run the full test suite using the detected runner command. Record into ledger `baseline`:
+Run the full test suite using the detected runner command. Per language, capture test ids using runner output specified in `reference/patterns.md` → Per-runner output formats. Record into ledger `baseline`:
 - pass count
-- the full set of passing test ids
+- failing count
+- the full set of passing test ids (written to `baseline-ids.json` sidecar)
 - the full set of failing test ids (pre-existing failures are baseline, not regressions)
+
+**Expected non-zero exits:** test runners (`pytest`, `go test`, `mvn test`) exit non-zero when any test fails — this is data, not an error. Detection probes (e.g., `rg ... | grep -q .`) are also expected non-zero as their "not found" signal. Only hard-abort on process errors (exit 127, signal termination).
 
 ---
 
@@ -95,8 +99,10 @@ Set ledger `phase: validating`.
 
 Re-run the full suite. Regression check: for each test id that passed in `baseline`, map it to its new id via `id_map` (or keep original id if unmoved), verify the mapped id still passes.
 
-- **Healthy**: record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B.
-- **Regressed**: print the regressed test ids, set `phase: done`, emit `say_skill_done`, stop at Phase A.
+If any regressed id is found, **re-run just those ids once** to confirm the failure (flake detection). If they all pass on retry, resume as healthy. If any still fail, record as regressed.
+
+- **Healthy**: record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B or stop if `--phases` excludes Phase B.
+- **Regressed**: print the regressed test ids (confirmed after retry), set `phase: failed-layout`, emit `say_skill_done`, stop at Phase A.
 
 ---
 
@@ -111,13 +117,15 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 | Criterion | Action |
 |-----------|--------|
 | **Exact duplicate** | Remove one — byte/AST-identical body AND identical fixtures, mocks, decorators (ignoring only name and docstring) |
-| **Dead test** | Remove — no `assert`/`expect`/`should`/`verify` statement in body |
+| **Dead test** | Flag for review — no assertion statement in body (per-language vocabulary in `reference/patterns.md`) |
 | **Trivially true** | Remove — only `assert True`, `assertEqual(x, x)`, `expect(1).toBe(1)` |
 | **Subset assertions** | Remove weaker — same function, same args, same fixtures+mocks; A's assertion list is a strict subset of B's |
 | **Parametrize cluster** | Consolidate — N ≥ 3 tests call the same function with distinct args of the same structural type, identical fixtures+mocks, identical assertion pattern |
 | **Parametrize pair** | Consolidate — N = 2 tests meeting cluster criteria where names differ only by trailing integer or single-letter suffix |
 
 **Do NOT flag** as redundant: tests covering different scenarios, different input types, different fixture state, different mock return values, different decorators/markers, or any test the AST parser cannot fully analyze.
+
+**Dead-test rationale:** a test with no assertion still executes code and catches panics/exceptions. Flagging for user review avoids silent deletion of tests whose only protection is crash-on-error.
 
 ### Step 7 — Scan and build simplification plan
 
@@ -128,6 +136,8 @@ Parse every test file (post-layout) using the language's AST parser. For each te
 Apply criteria in order: exact duplicate → dead → trivially true → subset → parametrize cluster → parametrize pair.
 
 For each **removal** candidate: emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion).
+
+For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to `review_candidates` array (not `removals`). User decides whether to remove after inspection.
 
 For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
@@ -149,8 +159,10 @@ Set ledger `phase: simplify-validating`.
 
 Re-run the full suite. Regression check: compare against post-layout baseline. Exclude test ids in `simplification.removals` and replaced ids in `simplification.parametrizations` from the required-passing set. Verify each consolidated parametrized test id appears and passes.
 
-- **Healthy**: advance to Phase C when ledger `spring_boot` is `true`, otherwise set `phase: done`.
-- **Regressed**: record regressed ids, set `phase: done` with regression flag, stop at Phase B.
+If any regressed id is found, **re-run the full suite once** to confirm (flake detection; Phase B is post-consolidation so a failure under load is distinct from isolation). If all pass on retry, resume as healthy. If any still fail, record as regressed.
+
+- **Healthy**: advance to Phase C when ledger `spring_boot` is `true` and `--phases` includes Phase C, otherwise set `phase: done`.
+- **Regressed**: record regressed ids, set `phase: failed-simplify`, stop at Phase B.
 
 ---
 
@@ -162,8 +174,10 @@ Runs after a healthy Phase B, only when ledger `spring_boot` is `true`. Phases A
 
 Read `reference/springboot.md` and execute its Steps C0–C4, setting the ledger `phase` at each: C1 `context-measuring`, C2 `context-consolidating`, C3 `context-switching`, C4 `context-validating`. The baseline for Phase C is the post-simplification suite result plus the context/wall-time numbers from its Step C1.
 
-- **Healthy** (zero regressions and context count fell): set `phase: done`.
-- **Regressed**: record regressed ids, set `phase: done` with regression flag.
+**Flake handling in Phase C**: after consolidation, a test that fails in-suite but passes in isolation is evidence of Trap 4 state leakage, not flakiness. On regressed ids, **re-run the full suite once** (not just the ids in isolation) to confirm.
+
+- **Healthy** (zero regressions): set `phase: done`. Wall-time improvement is reported but not gated (machine-noisy). Context count is reported.
+- **Regressed**: record regressed ids, set `phase: failed-context`.
 
 ---
 
@@ -174,20 +188,21 @@ Read `reference/springboot.md` and execute its Steps C0–C4, setting the ledger
 - Imports rewritten: count with representative rewrites
 - Cross-cutting (moved to integration dir): list with `from` → `to` and reason
 - Baseline: `<N> passed, <M> failed`
-- Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions:` + ids
+- Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase B — Simplification:**
-- Tests removed: count by criterion (exact-duplicate, dead, trivially-true, subset)
+- Tests removed: count by criterion (exact-duplicate, trivially-true, subset)
+- Tests flagged for review (dead-test): count with listing; user decides whether to remove
 - Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
 - Parametrizations skipped (AST editor failures): list with reasons
 - Unanalyzable files (skipped by AST parser): list with reasons
-- Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions:` + ids
+- Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
-**Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; suite wall time before → after; per-context switches applied; clusters skipped with reasons.
+**Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; per-context switches applied; clusters skipped with reasons; wall time before → after (informational, not gated).
 
 Report only the phases that ran. When a gate regressed, name the phase that stopped the run and say the later phases were not reached — resolve those regressions and re-run to continue.
 
-**Warnings**: AST parse/edit failures, imports not rewritten, runner-detection ambiguities
+**Warnings**: AST parse/edit failures, imports not rewritten, runner-detection ambiguities, pinned-fixture location exceptions
 
 **Next steps** if regressed: files to inspect; `git checkout -- <paths>` to revert selectively
 
@@ -208,10 +223,11 @@ msg="Refactor tests finished${proj_say:+ in ${proj_say}}."
 
 - Do NOT launch headless `claude` CLI processes via Bash.
 - Never pass plan or file text as a shell argument — write to a temp file if Bash must read it.
-- Bash non-zero exit = hard abort (emit `say_skill_cancel`, surface the error, stop).
+- **Expected non-zero exits** (test runners, detection probes) are data, not errors; only hard-abort on process errors (127, signals).
 - Import rewriting and test editing are AST-based per language — never blind regex search-replace.
 - Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
 - Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
 - Update the ledger after every durable side effect so a mid-run compaction is recoverable.
+- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations.
 - `rm -f` any temp file on every exit path, including hard-abort paths.
 - Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
