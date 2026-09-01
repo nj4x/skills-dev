@@ -125,8 +125,6 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 
 **Do NOT flag** as redundant: tests covering different scenarios, different input types, different fixture state, different mock return values, different decorators/markers, or any test the AST parser cannot fully analyze.
 
-**Dead-test rationale:** a test with no assertion still executes code and catches panics/exceptions. Flagging for user review avoids silent deletion of tests whose only protection is crash-on-error.
-
 ### Step 7 — Scan and build simplification plan
 
 Set ledger `phase: simplifying`.
@@ -137,7 +135,7 @@ Apply criteria in order: exact duplicate → dead → trivially true → subset 
 
 For each **removal** candidate: emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion).
 
-For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to `review_candidates` array (not `removals`). User decides whether to remove after inspection.
+For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to `review_candidates` array (not `removals`).
 
 For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
@@ -174,7 +172,7 @@ Runs after a healthy Phase B, only when ledger `spring_boot` is `true`. Phases A
 
 Read `reference/springboot.md` and execute its Steps C0–C4, setting the ledger `phase` at each: C1 `context-measuring`, C2 `context-consolidating`, C3 `context-switching`, C4 `context-validating`. The baseline for Phase C is the post-simplification suite result plus the context/wall-time numbers from its Step C1.
 
-**Flake handling in Phase C**: after consolidation, a test that fails in-suite but passes in isolation is evidence of Trap 4 state leakage, not flakiness. On regressed ids, **re-run the full suite once** (not just the ids in isolation) to confirm.
+On regressed ids in Phase C, **re-run the full suite once** (not just the ids in isolation) to confirm — full-suite re-run surfaces Trap 4 state leakage.
 
 - **Healthy** (zero regressions): set `phase: done`. Wall-time improvement is reported but not gated (machine-noisy). Context count is reported.
 - **Regressed**: record regressed ids, set `phase: failed-context`.

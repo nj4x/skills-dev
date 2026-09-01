@@ -60,23 +60,9 @@ Cross-cutting tests are moved to a dedicated integration directory — not left 
 | Go | `<name>_test.go` |
 | Java/Kotlin | `<Name>Test.java` / `<Name>Test.kt` |
 
-## Assertion vocabulary (dead-test detection)
-
-The dead-test criterion flags tests with no assertion statements. Use this vocabulary per language to identify assertions; a test with none of these is a candidate for the `review_candidates` array:
-
-| Language | Assertion keywords |
-|---|---|
-| Python | `assert`, `pytest.raises`, `pytest.warns` |
-| TypeScript/JavaScript | `expect`, `assert` (chai), `should` (should.js), `.to.throw` (chai), `.toThrow` (jest) |
-| Go | `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `require.*`, `assert.*` (testify) |
-| Java | `assertThat`, `assertTrue`, `assertEquals`, `fail` (JUnit/AssertJ) |
-| Kotlin | `assertThat`, `assertTrue`, `assertEquals`, `fail` (same as Java) |
-
-When a test body contains none of the vocabulary for its language, classify it as `dead-test` (not auto-removed; flagged for user review).
-
 ## Per-runner output formats
 
-Capturing test ids requires machine-readable output from the test runner. Use these commands to get a structured list of test ids:
+Capture test ids using runner output specified here:
 
 | Language | Command | Output file | Parse notes |
 |---|---|---|---|
@@ -99,6 +85,18 @@ Record runner output to a consistent temp location between baseline and validati
 | Java/Kotlin | `build.gradle`, `build.gradle.kts` | `gradle test` (or `./gradlew test` in root) |
 
 If markers are ambiguous for a present language, try the candidate commands in table order and use the first that runs. Record the **exact resolved command** in the ledger so validation reuses the same baseline command.
+
+## Assertion vocabulary (dead-test detection)
+
+The dead-test criterion flags tests with no assertion statements. Use this vocabulary per language to identify assertions; a test with none of these is a candidate for the `review_candidates` array:
+
+| Language | Assertion keywords |
+|---|---|
+| Python | `assert`, `pytest.raises`, `pytest.warns` |
+| TypeScript/JavaScript | `expect`, `assert` (chai), `should` (should.js), `.to.throw` (chai), `.toThrow` (jest) |
+| Go | `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `require.*`, `assert.*` (testify) |
+| Java | `assertThat`, `assertTrue`, `assertEquals`, `fail` (JUnit/AssertJ) |
+| Kotlin | `assertThat`, `assertTrue`, `assertEquals`, `fail` (same as Java) |
 
 ## Import rewriting (AST-based, per language)
 
@@ -218,7 +216,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 }
 ```
 
-`simplification-plan.json` is the Phase B artifact. Note: `review_candidates` (dead-test flags) are not auto-removed; the user sees them in the report and decides whether to delete after inspection. The `consolidated_body` field contains concrete parametrized code, not a sketch.
+`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch.
 
 ## AST editor guidance (per language)
 
