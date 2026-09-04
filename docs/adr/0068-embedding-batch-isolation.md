@@ -1,4 +1,8 @@
-# ADR-0053: Embedding Batch Failure Isolation
+---
+lineage-rules: exempt
+---
+
+# ADR-0068: Embedding Batch Failure Isolation
 
 **Status:** Decided  
 **Date:** 2026-09-03
@@ -29,4 +33,5 @@ Users see partial index: chunks that embedded successfully are upserted; failed 
 
 - Batch failures no longer cascade to directory-level failure. A directory with 1 bad file still indexes 99 good files.
 - IndexResult.success changes meaning: true = file indexed (possibly partial), false = no chunks indexed (catastrophic parse error, file locked, etc.).
+- **Success scope boundary:** Extraction or community detection timeout does not degrade file-level success; success=true means file indexed (partial or complete). Only chunk embedding failure sets success=false. See ADR-0069 (extraction timeout) and ADR-0070 (community detection timeout).
 - Callers must decide: log partial results as warnings, or treat them as non-fatal.

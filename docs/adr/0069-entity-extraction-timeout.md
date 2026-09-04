@@ -1,4 +1,8 @@
-# ADR-0054: Entity Extraction Timeout and Failure Isolation
+---
+lineage-rules: exempt
+---
+
+# ADR-0069: Entity Extraction Timeout and Failure Isolation
 
 **Status:** Decided  
 **Date:** 2026-09-03
@@ -26,9 +30,12 @@ Configuration:
 - **Bounded cost:** Extraction no longer consumes unbounded time; event loop is unblocked 120s after the last chunk embedding completes.
 - **Graceful:** Timed-out extraction doesn't fail the index; search still works (entities and communities are optional enhancements).
 - **Observability:** Logs show which files had extraction timeouts, enabling investigation of slow LLM or large files.
+- **Timeout basis:** 120s default exceeds observed p95 extraction latency of ~90s in testing, providing buffer for variation while bounding indefinite hangs.
 
 ## Consequences
 
 - Extraction task must complete or timeout within 120s. Very large files or slow LLM may hit this; user can increase `EXTRACTION_TIMEOUT_SECONDS` if needed.
+- **Success scope boundary:** Extraction timeout keeps file-level IndexResult.success=true; success=true means file indexed (partial or complete). Only chunk embedding failure sets success=false (see ADR-0068). Extraction timeouts are reported separately via the `extraction_timeouts` counter.
 - Fire-and-forget tasks are now properly bounded; no indefinite hanging.
 - Background task completion is no longer blocking on lifespan shutdown; even if extraction is pending, the server can shut down cleanly (after graceful timeout).
+- Non-timeout extraction exceptions (parse errors, API failures, file locks) are logged as warnings and counted separately from timeouts; they do not degrade file-level success. Extraction remains optional for search.

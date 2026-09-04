@@ -1,14 +1,14 @@
 # Stalling Fix Implementation Plan
 
-Design decisions locked in via grilling. ADRs below capture architecture; implementation phases follow.
+Design Decisions Reached During Grilling. ADRs below capture architecture; implementation phases follow.
 
 ## ADRs (ground truth)
 
-- [[docs/adr/0053-embedding-batch-isolation.md]] — Embedding batch failures isolated; partial index on failure
-- [[docs/adr/0054-entity-extraction-timeout.md]] — Per-file extraction timeout (120s default, env override)
-- [[docs/adr/0055-community-detection-offload.md]] — Community detection to thread pool with timeout (300s default)
-- [[docs/adr/0056-init-transparency.md]] — Init errors show elapsed time + component; respect autostart config
-- [[docs/adr/0057-sync-strategy-for-stale-index.md]] — Staleness detection adds messaging, no auto-refresh
+- [[docs/adr/0068-embedding-batch-isolation.md]] — Embedding batch failures isolated; partial index on failure
+- [[docs/adr/0069-entity-extraction-timeout.md]] — Per-file extraction timeout (120s default, env override)
+- [[docs/adr/0070-community-detection-offload.md]] — Community detection to thread pool with timeout (300s default)
+- [[docs/adr/0071-init-transparency.md]] — Init errors show elapsed time + component; respect autostart config
+- [[docs/adr/0072-sync-strategy-for-stale-index.md]] — Staleness detection adds messaging, no auto-refresh
 
 ## Implementation scope
 
