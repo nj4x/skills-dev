@@ -826,7 +826,7 @@ async def index_codebase(
     respect_gitignore: Annotated[bool, Field(description="Skip files/dirs matched by .gitignore")] = True,
     respect_git_exclude: Annotated[bool, Field(description="Skip files/dirs matched by .git/info/exclude")] = True,
 ) -> dict:
-    """Bring an entire project root into the index so search_root can use it — the first step before searching. Pass dry_run=true to preview status+plan without indexing. If the root already appears indexed it returns indexed=false with a message unless force=true triggers a replace-safe re-index."""
+    """Bring an entire project root into the index so search_root can use it — the first step before searching. Pass dry_run=true to preview status+plan without indexing. If the root already appears indexed it returns indexed=false with a message unless force=true triggers a replace-safe re-index. When force=true the status omits stale_since and staleness_message, since staleness detection is bypassed."""
     if not dry_run and not increment_operations():
         return _operation_rejected()
     try:
@@ -834,6 +834,10 @@ async def index_codebase(
         pipeline = app_ctx.pipeline
         root = str(resolve_path(root_path))
         status = await pipeline.get_indexing_status(root)
+        if force:
+            # Force bypasses staleness detection; suppress stale_since from response
+            status.pop("stale_since", None)
+            status.pop("staleness_message", None)
         plan = await pipeline.preview_reindex([root], recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude)
         if dry_run:
             return {"success": True, "dry_run": True, "status": status, "plan": plan}

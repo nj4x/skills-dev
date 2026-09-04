@@ -20,7 +20,7 @@ Without automatic incremental re-indexing, users must either:
 
 No automatic re-indexing on stale detection. Instead:
 
-1. **Clear status messaging:** `index_codebase()` result includes a field `stale_since` (ISO 8601 timestamp) if the index is older than a threshold (default 7 days, configurable via `STALE_INDEX_THRESHOLD_DAYS`). This surfaces staleness to the caller.
+1. **Clear status messaging:** `index_codebase()` result includes a field `stale_since` (ISO 8601 timestamp) if the index is older than a threshold (default 7 days, configurable via `STALE_INDEX_THRESHOLD_DAYS`). This surfaces staleness to the caller. When `force=true`, staleness detection is bypassed, so `stale_since` and `staleness_message` are omitted from the result — the staleness condition is still computed internally but is not surfaced.
 
 **Staleness threshold basis:** 7-day default chosen as a common artifact refresh window; users can tune `STALE_INDEX_THRESHOLD_DAYS` env var to match their codebase churn rate.
 
