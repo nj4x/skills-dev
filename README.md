@@ -207,7 +207,7 @@ Registers the local `mcp-vectors` server (requires Qdrant running at `localhost:
 
 The following 19 skills were created originally for this repository:
 
-- **engineering**: `refactor-claude-md`, `resolving-merge-conflicts`
+- **engineering**: `refactor-agents-md`, `resolving-merge-conflicts`
 - **requirements**: `FS-skill`, `SRS-skill`, `data-view-skill`
 - **planning**: `critic`, `repeat`, `goal-loop`
 - **publishing**: `html-view`, `interview-style-doc-building`
