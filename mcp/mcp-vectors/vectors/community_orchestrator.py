@@ -95,8 +95,15 @@ class CommunityOrchestrator:
         reports_retry_max_ttl_seconds: Optional[int] = None,
         reports_max_attempts: Optional[int] = None,
         reports_claim_lease_seconds: Optional[int] = None,
+        community_detection_timeout_seconds: Optional[int] = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
+        # Community detection timeout (ADR-0055)
+        self._community_detection_timeout_seconds = (
+            community_detection_timeout_seconds
+            if community_detection_timeout_seconds is not None
+            else 300  # Default 300s; will be overridden by Config value
+        )
         self._graph_store = graph_store
         self._communities = communities
         self._lm_client = lm_client
@@ -357,6 +364,8 @@ class CommunityOrchestrator:
         On a successful publish of a non-empty (or empty) build it marks the
         detection build complete and atomically flags ``reports_dirty=1`` so the
         lazy reports phase (and consumers) know report text is stale.
+
+        Offloads detect_communities to a thread with timeout per ADR-0055.
         """
         started_at = time.time()
         self._emit_progress(root_id, "detecting")
@@ -388,7 +397,19 @@ class CommunityOrchestrator:
             if not snapshot.entities:
                 clusters: list = []
             else:
-                communities_tuple, _algo = detect_communities(snapshot)
+                # Offload community detection to thread with timeout per ADR-0055
+                try:
+                    communities_tuple, _algo = await asyncio.wait_for(
+                        asyncio.to_thread(detect_communities, snapshot),
+                        timeout=self._community_detection_timeout_seconds
+                    )
+                except asyncio.TimeoutError:
+                    elapsed = time.time() - started_at
+                    logger.warning(
+                        f"Community detection timed out after {elapsed:.1f}s for root_id={root_id}"
+                    )
+                    await finish_failure("detection_timeout")
+                    return
                 clusters = [
                     {
                         "community_id": c.community_id,

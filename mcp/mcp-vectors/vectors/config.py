@@ -220,6 +220,15 @@ class Config:
     # search_root channel timeout (seconds); validated > 0 at startup, defaults to 60
     search_root_timeout_seconds: int = 60      # SEARCH_ROOT_TIMEOUT_SECONDS
 
+    # Entity extraction timeout (seconds); defaults to 120s, env override via EXTRACTION_TIMEOUT_SECONDS
+    extraction_timeout_seconds: int = 120      # EXTRACTION_TIMEOUT_SECONDS
+
+    # Community detection timeout (seconds); defaults to 300s, env override via COMMUNITY_DETECTION_TIMEOUT_SECONDS
+    community_detection_timeout_seconds: int = 300  # COMMUNITY_DETECTION_TIMEOUT_SECONDS
+
+    # Stale index threshold (days); index older than this is considered stale, defaults to 7
+    stale_index_threshold_days: int = 7        # STALE_INDEX_THRESHOLD_DAYS
+
     # LLM provider selection
     llm_provider: str = "lm_studio"           # LLM_PROVIDER: "lm_studio" | "anthproxy"
     anthproxy_url: str = "http://127.0.0.1:8082"  # ANTHPROXY_URL
@@ -270,6 +279,9 @@ def get_config() -> Config:
         targeting_log_full_query=_parse_bool(os.getenv("TARGETING_LOG_FULL_QUERY"), default=False),
         query_log_max_chars=int(os.getenv("QUERY_LOG_MAX_CHARS", "64")),
         search_root_timeout_seconds=int(os.getenv("SEARCH_ROOT_TIMEOUT_SECONDS") or "60") or 60,
+        extraction_timeout_seconds=int(os.getenv("EXTRACTION_TIMEOUT_SECONDS", "120")),
+        community_detection_timeout_seconds=int(os.getenv("COMMUNITY_DETECTION_TIMEOUT_SECONDS", "300")),
+        stale_index_threshold_days=int(os.getenv("STALE_INDEX_THRESHOLD_DAYS", "7")),
     )
 
 

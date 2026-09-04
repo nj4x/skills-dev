@@ -277,40 +277,69 @@ class RAGPipeline:
         self._llm_client_obj = value
 
     async def initialize(self) -> None:
-        """Initialize all components."""
+        """Initialize all components with elapsed time tracking for transparency (ADR-0056)."""
         if self._initialized:
             return
         logger.info("Initializing RAG pipeline...")
-        await asyncio.to_thread(ensure_qdrant_running, self.config.qdrant_url)
-        await self.lm_client.initialize()
-        if self.llm_client is not self.lm_client:
-            await self.llm_client.initialize()
-        self.vector_store.update_vector_size(self.lm_client.embedding_dimension)
-        await self.vector_store.initialize()
-        if ENTITY_EXTRACTION:
-            self._graph_store = GraphStore(db_dir=GRAPH_DB_DIR)
-            if self._communities is None:
-                self._communities = QdrantCommunities(url=self.config.qdrant_url)
-            await self._communities.initialize(
-                embedding_dimension=self.lm_client.embedding_dimension
+        init_start = time.time()
+        try:
+            # Qdrant startup
+            qdrant_start = time.time()
+            await asyncio.to_thread(ensure_qdrant_running, self.config.qdrant_url)
+            qdrant_elapsed = time.time() - qdrant_start
+            logger.info(f"Qdrant startup completed in {qdrant_elapsed:.1f}s")
+            
+            # LM Studio initialization
+            lm_start = time.time()
+            await self.lm_client.initialize()
+            if self.llm_client is not self.lm_client:
+                await self.llm_client.initialize()
+            lm_elapsed = time.time() - lm_start
+            logger.info(f"LM Studio initialization completed in {lm_elapsed:.1f}s")
+            
+            self.vector_store.update_vector_size(self.lm_client.embedding_dimension)
+            await self.vector_store.initialize()
+            
+            if ENTITY_EXTRACTION:
+                graph_start = time.time()
+                self._graph_store = GraphStore(db_dir=GRAPH_DB_DIR)
+                if self._communities is None:
+                    self._communities = QdrantCommunities(url=self.config.qdrant_url)
+                await self._communities.initialize(
+                    embedding_dimension=self.lm_client.embedding_dimension
+                )
+                self._qdrant_entities = QdrantEntities(url=self.config.qdrant_url)
+                await self._qdrant_entities.initialize(
+                    embedding_dimension=self.lm_client.embedding_dimension
+                )
+                self._community_orchestrator = CommunityOrchestrator(
+                    graph_store=self._graph_store,
+                    communities=self._communities,
+                    lm_client=self.lm_client,
+                    llm_client=self.llm_client,
+                    progress_callback=self._on_community_progress,
+                    on_result=self._on_community_build_result,
+                    community_detection_timeout_seconds=self.config.community_detection_timeout_seconds,
+                )
+                self._community_orchestrator.schedule_dirty_roots()
+                graph_elapsed = time.time() - graph_start
+                logger.info(f"Graph components initialization completed in {graph_elapsed:.1f}s")
+                
+            if self.config.reconcile_on_startup:
+                reconcile_start = time.time()
+                await self.reconcile_registry()
+                reconcile_elapsed = time.time() - reconcile_start
+                logger.info(f"Startup reconciliation completed in {reconcile_elapsed:.1f}s")
+                
+            total_elapsed = time.time() - init_start
+            self._initialized = True
+            logger.info(f"RAG pipeline initialized in {total_elapsed:.1f}s")
+        except Exception as e:
+            total_elapsed = time.time() - init_start
+            logger.error(
+                f"RAG pipeline initialization FAILED after {total_elapsed:.1f}s: {type(e).__name__}: {e}"
             )
-            self._qdrant_entities = QdrantEntities(url=self.config.qdrant_url)
-            await self._qdrant_entities.initialize(
-                embedding_dimension=self.lm_client.embedding_dimension
-            )
-            self._community_orchestrator = CommunityOrchestrator(
-                graph_store=self._graph_store,
-                communities=self._communities,
-                lm_client=self.lm_client,
-                llm_client=self.llm_client,
-                progress_callback=self._on_community_progress,
-                on_result=self._on_community_build_result,
-            )
-            self._community_orchestrator.schedule_dirty_roots()
-        if self.config.reconcile_on_startup:
-            await self.reconcile_registry()
-        self._initialized = True
-        logger.info("RAG pipeline initialized")
+            raise
 
     async def reconcile_registry(self) -> dict:
         """Run durable startup reconciliation of legacy roots (ADR-0008).
@@ -856,12 +885,14 @@ class RAGPipeline:
         """Background coroutine: extract entities and merge into graph store.
 
         Never propagates exceptions — failures are logged as warnings so a
-        broken LLM backend cannot crash the indexing pipeline.
+        broken LLM backend cannot crash the indexing pipeline. Wraps extraction
+        in asyncio.wait_for with config.extraction_timeout_seconds timeout.
         """
         stats = self._get_or_create_stats(root_id_for_graph)
         stats.files_pending_extraction += 1
         if stats.extraction_started_at is None:
             stats.extraction_started_at = time.time()
+        extraction_start = time.time()
         try:
             chunk_semaphore = asyncio.Semaphore(2)
             extractor = EntityExtractor(
@@ -872,9 +903,19 @@ class RAGPipeline:
                     "max_prompt_chars": self.config.anthproxy_llm_max_prompt_chars}
                    if self.config.llm_provider == "anthproxy" else {}),
             )
-            entity_map = await extractor.extract_file(
-                str(file_path), doc, root_id_for_graph, chunk_semaphore
-            )
+            # Wrap extraction in timeout per ADR-0054
+            try:
+                entity_map = await asyncio.wait_for(
+                    extractor.extract_file(str(file_path), doc, root_id_for_graph, chunk_semaphore),
+                    timeout=self.config.extraction_timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                elapsed = time.time() - extraction_start
+                logger.warning(
+                    f"Entity extraction timed out after {elapsed:.1f}s for "
+                    f"{sanitize_for_log(str(file_path))} (timeout={self.config.extraction_timeout_seconds}s)"
+                )
+                return  # Fire-and-forget safety: return without retry
             annotate_chunks(doc, entity_map)
             _version, stubs, _deleted_ids = await asyncio.to_thread(
                 self._graph_store.replace_file_entity_map,
@@ -963,7 +1004,20 @@ class RAGPipeline:
                 return await self.index_file(file_path, root_path=root_path)
 
         tasks = [index_with_semaphore(file_path) for file_path in files]
-        return await asyncio.gather(*tasks, return_exceptions=False)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Convert exceptions to IndexResult objects for isolation
+        processed_results = []
+        for task_result in results:
+            if isinstance(task_result, Exception):
+                processed_results.append(IndexResult(
+                    success=False,
+                    file_path="<unknown>",
+                    file_name="<unknown>",
+                    error=f"Embedding batch failed: {type(task_result).__name__}: {task_result}"
+                ))
+            else:
+                processed_results.append(task_result)
+        return processed_results
 
     async def _index_files_parallel(self, files: list[Path], root_path: Path) -> list[IndexResult]:
         """Helper to index a list of files in parallel (for sync_directory)."""
@@ -976,7 +1030,20 @@ class RAGPipeline:
                 return await self.index_file(file_path, root_path=root_path)
 
         tasks = [index_with_semaphore(file_path) for file_path in files]
-        return await asyncio.gather(*tasks, return_exceptions=False)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # Convert exceptions to IndexResult objects for isolation
+        processed_results = []
+        for task_result in results:
+            if isinstance(task_result, Exception):
+                processed_results.append(IndexResult(
+                    success=False,
+                    file_path="<unknown>",
+                    file_name="<unknown>",
+                    error=f"Embedding batch failed: {type(task_result).__name__}: {task_result}"
+                ))
+            else:
+                processed_results.append(task_result)
+        return processed_results
 
     async def sync_directory(
         self,
@@ -1626,7 +1693,7 @@ class RAGPipeline:
         }
 
     async def get_indexing_status(self, root_path: Optional[str] = None) -> dict:
-        """Report index and metadata status for a root path."""
+        """Report index and metadata status for a root path, including staleness detection (ADR-0057)."""
         if not self._initialized:
             await self.initialize()
         metadata = await self.vector_store.get_file_metadata_summary(root_path)
@@ -1634,6 +1701,21 @@ class RAGPipeline:
         if metadata["legacy_file_count"]:
             status = "legacy_metadata" if metadata["legacy_file_count"] == metadata["file_count"] else "partially_indexed"
         secret_audit = await self.audit_indexed_secrets(include_content_scan=False, max_scan_points=min(self.config.max_scroll_points, 10_000))
+        
+        # Staleness detection (ADR-0057): check if oldest indexed file is older than threshold
+        stale_since = None
+        staleness_message = None
+        if metadata.get("file_count", 0) > 0 and metadata.get("oldest_indexed_at"):
+            oldest_indexed_ts = metadata["oldest_indexed_at"]
+            now = time.time()
+            age_days = (now - oldest_indexed_ts) / (24 * 3600)
+            if age_days > self.config.stale_index_threshold_days:
+                stale_since = datetime.datetime.utcfromtimestamp(oldest_indexed_ts).strftime("%Y-%m-%dT%H:%M:%SZ")
+                staleness_message = (
+                    f"Index is stale (last updated {int(age_days)} days ago, threshold={self.config.stale_index_threshold_days} days). "
+                    f"Use force=true to re-index or call sync_directory() to reconcile (faster)."
+                )
+        
         result = {
             "success": True,
             "root_path": str(PathPolicy.resolve(root_path)) if root_path else None,
@@ -1645,6 +1727,10 @@ class RAGPipeline:
             },
             "next_action": "index_codebase" if metadata["file_count"] == 0 else "search_root",
         }
+        # Add staleness info when detected
+        if stale_since:
+            result["stale_since"] = stale_since
+            result["staleness_message"] = staleness_message
         if root_path is None:
             active = self._active_root_filter()
             if active is not None:
