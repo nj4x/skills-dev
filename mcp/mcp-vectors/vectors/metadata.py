@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 from pathlib import Path
-from typing import Optional
+from typing import Any, Iterable, Optional
 
 from .paths import PathPolicy
 
@@ -120,6 +120,49 @@ def is_v2_payload(payload: dict) -> bool:
     return int(payload.get("metadata_version", 1)) >= 2
 
 
+def coerce_epoch_seconds(value: Any) -> Optional[float]:
+    """Convert a chunk's indexed_at into epoch seconds.
+    
+    - int/float (but not bool) -> float(value)
+    - str -> parse as ISO-8601, return .timestamp()
+    - anything else or unparseable -> None
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        s = value
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        try:
+            dt = _dt.datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_dt.timezone.utc)
+            return dt.timestamp()
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def oldest_indexed_at(file_records: Iterable[dict]) -> Optional[float]:
+    """Return the oldest indexed_at timestamp (epoch seconds) from file records.
+    
+    Returns None if ANY record lacks a parseable timestamp (conservative fallback).
+    """
+    timestamps = [
+        coerce_epoch_seconds(record.get("indexed_at"))
+        for record in file_records
+    ]
+    valid = [ts for ts in timestamps if ts is not None]
+    # Conservative fallback: if any record lacks a timestamp, return None (ADR-0072)
+    if len(valid) < len(timestamps):
+        return None
+    if not valid:
+        return None
+    return min(valid)
+
+
 def extract_file_record_from_payload(payload: dict) -> dict:
     """Extract file-level metadata from either v1 or v2 payloads."""
     file_path = payload.get("path_key") or payload.get("file_path") or ""
@@ -138,6 +181,7 @@ def extract_file_record_from_payload(payload: dict) -> dict:
         "file_size": payload.get("file_size"),
         "mtime_ns": payload.get("mtime_ns"),
         "last_updated": payload.get("modified_time") or payload.get("indexed_at") or payload.get("indexed_time"),
+        "indexed_at": payload.get("indexed_at") if payload.get("indexed_at") is not None else payload.get("indexed_time"),
         "metadata_version": payload.get("metadata_version", 1),
         "legacy_metadata": not is_v2_payload(payload),
         "chunk_count": payload.get("chunk_count"),

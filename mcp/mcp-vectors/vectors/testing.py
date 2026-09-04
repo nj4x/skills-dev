@@ -6,6 +6,7 @@ import math
 import time
 from typing import Optional
 
+from .metadata import oldest_indexed_at
 from .paths import PathPolicy
 from .qdrant import SearchResult, make_chunk_point_id
 
@@ -183,6 +184,7 @@ class InMemoryVectorStore:
                     "mtime_ns": payload.get("mtime_ns", 0),
                     "modified_time": payload.get("modified_time", ""),
                     "last_updated": payload.get("indexed_at"),
+                    "indexed_at": payload.get("indexed_at") if payload.get("indexed_at") is not None else payload.get("indexed_time"),
                     "chunk_count": 0,
                     "metadata_versions": {},
                     "metadata_version": payload.get("metadata_version", 2),
@@ -222,6 +224,7 @@ class InMemoryVectorStore:
             "sample_files": listing["files"][:20],
             "metadata_version_distribution": distribution,
             "legacy_file_count": legacy_files,
+            "oldest_indexed_at": oldest_indexed_at(listing["files"]),
             "partial": False,
             "scan_truncated": False,
         }

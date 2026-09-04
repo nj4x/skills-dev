@@ -22,7 +22,7 @@ from qdrant_client.http.models import (
 )
 
 from .config import sanitize_for_log
-from .metadata import build_chunk_payload_v2, build_chunk_payload_v3, extract_file_record_from_payload
+from .metadata import build_chunk_payload_v2, build_chunk_payload_v3, extract_file_record_from_payload, oldest_indexed_at
 from .paths import PathPolicy
 
 logger = logging.getLogger(__name__)
@@ -649,6 +649,7 @@ class QdrantVectorStore:
             "sample_files": listing["files"][:20],
             "metadata_version_distribution": distribution,
             "legacy_file_count": legacy_files,
+            "oldest_indexed_at": oldest_indexed_at(listing["files"]),
             "partial": listing["partial"],
             "scan_truncated": listing["scan_truncated"],
         }

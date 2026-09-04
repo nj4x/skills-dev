@@ -51,7 +51,8 @@ class VectorStoreProtocol(Protocol):
         max_scan_points: Optional[int] = None,
     ) -> dict: ...
 
-    async def get_file_metadata_summary(self, base_path: Optional[str] = None) -> dict: ...
+    async def get_file_metadata_summary(self, base_path: Optional[str] = None) -> dict:
+        """Return file metadata summary with keys: file_count, oldest_indexed_at, partial, scan_truncated."""
 
     async def is_path_indexed(self, path: str) -> bool: ...
 

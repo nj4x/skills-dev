@@ -40,6 +40,7 @@ from .parser import DocumentParser
 from .protocols import VectorStoreProtocol, CommunityVectorStoreProtocol
 from .reconciliation import ReconciliationEpoch, RegistryReconciler
 from .qdrant import QdrantVectorStore, QdrantCommunities, QdrantEntities, CollectionMissingError
+from .metadata import coerce_epoch_seconds
 from .qdrant_autostart import ensure_qdrant_running
 from .safety import ExclusionPolicy
 
@@ -1723,7 +1724,7 @@ class RAGPipeline:
         }
 
     async def get_indexing_status(self, root_path: Optional[str] = None) -> dict:
-        """Report index and metadata status for a root path, including staleness detection (ADR-0057)."""
+        """Report index and metadata status for a root path, including staleness detection (ADR-0072)."""
         if not self._initialized:
             await self.initialize()
         metadata = await self.vector_store.get_file_metadata_summary(root_path)
@@ -1732,19 +1733,25 @@ class RAGPipeline:
             status = "legacy_metadata" if metadata["legacy_file_count"] == metadata["file_count"] else "partially_indexed"
         secret_audit = await self.audit_indexed_secrets(include_content_scan=False, max_scan_points=min(self.config.max_scroll_points, 10_000))
         
-        # Staleness detection (ADR-0057): check if oldest indexed file is older than threshold
+        # Staleness detection (ADR-0072): check if oldest indexed file is older than threshold
         stale_since = None
         staleness_message = None
-        if metadata.get("file_count", 0) > 0 and metadata.get("oldest_indexed_at"):
-            oldest_indexed_ts = metadata["oldest_indexed_at"]
+        if metadata.get("file_count", 0) > 0:
+            # Defensive: a future store implementation may not route through oldest_indexed_at()
+            oldest_indexed_ts = coerce_epoch_seconds(metadata.get("oldest_indexed_at"))
             now = time.time()
-            age_days = (now - oldest_indexed_ts) / (24 * 3600)
-            if age_days > self.config.stale_index_threshold_days:
-                stale_since = datetime.datetime.utcfromtimestamp(oldest_indexed_ts).strftime("%Y-%m-%dT%H:%M:%SZ")
-                staleness_message = (
-                    f"Index is stale (last updated {int(age_days)} days ago, threshold={self.config.stale_index_threshold_days} days). "
-                    f"Use force=true to re-index or call sync_directory() to reconcile (faster)."
-                )
+            if oldest_indexed_ts is None:
+                # Absent/corrupted timestamp: treat as stale; re-indexing repopulates timestamps automatically on the next index_codebase call.
+                stale_since = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                staleness_message = "Index has no timestamp metadata; treating as stale for safety"
+            else:
+                age_days = (now - oldest_indexed_ts) / (24 * 3600)
+                if age_days > self.config.stale_index_threshold_days:
+                    stale_since = datetime.datetime.fromtimestamp(oldest_indexed_ts, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    staleness_message = (
+                        f"Index is stale (last updated {int(age_days)} days ago, threshold={self.config.stale_index_threshold_days} days). "
+                        f"Use force=true to re-index or call sync_directory() to reconcile (faster)."
+                    )
         
         result = {
             "success": True,
@@ -1757,6 +1764,9 @@ class RAGPipeline:
             },
             "next_action": "index_codebase" if metadata["file_count"] == 0 else "search_root",
         }
+        # Add scan truncation flag if metadata scan was truncated (fix for false "not stale" verdict)
+        if metadata.get("scan_truncated") or metadata.get("partial"):
+            result["oldest_indexed_at_truncated"] = True
         # Add staleness info when detected
         if stale_since:
             result["stale_since"] = stale_since
