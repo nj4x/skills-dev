@@ -509,7 +509,30 @@ class CommunityOrchestrator:
                 _release_claim()
                 return
 
-            communities_tuple, _algo = detect_communities(snapshot)
+            # Offload community detection to thread with timeout per ADR-0070
+            # Note: asyncio.to_thread timeout does not terminate the underlying thread;
+            # on timeout the thread continues running in the default executor.
+            # Successive timeouts accumulate live threads. Future work: use a dedicated
+            # ThreadPoolExecutor with max_workers cap to bound resource usage.
+            try:
+                communities_tuple, _algo = await asyncio.wait_for(
+                    asyncio.to_thread(detect_communities, snapshot),
+                    timeout=self._community_detection_timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Community detection timed out after %ds for root_id=%s",
+                    self._community_detection_timeout_seconds, root_id
+                )
+                _release_claim()
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Community detection failed for root_id=%s: %s", root_id, exc
+                )
+                _release_claim()
+                return
+
             all_clusters = list(communities_tuple)
 
             # Filter to targeted subset when requested.
@@ -678,7 +701,30 @@ class CommunityOrchestrator:
                 self._emit_result(root_id, claimed_version, True, "ready", started_at, None)
                 return
 
-            communities_tuple, _algo = detect_communities(snapshot)
+            # Offload community detection to thread with timeout per ADR-0070
+            # Note: asyncio.to_thread timeout does not terminate the underlying thread;
+            # on timeout the thread continues running in the default executor.
+            # Successive timeouts accumulate live threads. Future work: use a dedicated
+            # ThreadPoolExecutor with max_workers cap to bound resource usage.
+            try:
+                communities_tuple, _algo = await asyncio.wait_for(
+                    asyncio.to_thread(detect_communities, snapshot),
+                    timeout=self._community_detection_timeout_seconds
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Community detection timed out after %ds for root_id=%s",
+                    self._community_detection_timeout_seconds, root_id
+                )
+                await finish_failure("detection_timeout")
+                return
+            except Exception as exc:
+                logger.warning(
+                    "Community detection failed for root_id=%s: %s", root_id, exc
+                )
+                await finish_failure("detection_error")
+                return
+
             self._emit_progress(root_id, "reporting")
             reports = await generate_all_reports(
                 list(communities_tuple), snapshot, self._llm_client

@@ -984,3 +984,169 @@ def test_targeted_reports_failure_does_not_contaminate_failure_counter():
         assert "r1" not in orchestrator._reports_failures
 
     asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 21. Timeout handling in _run_reports_attempt (line 512)
+# ---------------------------------------------------------------------------
+
+
+def test_run_reports_attempt_detect_community_timeout_logs_warning_and_releases_claim():
+    """TimeoutError during detect_communities in _run_reports_attempt must log warning,
+    release claim, and return without failure cascade."""
+
+    async def _run():
+        orchestrator, progress = _make_orchestrator()
+        orchestrator._graph_store.get_committed_generation.return_value = (1, "build-timeout")
+        orchestrator._graph_store.read_graph_snapshot.return_value = _make_snapshot(
+            graph_version=1
+        )
+
+        def detect_times_out(snapshot):
+            raise asyncio.TimeoutError()
+
+        with (
+            patch(
+                "vectors.community_orchestrator.detect_communities",
+                side_effect=detect_times_out,
+            ) as mock_detect,
+            patch("vectors.community_orchestrator.logger") as mock_logger,
+        ):
+            await orchestrator._run_reports_attempt("r1")
+            mock_detect.assert_called_once()
+            # Verify warning was logged with timeout message
+            mock_logger.warning.assert_called()
+            assert any(
+                "timed out" in str(call).lower()
+                for call in mock_logger.warning.call_args_list
+            )
+
+        # Claim must be released
+        orchestrator._graph_store.clear_report_claim.assert_called_with("r1", "test-claim-token")
+        # Must NOT commit or record failure (timeout = skip, not fail)
+        orchestrator._graph_store.commit_report_build.assert_not_called()
+        assert "r1" not in orchestrator._reports_failures
+        # Progress must not reach "reporting" phase (stopped at detection)
+        assert not any(phase == "reporting" for _, phase in progress)
+
+    asyncio.run(_run())
+
+
+def test_run_reports_attempt_detect_community_generic_exception_handling():
+    """Generic Exception during detect_communities in _run_reports_attempt must log warning,
+    release claim, and return without failure cascade."""
+
+    async def _run():
+        orchestrator, progress = _make_orchestrator()
+        orchestrator._graph_store.get_committed_generation.return_value = (1, "build-exception")
+        orchestrator._graph_store.read_graph_snapshot.return_value = _make_snapshot(
+            graph_version=1
+        )
+
+        def detect_raises(snapshot):
+            raise RuntimeError("detection crashed")
+
+        with (
+            patch(
+                "vectors.community_orchestrator.detect_communities",
+                side_effect=detect_raises,
+            ) as mock_detect,
+            patch("vectors.community_orchestrator.logger") as mock_logger,
+        ):
+            await orchestrator._run_reports_attempt("r1")
+            mock_detect.assert_called_once()
+            # Verify warning was logged
+            mock_logger.warning.assert_called()
+            assert any(
+                "failed" in str(call).lower()
+                for call in mock_logger.warning.call_args_list
+            )
+
+        # Claim must be released
+        orchestrator._graph_store.clear_report_claim.assert_called_with("r1", "test-claim-token")
+        # Must NOT commit or record failure
+        orchestrator._graph_store.commit_report_build.assert_not_called()
+        assert "r1" not in orchestrator._reports_failures
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------------------------------------
+# 22. Timeout handling in _run_one_attempt (line 681)
+# ---------------------------------------------------------------------------
+
+
+def test_run_one_attempt_detect_community_timeout_calls_finish_failure():
+    """TimeoutError during detect_communities in _run_one_attempt must call
+    finish_failure with detection_timeout error."""
+
+    async def _run():
+        orchestrator, progress = _make_orchestrator()
+        snapshot = _make_snapshot()
+        orchestrator._graph_store.read_graph_snapshot.return_value = snapshot
+
+        def detect_times_out(snapshot):
+            raise asyncio.TimeoutError()
+
+        with (
+            patch(
+                "vectors.community_orchestrator.detect_communities",
+                side_effect=detect_times_out,
+            ) as mock_detect,
+            patch("vectors.community_orchestrator.logger") as mock_logger,
+        ):
+            await orchestrator._run_one_attempt("r1", 1, "build-timeout")
+            mock_detect.assert_called_once()
+            # Verify warning was logged
+            mock_logger.warning.assert_called()
+            assert any(
+                "timed out" in str(call).lower()
+                for call in mock_logger.warning.call_args_list
+            )
+
+        # finish_failure must be called with timeout error
+        orchestrator._graph_store.fail_community_build.assert_called_once_with(
+            "r1", 1, "build-timeout"
+        )
+        # Progress must not reach "reporting" phase
+        assert not any(phase == "reporting" for _, phase in progress)
+
+    asyncio.run(_run())
+
+
+def test_run_one_attempt_detect_community_generic_exception_handling():
+    """Generic Exception during detect_communities in _run_one_attempt must call
+    finish_failure with detection_error."""
+
+    async def _run():
+        orchestrator, progress = _make_orchestrator()
+        snapshot = _make_snapshot()
+        orchestrator._graph_store.read_graph_snapshot.return_value = snapshot
+
+        def detect_raises(snapshot):
+            raise RuntimeError("detection crashed")
+
+        with (
+            patch(
+                "vectors.community_orchestrator.detect_communities",
+                side_effect=detect_raises,
+            ) as mock_detect,
+            patch("vectors.community_orchestrator.logger") as mock_logger,
+        ):
+            await orchestrator._run_one_attempt("r1", 1, "build-exception")
+            mock_detect.assert_called_once()
+            # Verify warning was logged
+            mock_logger.warning.assert_called()
+            assert any(
+                "failed" in str(call).lower()
+                for call in mock_logger.warning.call_args_list
+            )
+
+        # finish_failure must be called
+        orchestrator._graph_store.fail_community_build.assert_called_once_with(
+            "r1", 1, "build-exception"
+        )
+        # Progress must not reach "reporting" phase
+        assert not any(phase == "reporting" for _, phase in progress)
+
+    asyncio.run(_run())
