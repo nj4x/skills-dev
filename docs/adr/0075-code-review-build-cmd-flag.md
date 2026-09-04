@@ -18,7 +18,9 @@ With the Step 2.2 confirmation prompt removed (ADR 0073), there is no interactiv
 
 Add `--build-cmd "<cmd>"` as a recognized flag to the code-review skill. When supplied, override the detected default and run the supplied command instead.
 
-For Gradle projects, validate that the supplied command includes `openapi3` before execution (Step 2.3). If non-compliant, refuse to run and ask the user to fix the command or explicitly waive the gate.
+For Unknown projects (no recognized build descriptor), treat `--build-cmd` as providing the command to run — skip the Step 2.2 prompt entirely and proceed to Step 2.3 validation.
+
+For Gradle projects, validate that the supplied command includes `openapi3` before execution (Step 2.3). If non-compliant, refuse to run and fail fast — the skill exits with a diagnostic; the user must re-invoke with a corrected `--build-cmd` or use `--no-build` to skip the build entirely.
 
 ## Rationale
 
@@ -32,6 +34,9 @@ For Gradle projects, validate that the supplied command includes `openapi3` befo
 
 - `--build-cmd` is added as a first-class parameter.
 - When supplied, it overrides the project-type default detected in Step 2.1.
+- For Unknown projects, `--build-cmd` eliminates the Step 2.2 prompt (user provided a command; no guess needed).
 - Gradle compliance check (Step 2.3) validates all supplied commands, not just defaults.
-- Non-compliant Gradle commands are refused; user must fix or waive with `--no-build`.
+- Non-compliant Gradle commands are refused with a diagnostic; user must re-invoke with a corrected `--build-cmd` or use `--no-build` to skip the build.
+- **Partial waiver (skip only the openapi3 requirement while running the build) is out of scope for this ADR** — deferred for future consideration if a use case for partial waiver emerges and compliance policy permits it.
+- When both `--no-build` and `--build-cmd` are supplied, `--no-build` takes precedence; the build is skipped entirely (see ADR-0074).
 - All other validation steps (build success, timeout handling, artifact verification) proceed as usual.

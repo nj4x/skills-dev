@@ -53,7 +53,7 @@ Each gate is a hard stop that enforces one invariant. Multiple enforcement block
 | **Scope** | Scope must be resolved before any repo, PR, build, or diff operation. | Scope Resolution section above; skill.md *Scope Resolution Contract*; each Step 1–2 gate opens with a scope check. |
 | **Divergence** (Step 1 / Step 3.5) | When `git status` shows the branch is behind or diverged, the agent must ask the user; never self-decide. | Step 1 "MANDATORY HARD GATE — Branch Divergence Check"; Step 3.5 in the Overview order; ⛔ "NO SELF-DECIDING" block after Step 1. |
 | **PR context** (Step 1.5) | When `gh` is available + committed scope, PR intake must complete (or be explicitly waived) before diff commands; the PR Integration State block must appear verbatim in the response. | Step 1.5 opening ⛔ block; Step 1.5.4 "HARD STOP" print-verbatim gate; Step 3 prerequisite list. |
-| **Build/OpenAPI** (Step 2) | Build must run (or be explicitly waived) and the OpenAPI artifact verified before diff/stat/log commands. Gradle commands must include `openapi3`. | Step 2 opening ⛔ block; Step 2.3 command-compliance check; Step 2.5 artifact verification; Step 3 prerequisite list; skill.md *Hard-Stop Rules*. |
+| **Build/OpenAPI** (Step 2) | Build must run (or be waived via `--no-build`) and the OpenAPI artifact verified before diff/stat/log commands. The command runs announced, not confirmed; Gradle commands must include `openapi3`. | Step 2 opening ⛔ block; Step 2.0 flag resolution; Step 2.2 announce-and-run; Step 2.3 command-compliance check; Step 2.5 artifact verification; Step 3 prerequisite list; skill.md *Hard-Stop Rules*. |
 | **Diff** | No diff/stat/log/file-inspection command before both the PR-context and build gates are resolved. | "Forbidden before the gates are resolved" block (Step 1.5/2 zone); Step 3 prerequisite block; skill.md *Hard-Stop Rules* diff bullets. Multiple blocks because each marks the boundary from a different angle (what-is-forbidden, what-resolves-it, when-you-may-proceed). |
 | **Subagent** (Step 4.9) | All code analysis runs in subagents; never inline in the orchestrator regardless of effort level. | Step 4.9 "MANDATORY TRANSITION" block; ⛔ forbidden list at end of Step 4.9. |
 | **Report** (Step 13) | Once analysis is done, the full structured report must be generated immediately; never ask permission; section headings are mandatory. | Step 13 ⛔ "NON-OPTIONAL" block; skill.md Activation Contract step 8. |
@@ -400,6 +400,18 @@ After PR intake completes, if `PROJECT_SRS` is EMPTY, extract any `#\d+` GitHub 
 
 Build the project before reviewing to ensure generated API specifications are up to date and to validate compilation and tests.
 
+### 2.0 Resolve Build Flags (before detection)
+
+Resolve `--no-build` and `--build-cmd` first; they short-circuit detection and the Unknown-project ask.
+
+| Flags supplied | Behavior |
+|---|---|
+| `--no-build` (with or without `--build-cmd`) | Skip Steps 2.1–2.5 entirely. Set `BUILD_STATUS = WAIVED`, `OPENAPI_STATUS = WAIVED`, `OPENAPI_ENDPOINT_COVERAGE = WAIVED`, `BUILD_COMMAND_COMPLIANCE = WAIVED`, `REVIEW_MODE = PARTIAL`. Proceed to Step 3. Record in the report: "⚠️ Build gate waived via `--no-build` — tests may be failing or specs may be stale." `--no-build` wins over `--build-cmd`: an explicit skip dominates a supplied command (ADR-0074). |
+| `--build-cmd "<cmd>"` alone | Set `BUILD_COMMAND = <cmd>`. Step 2.1 detection still runs, to resolve `PROJECT_TYPE` and `OPENAPI_APPLICABLE` (ADR-0075). |
+| neither | Detect in Step 2.1; Step 2.2 resolves `BUILD_COMMAND` from the project-type default. |
+
+The RTM prerequisite gate treats the `--no-build` waiver exactly like a verbal one: mutating modes (`autofix`/`review-to-merge`) stop unless the user re-confirms risk for the mutation specifically.
+
 ### 2.1 Detect Build Tool
 
 Detect the project type by checking for well-known build descriptor files in the project root, in priority order:
@@ -433,16 +445,24 @@ rg '"test"' package.json && echo "test script found" || echo "no test script"
 ```
 If no test script is defined, ask the user for the validation command.
 
-**Unknown**: Ask user: "No recognized build descriptor found. Please provide the validation command, or explicitly type `skip with risk accepted` to waive this gate."
+**Unknown**: no descriptor matched. Set `PROJECT_TYPE = Unknown` and `OPENAPI_APPLICABLE = NO` — no JVM descriptor was found that would require the artifact. Step 2.2 resolves what to run.
 
 Set `PROJECT_TYPE` to the detected type (e.g., `Python`, `Gradle`, `Node.js`, `Unknown`).
 Set `OPENAPI_APPLICABLE` to `YES` (Gradle/Maven) or `NO` (all others).
 
-### 2.2 Ask User for Confirmation
+### 2.2 Announce-and-Run
 
-Ask the user: "Detected **[PROJECT_TYPE]** project. Build/validation command: `[default command]`. Press Enter to use the default, provide a custom command, or explicitly type `skip with risk accepted` to waive this gate."
+Resolve `BUILD_COMMAND`: the `--build-cmd` value when supplied, otherwise the Step 2.1 project-type default.
 
-For non-JVM projects add: "(OpenAPI artifact verification does not apply to this project type.)"
+**When `BUILD_COMMAND` resolves** — **announce-and-run**: print the command in your response text at the **announced** consent level (Step 14 *Consent model*), then proceed to Step 2.3 (ADR-0073).
+
+```
+🔨 Running build: `<BUILD_COMMAND>`
+```
+
+For non-JVM project types add: "(OpenAPI artifact verification does not apply to this project type.)"
+
+**When `BUILD_COMMAND` does not resolve** — `PROJECT_TYPE = Unknown` and no `--build-cmd`, so there is no command to announce — ask: "No recognized build descriptor found. Please provide the validation command, or explicitly type `skip with risk accepted` to waive this gate." This is the build gate's only remaining ask.
 
 ### 2.3 Validate Build Command Compliance (before running)
 
@@ -453,10 +473,11 @@ For non-JVM projects add: "(OpenAPI artifact verification does not apply to this
 - **Explicitly insufficient**: `./gradlew clean build` (missing OpenAPI generation)
 - **Explicitly insufficient**: `./gradlew build -x test` (missing OpenAPI generation)
 
-**If user-provided Gradle command does NOT include `openapi3`:**
+**If the resolved `BUILD_COMMAND` (project default or `--build-cmd`) does NOT include `openapi3`:**
 - Do NOT execute the command
-- Respond that it is non-compliant with the review gate
-- Ask for a compliant command (or explicit `skip with risk accepted` waiver)
+- Set `BUILD_COMMAND_COMPLIANCE = FAIL`
+- Report that the command is non-compliant with the review gate, naming the missing `openapi3` task
+- **Stop the review.** The two recoveries are both re-invocations: `--build-cmd "<corrected command>"`, or `--no-build` to skip the build entirely. Waiving `openapi3` alone while still running the build is out of scope (ADR-0075).
 
 Non-compliant Gradle command execution is forbidden even if suggested earlier in the conversation.
 
@@ -466,7 +487,7 @@ Set `BUILD_COMMAND_COMPLIANCE = PASS/FAIL`.
 
 ### 2.4 Run Build
 
-**IF user provides a command or accepts the default** → Run it.
+**Run the `BUILD_COMMAND` announced in Step 2.2.**
 
 - **IF build succeeds** → Set `BUILD_STATUS = SUCCESS`.
   - If `OPENAPI_APPLICABLE = YES` → Continue to Step 2.5 (OpenAPI artifact verification).
@@ -480,7 +501,7 @@ Set `BUILD_COMMAND_COMPLIANCE = PASS/FAIL`.
   - **IF artifact NOT found** → Set `BUILD_STATUS = TIMED_OUT` and `OPENAPI_STATUS = UNKNOWN`. Ask user: "The build timed out and the OpenAPI artifact was not found. Would you like to re-run the build, continue in partial mode, or stop the review?" Do not proceed to diff analysis until the user responds.
 - **IF build times out and `OPENAPI_APPLICABLE = NO`** → Set `BUILD_STATUS = TIMED_OUT`, `OPENAPI_STATUS = NOT_APPLICABLE`. Ask user: "The build/test run timed out. Would you like to re-run, continue in partial mode, or stop the review?"
 
-**IF user explicitly says `skip with risk accepted`** → Set `BUILD_STATUS = WAIVED`, `OPENAPI_STATUS = WAIVED`, and `REVIEW_MODE = PARTIAL`. Proceed to Step 3. Note in the report: "⚠️ Build gate waived by user with risk accepted — tests may be failing or specs may be stale."
+**IF the user answers the Step 2.2 Unknown-project ask with `skip with risk accepted`** → Set `BUILD_STATUS = WAIVED`, `OPENAPI_STATUS = WAIVED`, and `REVIEW_MODE = PARTIAL`. Proceed to Step 3. Note in the report: "⚠️ Build gate waived by user with risk accepted — tests may be failing or specs may be stale." (The `--no-build` waiver is set in Step 2.0 and never reaches this step.)
 
 ### 2.5 Verify OpenAPI Artifacts (Gradle/Maven only — skip for other project types)
 
@@ -1218,10 +1239,11 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 - **Baseline mode:** [merge-base / merge-preview / working-tree]
 - **Merge-base SHA:** [output of git merge-base origin/$REVIEW_BASE_REF HEAD or N/A]
 
-### 🔨 Build Status: [SUCCESS / FAILED / WAIVED]
+### 🔨 Build Status: [SUCCESS / FAILED / TIMED_OUT / WAIVED]
 
 ### 🔎 Build/OpenAPI Verification (MANDATORY)
-- Build command used: `[exact command or "waived"]`
+- Build command used: `[exact command / "waived (--no-build)" / "waived (user)"]`
+- Build command source: `[project-type default / --build-cmd / user-supplied (Unknown ask) / N/A]`
 - Build command compliance: `[PASS / FAIL / WAIVED]`
 - Build exit status: `[0 / non-zero / waived]`
 - OpenAPI check command: `[exact command or "waived"]`
@@ -1496,13 +1518,14 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 ## Reviewer Self-Checklist (before final verdict)
 
-- [ ] `--effort` and `--scope` recorded at top of review
+- [ ] `--effort`, `--scope`, and any `--no-build` / `--build-cmd` flags recorded at top of review
 - [ ] **IF `--scope working-tree`**: Steps 1–1.5 skipped; `PR_INTEGRATION = DISABLED` set before Step 2
 - [ ] **IF `--scope committed`** (default): Step 1.5 resolved and recorded (`PR_INTEGRATION`, `PR_CONTEXT_COLLECTED`, reason if disabled)
 - [ ] **IF `--scope committed` and `gh` ready**: helper-script PR intake (`discover` + `triage`) completed and helper artifacts exist (or explicit user waiver recorded)
 - [ ] **IF `--scope committed`** (default): `PR_UNRESOLVED_THREAD_COUNT` recorded (0 is valid, missing is not)
-- [ ] Step 2 gate resolved (success+verified OR explicit waiver OR explicit partial-mode approval)
-- [ ] **IF `--scope committed`** (default): Build command validated (Gradle commands MUST include `openapi3`)
+- [ ] Step 2 gate resolved (success+verified OR `--no-build` waiver OR explicit user waiver OR explicit partial-mode approval)
+- [ ] **IF `--scope committed`** (default): Build command validated (Gradle commands MUST include `openapi3`; applies to `--build-cmd` values too)
+- [ ] Build command announced in response text before execution, or Unknown-project ask issued when no command could be resolved
 - [ ] **IF `--scope committed`** (default): Canonical OpenAPI artifact verified at `build/api-spec/openapi3.yaml` (snippets not treated as substitute)
 - [ ] `--effort` level recorded; **IF effort = low**: single Explore subagent (Step 4.9) spawned; **IF effort ≥ medium**: 4 fan-out Explore agents A/B/C/D (Step 4.1) spawned and synthesis completed
 - [ ] **IF effort = high**: adversarial verifier agents (Step 4.2) run for all Critical/Major findings; REFUTED findings moved to Candidate Issues section

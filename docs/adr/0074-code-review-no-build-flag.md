@@ -33,4 +33,5 @@ Treat `--no-build` as explicit risk acceptance equivalent to the existing verbal
 - `--no-build` flag is added as a first-class parameter alongside `--effort`, `--scope`, and `--mode`.
 - Step 2 does not execute when `--no-build` is supplied; no build command is run.
 - `BUILD_STATUS` is set to `WAIVED`; the report notes the flag and suppresses the usual "user said skip with risk accepted" text.
+- When both `--no-build` and `--build-cmd` are supplied, `--no-build` takes precedence (skip the build entirely); this reflects the user's explicit intent to skip taking priority over any supplied command.
 - Mutation modes (`autofix`/`review-to-merge`) still require explicit risk re-confirmation at the RTM prerequisite gate if `BUILD_STATUS = WAIVED`.
