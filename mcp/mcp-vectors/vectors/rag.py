@@ -161,6 +161,8 @@ class GraphificationStats:
     entity_embedding_enabled: bool = False  # whether _qdrant_entities is initialized
     batches_sent: int = 0
     extraction_started_at: Optional[float] = None
+    extraction_timeouts: int = 0          # files whose extraction hit the wait_for bound
+    extraction_other_failures: int = 0    # files that failed for any non-timeout reason
     last_extraction_completed_at: Optional[float] = None
     community_build_phase: str = "idle"   # "idle"|"detecting"|"reporting"|"embedding"|"ready"|"failed"
     community_build_started_at: Optional[float] = None
@@ -206,6 +208,7 @@ class RAGPipeline:
         communities: Optional[CommunityVectorStoreProtocol] = None,
     ):
         self.config = config
+        self._init_phase = "not started"  # component name currently initializing (ADR-0071 timeout attribution)
         self.lm_client = lm_client or LMStudioClient(
             base_url=config.lm_studio_url,
             embedding_model=config.embedding_model,
@@ -276,7 +279,7 @@ class RAGPipeline:
     def llm_client(self, value) -> None:
         self._llm_client_obj = value
 
-    async def initialize(self) -> None:
+    async def _initialize_impl(self) -> None:
         """Initialize all components with elapsed time tracking for transparency (ADR-0056)."""
         if self._initialized:
             return
@@ -284,23 +287,27 @@ class RAGPipeline:
         init_start = time.time()
         try:
             # Qdrant startup
+            self._init_phase = "Qdrant startup"
             qdrant_start = time.time()
             await asyncio.to_thread(ensure_qdrant_running, self.config.qdrant_url)
             qdrant_elapsed = time.time() - qdrant_start
             logger.info(f"Qdrant startup completed in {qdrant_elapsed:.1f}s")
-            
+
             # LM Studio initialization
+            self._init_phase = "LM Studio model loading"
             lm_start = time.time()
             await self.lm_client.initialize()
             if self.llm_client is not self.lm_client:
                 await self.llm_client.initialize()
             lm_elapsed = time.time() - lm_start
             logger.info(f"LM Studio initialization completed in {lm_elapsed:.1f}s")
-            
+
+            self._init_phase = "vector store initialization"
             self.vector_store.update_vector_size(self.lm_client.embedding_dimension)
             await self.vector_store.initialize()
-            
+
             if ENTITY_EXTRACTION:
+                self._init_phase = "graph components initialization"
                 graph_start = time.time()
                 self._graph_store = GraphStore(db_dir=GRAPH_DB_DIR)
                 if self._communities is None:
@@ -324,21 +331,40 @@ class RAGPipeline:
                 self._community_orchestrator.schedule_dirty_roots()
                 graph_elapsed = time.time() - graph_start
                 logger.info(f"Graph components initialization completed in {graph_elapsed:.1f}s")
-                
+
             if self.config.reconcile_on_startup:
+                self._init_phase = "startup reconciliation"
                 reconcile_start = time.time()
                 await self.reconcile_registry()
                 reconcile_elapsed = time.time() - reconcile_start
                 logger.info(f"Startup reconciliation completed in {reconcile_elapsed:.1f}s")
-                
+
             total_elapsed = time.time() - init_start
             self._initialized = True
+            self._init_phase = "complete"
             logger.info(f"RAG pipeline initialized in {total_elapsed:.1f}s")
         except Exception as e:
             total_elapsed = time.time() - init_start
             logger.error(
                 f"RAG pipeline initialization FAILED after {total_elapsed:.1f}s: {type(e).__name__}: {e}"
             )
+            raise
+
+    async def initialize(self) -> None:
+        """Initialize RAG pipeline with a hard timeout bound (config.init_timeout_seconds)."""
+        init_start = time.time()
+        try:
+            await asyncio.wait_for(self._initialize_impl(), timeout=self.config.init_timeout_seconds)
+        except asyncio.TimeoutError:
+            elapsed = time.time() - init_start
+            logger.error(
+                f"{self._init_phase} exceeded {self.config.init_timeout_seconds}s timeout "
+                f"(elapsed {elapsed:.1f}s); component not initialized or unreachable."
+            )
+            self._graph_store = None
+            self._communities = None
+            self._qdrant_entities = None
+            self._community_orchestrator = None
             raise
 
     async def reconcile_registry(self) -> dict:
@@ -911,6 +937,7 @@ class RAGPipeline:
                 )
             except asyncio.TimeoutError:
                 elapsed = time.time() - extraction_start
+                stats.extraction_timeouts += 1
                 logger.warning(
                     f"Entity extraction timed out after {elapsed:.1f}s for "
                     f"{sanitize_for_log(str(file_path))} (timeout={self.config.extraction_timeout_seconds}s)"
@@ -943,9 +970,10 @@ class RAGPipeline:
             stats.entities_found += len(entity_map.entities)
             stats.last_extraction_completed_at = time.time()
         except Exception as exc:
+            stats.extraction_other_failures += 1
             logger.warning(
                 f"Background entity extraction failed for "
-                f"{sanitize_for_log(str(file_path))}: {exc}"
+                f"{sanitize_for_log(str(file_path))}: {type(exc).__name__}: {exc}"
             )
         finally:
             stats.files_pending_extraction -= 1
@@ -1467,6 +1495,8 @@ class RAGPipeline:
         return {
             "files_extracted": stats.files_extracted,
             "files_pending_extraction": stats.files_pending_extraction,
+            "extraction_timeouts": stats.extraction_timeouts,
+            "extraction_other_failures": stats.extraction_other_failures,
             "chunks_extracted": stats.chunks_extracted,
             "entities_found": stats.entities_found,
             "entities_embed_failed": stats.entities_embed_failed,

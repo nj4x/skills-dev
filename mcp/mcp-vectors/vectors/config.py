@@ -226,6 +226,9 @@ class Config:
     # Community detection timeout (seconds); defaults to 300s, env override via COMMUNITY_DETECTION_TIMEOUT_SECONDS
     community_detection_timeout_seconds: int = 300  # COMMUNITY_DETECTION_TIMEOUT_SECONDS
 
+    # RAG pipeline initialization timeout (seconds); defaults to 120s, env override via INIT_TIMEOUT_SECONDS
+    init_timeout_seconds: int = 120            # INIT_TIMEOUT_SECONDS
+
     # Stale index threshold (days); index older than this is considered stale, defaults to 7
     stale_index_threshold_days: int = 7        # STALE_INDEX_THRESHOLD_DAYS
 
@@ -235,6 +238,11 @@ class Config:
     anthproxy_model: str = "haiku"             # ANTHPROXY_MODEL
     anthproxy_llm_batch_size: int = 50         # ANTHPROXY_LLM_BATCH_SIZE
     anthproxy_llm_max_prompt_chars: int = 80000  # ANTHPROXY_LLM_MAX_PROMPT_CHARS
+
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        if self.init_timeout_seconds <= 0:
+            raise ValueError(f"init_timeout_seconds must be > 0, got {self.init_timeout_seconds}")
 
 
 def get_config() -> Config:
@@ -281,6 +289,7 @@ def get_config() -> Config:
         search_root_timeout_seconds=int(os.getenv("SEARCH_ROOT_TIMEOUT_SECONDS") or "60") or 60,
         extraction_timeout_seconds=int(os.getenv("EXTRACTION_TIMEOUT_SECONDS", "120")),
         community_detection_timeout_seconds=int(os.getenv("COMMUNITY_DETECTION_TIMEOUT_SECONDS", "300")),
+        init_timeout_seconds=int(os.getenv("INIT_TIMEOUT_SECONDS") or "120"),
         stale_index_threshold_days=int(os.getenv("STALE_INDEX_THRESHOLD_DAYS", "7")),
     )
 

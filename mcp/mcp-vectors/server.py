@@ -330,7 +330,11 @@ async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     sync_tasks: list[asyncio.Task] = []
 
     try:
-        await pipeline.initialize()
+        try:
+            await pipeline.initialize()
+        except asyncio.TimeoutError:
+            logger.error(f"RAG pipeline initialization failed: timeout exceeded {config.init_timeout_seconds}s")
+            raise
         logger.info("MCP Vectors server started")
         logger.info(f"Embedding model: {pipeline.lm_client.embedding_model}")
         logger.info(f"LLM model: {pipeline.lm_client.llm_model}")
@@ -1119,7 +1123,11 @@ async def list_communities(
         app_ctx: AppContext = ctx.request_context.lifespan_context
         pipeline = app_ctx.pipeline
         if not pipeline._initialized:
-            await pipeline.initialize()
+            try:
+                await pipeline.initialize()
+            except asyncio.TimeoutError:
+                await ctx.error(f"RAG pipeline initialization timeout: exceeded {app_ctx.config.init_timeout_seconds}s")
+                return {"mode": "error", "error": {"code": "init_timeout", "message": "RAG pipeline initialization timeout"}}
         result = await pipeline.list_communities(root_path, level=level, limit=limit)
         return result.to_dict()
     except Exception as e:
@@ -1144,7 +1152,11 @@ async def get_community_report(
         app_ctx: AppContext = ctx.request_context.lifespan_context
         pipeline = app_ctx.pipeline
         if not pipeline._initialized:
-            await pipeline.initialize()
+            try:
+                await pipeline.initialize()
+            except asyncio.TimeoutError:
+                await ctx.error(f"RAG pipeline initialization timeout: exceeded {app_ctx.config.init_timeout_seconds}s")
+                return {"mode": "error", "error": {"code": "init_timeout", "message": "RAG pipeline initialization timeout"}}
         result = await pipeline.get_community_report(root_path, community_id)
         return result.to_dict()
     except Exception as e:
