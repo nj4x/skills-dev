@@ -914,6 +914,7 @@ class RAGPipeline:
         directory: str | Path,
         recursive: bool = True,
         respect_gitignore: Optional[bool] = None,
+        respect_git_exclude: Optional[bool] = None,
     ) -> list[IndexResult]:
         """Index all supported files in a directory, with parallelized embedding."""
         if not self._initialized:
@@ -938,7 +939,7 @@ class RAGPipeline:
         dir_resolution = GitResolver.resolve_root(directory, self.config)
         if dir_resolution.status not in _SUPPORTED_STATUSES:
             _raise_resolution_error(directory, dir_resolution)
-        plan = self.collect_indexable_files(directory, recursive=recursive, respect_gitignore=respect_gitignore)
+        plan = self.collect_indexable_files(directory, recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude)
         logger.info(f"Found {len(plan.files)} files to index in {directory}")
 
         # Persist under the canonical git root, not the caller-supplied directory
@@ -982,6 +983,7 @@ class RAGPipeline:
         root: str | Path,
         recursive: bool = True,
         respect_gitignore: Optional[bool] = None,
+        respect_git_exclude: Optional[bool] = None,
     ) -> dict:
         """Reconcile an indexed directory against the current filesystem.
 
@@ -1011,7 +1013,7 @@ class RAGPipeline:
             }
 
         # On-disk indexable set: path_key -> (Path, mtime_ns)
-        plan = self.collect_indexable_files(root_path, recursive=recursive, respect_gitignore=respect_gitignore)
+        plan = self.collect_indexable_files(root_path, recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude)
         on_disk: dict[str, tuple[Path, int]] = {}
         for file_path in plan.files:
             try:
@@ -1139,6 +1141,7 @@ class RAGPipeline:
         max_dirs: Optional[int] = None,
         max_seconds: Optional[float] = None,
         respect_gitignore: Optional[bool] = None,
+        respect_git_exclude: Optional[bool] = None,
     ) -> FileScanPlan:
         """Collect indexable files with bounds and skip reasons."""
         root_path = PathPolicy.resolve(root)
@@ -1147,7 +1150,10 @@ class RAGPipeline:
         effective_gitignore = (
             respect_gitignore if respect_gitignore is not None else self.config.respect_gitignore
         )
-        matcher = GitignoreMatcher.for_path(root_path) if effective_gitignore else None
+        effective_git_exclude = (
+            respect_git_exclude if respect_git_exclude is not None else getattr(self.config, 'respect_git_exclude', True)
+        )
+        matcher = GitignoreMatcher.for_path(root_path, respect_gitignore=effective_gitignore, respect_git_exclude=effective_git_exclude) if effective_gitignore or effective_git_exclude else None
         started = time.monotonic()
         files: list[Path] = []
         skipped: list[dict] = []
@@ -1603,12 +1609,12 @@ class RAGPipeline:
         return {"success": True, "files_removed": len(removed), "removed": removed}
 
     async def preview_reindex(
-        self, paths: list[str], recursive: bool = True, respect_gitignore: Optional[bool] = None
+        self, paths: list[str], recursive: bool = True, respect_gitignore: Optional[bool] = None, respect_git_exclude: Optional[bool] = None
     ) -> dict:
         """Dry-run planned indexing for paths."""
         plans = [
             self.collect_indexable_files(
-                path, recursive=recursive, respect_gitignore=respect_gitignore
+                path, recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude
             ).to_dict()
             for path in paths
         ]

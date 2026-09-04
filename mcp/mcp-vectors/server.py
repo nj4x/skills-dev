@@ -604,7 +604,8 @@ async def index_files(
     paths: Annotated[list[str], Field(description="Non-empty list of file or directory paths to index", min_length=1)],
     ctx: Context,
     recursive: Annotated[bool, Field(description="Index directories recursively")] = True,
-    respect_gitignore: Annotated[bool, Field(description="Skip files/dirs matched by .gitignore or .git/info/exclude when walking directories. Explicitly named file paths are always indexed.")] = True,
+    respect_gitignore: Annotated[bool, Field(description="Skip files/dirs matched by .gitignore when walking directories. Explicitly named file paths are always indexed.")] = True,
+    respect_git_exclude: Annotated[bool, Field(description="Skip files/dirs matched by .git/info/exclude when walking directories. Explicitly named file paths are always indexed.")] = True,
 ) -> dict:
     """Add specific files or directories to the semantic index on demand. Call after checking get_indexing_status, or use index_codebase instead to index a whole project root with status gating. Resolves and replace-indexes each path (dirs recurse, honoring .gitignore); marks missing paths reason_codes=["path_not_found"]."""
     if not increment_operations():
@@ -633,7 +634,7 @@ async def index_files(
             elif path.is_dir():
                 await ctx.info(f"Indexing directory: {path}")
                 try:
-                    all_results.extend(_result_dict(result) for result in await pipeline.index_directory(path, recursive=recursive, respect_gitignore=respect_gitignore))
+                    all_results.extend(_result_dict(result) for result in await pipeline.index_directory(path, recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude))
                 except RootResolutionError as e:
                     all_results.append({
                         "file_path": str(path),
@@ -818,7 +819,8 @@ async def index_codebase(
     recursive: Annotated[bool, Field(description="Index directories recursively")] = True,
     force: Annotated[bool, Field(description="Re-index files even when already indexed; uses replace-safe indexing")] = False,
     dry_run: Annotated[bool, Field(description="Return plan without indexing")] = False,
-    respect_gitignore: Annotated[bool, Field(description="Skip files/dirs matched by .gitignore or .git/info/exclude")] = True,
+    respect_gitignore: Annotated[bool, Field(description="Skip files/dirs matched by .gitignore")] = True,
+    respect_git_exclude: Annotated[bool, Field(description="Skip files/dirs matched by .git/info/exclude")] = True,
 ) -> dict:
     """Bring an entire project root into the index so search_root can use it — the first step before searching. Pass dry_run=true to preview status+plan without indexing. If the root already appears indexed it returns indexed=false with a message unless force=true triggers a replace-safe re-index."""
     if not dry_run and not increment_operations():
@@ -828,7 +830,7 @@ async def index_codebase(
         pipeline = app_ctx.pipeline
         root = str(resolve_path(root_path))
         status = await pipeline.get_indexing_status(root)
-        plan = await pipeline.preview_reindex([root], recursive=recursive, respect_gitignore=respect_gitignore)
+        plan = await pipeline.preview_reindex([root], recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude)
         if dry_run:
             return {"success": True, "dry_run": True, "status": status, "plan": plan}
         if status.get("status") not in ("not_found", "legacy_metadata") and not force:
@@ -839,7 +841,7 @@ async def index_codebase(
                 "plan": plan,
                 "message": "Path already appears indexed. Re-run with force=true to replace-safe re-index.",
             }
-        results = await pipeline.index_directory(root, recursive=recursive, respect_gitignore=respect_gitignore) if Path(root).is_dir() else [await pipeline.index_file(root)]
+        results = await pipeline.index_directory(root, recursive=recursive, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude) if Path(root).is_dir() else [await pipeline.index_file(root)]
         successful = sum(1 for r in results if r.success)
         return {
             "success": True,

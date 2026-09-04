@@ -76,6 +76,7 @@ DEFAULT_SECRET_FILENAMES = [
     "credentials.json",
     "id_rsa",
     "id_ed25519",
+    "http-client.private.env.json",
 ]
 
 DEFAULT_SECRET_PATH_PATTERNS = [
@@ -134,6 +135,9 @@ DEFAULT_EXCLUDED_DIRECTORIES = [
     ".kube",
     ".claude",
     ".claude/worktrees",
+    ".cline",
+    ".clinerules",
+    ".workspace_rag",
     "graphify-out",
 ]
 
@@ -157,6 +161,7 @@ class Config:
     chunk_size: int = 512
     chunk_overlap: int = 128
     respect_gitignore: bool = True
+    respect_git_exclude: bool = True
     embedding_batch_size: int = 100
 
     # Auto-maintain: on startup, reconcile an already-indexed project against disk
@@ -236,6 +241,7 @@ def get_config() -> Config:
         chunk_size=int(os.getenv("CHUNK_SIZE", "512")),
         chunk_overlap=int(os.getenv("CHUNK_OVERLAP", "128")),
         respect_gitignore=_parse_bool(os.getenv("RESPECT_GITIGNORE"), default=True),
+        respect_git_exclude=_parse_bool(os.getenv("RESPECT_GIT_EXCLUDE"), default=True),
         embedding_batch_size=int(os.getenv("EMBEDDING_BATCH_SIZE", "100")),
         max_file_size_mb=float(os.getenv("MAX_FILE_SIZE_MB", "50.0")),
         max_chunk_tokens=int(os.getenv("MAX_CHUNK_TOKENS", "512")),

@@ -32,15 +32,17 @@ class GitignoreMatcher:
     as "no gitignore filtering".
     """
 
-    def __init__(self, repo_root: Path):
+    def __init__(self, repo_root: Path, respect_gitignore: bool = True, respect_git_exclude: bool = True):
         self.repo_root = repo_root
+        self.respect_gitignore = respect_gitignore
+        self.respect_git_exclude = respect_git_exclude
         # Maps a directory -> compiled spec for that directory's .gitignore.
         # The repo root slot also folds in .git/info/exclude.
         self._specs: dict[Path, Optional["pathspec.PathSpec"]] = {}
         self._load_repo_root_spec()
 
     @classmethod
-    def for_path(cls, path: str | Path) -> Optional["GitignoreMatcher"]:
+    def for_path(cls, path: str | Path, respect_gitignore: bool = True, respect_git_exclude: bool = True) -> Optional["GitignoreMatcher"]:
         """Return a matcher for the git repo containing ``path``, or ``None``.
 
         Returns ``None`` when ``path`` is not inside a git repository or when
@@ -52,13 +54,15 @@ class GitignoreMatcher:
         # A file path's repo is found by inspecting it and its ancestors.
         for directory in (candidate, *candidate.parents):
             if (directory / ".git").exists():
-                return cls(directory)
+                return cls(directory, respect_gitignore=respect_gitignore, respect_git_exclude=respect_git_exclude)
         return None
 
     def _load_repo_root_spec(self) -> None:
         lines: list[str] = []
-        lines.extend(self._read_lines(self.repo_root / ".gitignore"))
-        lines.extend(self._read_lines(self.repo_root / ".git" / "info" / "exclude"))
+        if self.respect_gitignore:
+            lines.extend(self._read_lines(self.repo_root / ".gitignore"))
+        if self.respect_git_exclude:
+            lines.extend(self._read_lines(self.repo_root / ".git" / "info" / "exclude"))
         self._specs[self.repo_root] = self._compile(lines)
 
     def preload(self, directory: str | Path) -> None:
