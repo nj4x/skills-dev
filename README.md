@@ -221,11 +221,15 @@ The following 19 skills were created originally for this repository:
 
 ## Borrowed Skills
 
-The following 29 skills were adapted from upstream open-source skill repositories. Each entry notes the source, the upstream skill name, what was added or changed locally, and the approximate proportion of new content.
+The following 22 skills were adapted from upstream open-source skill repositories. Each entry notes the source, the upstream skill name, what was added or changed locally, and the approximate proportion of new content.
 
 | Local Skill | Source Repo | Upstream Name | Key Modifications | % New Content |
 |---|---|---|---|---|
 | `codebase-design` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `codebase-design` | Verbatim adoption. | ~0% |
+
+**Removed skills** — The following 7 skills were removed due to limited usage:
+- `browser-harness`, `deep-research`, `deepapi`, `pi-web-search`, `research-prompt`, `youtube-transcript` (research/web tools; <1 use each in past month)
+- `short` (session tool; unused)
 | `research` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `research` | Verbatim adoption. | ~0% |
 | `tdd` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `tdd` | Added pointer to `/codebase-design` vocabulary. | ~2% |
 | `writing-for-agents` (dev) | [mattpocock/skills](https://github.com/mattpocock/skills) | `writing-for-agents` | Adopted upstream replacement for `writing-great-skills`. Split skill mechanics into `SKILL-MECHANICS.md`; broadened scope to any agent-facing doc. | ~0% |
@@ -245,17 +249,10 @@ The following 29 skills were adapted from upstream open-source skill repositorie
 | `wizard` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `wizard` | Verbatim adoption. | ~0% |
 | `triage` (engineering) | [mattpocock/skills](https://github.com/mattpocock/skills) | `triage` | Renamed `/setup-matt-pocock-skills` reference to `/setup-skills`; added mcp-vectors search guidance; switched Skill-tool invocation phrasing to local `/grilling` `/domain-modeling` convention. | ~5% |
 | `to-questionnaire` (publishing) | [mattpocock/skills](https://github.com/mattpocock/skills) | `to-questionnaire` | Verbatim adoption. | ~0% |
-| `pi-web-search` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `pi-web-search` | Verbatim adoption. | ~0% |
-| `research-prompt` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `research-prompt` | Verbatim adoption. | ~0% |
-| `short` (session) | [davidondrej/skills](https://github.com/davidondrej/skills) | `short` | Verbatim adoption. | ~0% |
-| `youtube-transcript` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `youtube-transcript` | Minor wording edits. | ~5% |
 | `handoff` (session) | [davidondrej/skills](https://github.com/davidondrej/skills) | `handoff` | Near-verbatim; added a "Suggested Skills" section; removed `disable-model-invocation`. | ~10% |
 | `wait-what` (session) | [mattpocock/skills](https://github.com/mattpocock/skills) | `wait-what` | Verbatim adoption. | ~0% |
-| `browser-harness` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `browser-harness` | Trimmed the Hermes-specific integration and authenticated-extraction sections. | ~5% |
-| `deep-research` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `deep-research` | Light trimming / condensation. | ~10% |
 | `goal-loop` (planning) | [davidondrej/skills](https://github.com/davidondrej/skills) | `goal-loop` | Added `disable-model-invocation`; expanded the 4,000-char contract-limit guidance with compression rules. | ~15% |
 | `setup-help` (notifications) | [davidondrej/skills](https://github.com/davidondrej/skills) | `setup-help` | Condensed description and remaining-steps guidance. | ~5% |
-| `deepapi` (research) | [davidondrej/skills](https://github.com/davidondrej/skills) | `deepapi` | Reduced to roughly one-quarter of upstream size; rewrote the description and pinned a different version hash. | ~5% |
 
 > **% New Content** is the estimated share of the local skill's content that does not appear in the upstream source — i.e. lines added, rewritten, or restructured locally divided by total local line count. ~0% means verbatim or near-verbatim; higher values indicate progressively heavier local authorship.
 
