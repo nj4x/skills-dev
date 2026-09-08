@@ -21,7 +21,7 @@ test -f ~/.claude/skills/repeat/SKILL.md && echo FOUND || echo MISSING
 ```
 
 - **FOUND**: Read `~/.claude/skills/repeat/SKILL.md` and follow the repeat loop contract defined there, binding the extension points below (GENERATE_STEP, REVIEW_STEP, FINALIZE_STEP). The repeat contract governs Guards, Mode detection, Decision Protocol, and the loop — do not re-derive them here.
-- **MISSING**: stop with: `repeat skill not found. Install it with: ln -s /Users/roman/projects/skills-dev/planning/repeat ~/.claude/skills/repeat`
+- **MISSING**: stop with: `repeat skill not found. Install it with: ln -s /Users/r.herasymenk/workspace/skills-dev/skills/planning/repeat ~/.claude/skills/repeat`
 
 Apply the critic-specific overrides and extension point bindings below before starting.
 

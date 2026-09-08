@@ -207,17 +207,16 @@ Registers the local `mcp-vectors` server (requires Qdrant running at `localhost:
 
 The following 19 skills were created originally for this repository:
 
-- **engineering**: `refactor-agents-md`, `resolving-merge-conflicts`
-- **requirements**: `FS-skill`, `SRS-skill`, `data-view-skill`
-- **planning**: `critic`, `repeat`, `goal-loop`
-- **publishing**: `html-view`, `interview-style-doc-building`
-- **research**: (none — all research skills are borrowed)
-- **session**: `continue`, `hs`, `mark`
-- **email**: `inbox`, `mail`
-- **learning**: `grilling`
-- **notifications**: `mute`
-- **dev**: `prompt-authoring`, `skill-authoring`, `test-mcp`, `tool-authoring`
-- **session**: (none — all session skills are borrowed)
+- **skills/engineering**: `refactor-agents-md`, `resolving-merge-conflicts`
+- **skills/requirements**: `FS-skill`, `SRS-skill`, `data-view-skill`
+- **skills/planning**: `critic`, `repeat`, `goal-loop`
+- **skills/publishing**: `html-view`, `interview-style-doc-building`
+- **skills/research**: (none — all research skills are borrowed)
+- **skills/session**: `continue`, `hs`, `mark`
+- **skills/email**: `inbox`, `mail`
+- **skills/learning**: `grilling`
+- **skills/notifications**: `mute`
+- **skills/dev**: `prompt-authoring`, `skill-authoring`, `test-mcp`, `tool-authoring`
 
 ## Borrowed Skills
 

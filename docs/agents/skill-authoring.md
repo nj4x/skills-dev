@@ -18,7 +18,7 @@ The `publishing/html-view` skill also ships an `install.sh` for convenience.
 
 ## Categories
 
-Category directories group related capabilities: **engineering**, requirements, planning, session, publishing, development, research, email, learning, and notifications.
+Category directories group related capabilities: **skills/engineering**, **skills/requirements**, **skills/planning**, **skills/session**, **skills/publishing**, **skills/dev**, **skills/research**, **skills/email**, **skills/learning**, and **skills/notifications**.
 
 ## Decisions rejected from upstream (`mattpocock/skills`)
 
