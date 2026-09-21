@@ -11,4 +11,5 @@ When changing a multi-turn skill, preserve its dependency contracts rather than 
 - `engineering/to-spec` → `engineering/setup-skills`: requires `docs/agents/issue-tracker.md` written by `setup-skills`; prompts the user to run `/setup-skills` if absent.
 - `engineering/to-tickets` → `engineering/setup-skills`: same dependency as `to-spec`.
 - `engineering/to-tickets` → `engineering/implement`: Step 5 guidance recommends `/implement` for working the ticket frontier one slice at a time.
+- `engineering/implement-spec` → `engineering/to-spec` + `engineering/to-tickets`: requires a published spec and a published task graph before it can run. Local tracker: `.scratch/<feature-slug>/spec.md` and `.scratch/<feature-slug>/issues/*.md`. Real tracker (GitHub, per `docs/agents/issue-tracker.md`): a spec issue and ticket issues linked by native blocking edges. Run `/to-spec` then `/to-tickets` first if either artifact is missing.
 - `session/handoff`: optionally includes a "suggested skills" section to guide the fresh agent.

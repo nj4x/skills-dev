@@ -14,6 +14,17 @@ Communication to and from subagents should be sparse. Communicate primarily thro
 
 **Implementer subagents** should be run in the background where possible for **maximum concurrency**.
 
+## Preconditions
+
+Both a published spec and a published task graph must exist. If either is missing, stop and tell the user to run `/to-spec` and then `/to-tickets` first.
+
+Where to find them depends on the tracker set up by `/setup-skills` (see `docs/agents/issue-tracker.md`):
+
+- **Local tracker:** spec at `.scratch/<feature-slug>/spec.md`; tickets at `.scratch/<feature-slug>/issues/*.md`, each carrying a `Blocked by` field that encodes the task graph.
+- **Real tracker (GitHub, Linear, …):** spec is a published issue; tickets are issues linked to it and to each other via the tracker's native blocking-issue relationships.
+
+A `draft-issues/` or `draft-spec.md` staging directory with no matching `issues/`/`spec.md` means `to-tickets`/`to-spec` has not been approved and published yet — this is not a task graph to implement against.
+
 ## Steps
 
 1. Read the spec and tickets. Read enough to understand the task graph.
