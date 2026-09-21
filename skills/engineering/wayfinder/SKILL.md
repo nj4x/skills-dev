@@ -126,7 +126,63 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 1. Load the **map** — the low-res view, not every ticket body.
 2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it**: assign it to yourself before any work.
 3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use `/grilling` and `/domain-modeling`.
-4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far.
-5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
+4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far. Then check if frontier is now empty (no open, unblocked, unclaimed children remain). If so, proceed to [Handoff](#handoff-at-frontier-empty).
+5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets. **Surface any findings as actual wayfinder tickets before closing the resolved ticket.** Do not leave discovered work captured only in resolution comments — either ticket it (create it as a child issue and wire blocking if needed), or explicitly park it in the map's **Not yet specified** or **Out of scope** sections.
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently.
+
+## Handoff at frontier empty
+
+When a ticket closes and the frontier empties (no open, unblocked, unclaimed children), the map has completed its decision phase. Check the closed tickets for marked followup items and route them accordingly.
+
+**How to mark followups in resolution comments:**
+
+When resolving a ticket, if you surface items that belong downstream — implementation work, new investigations, or parked decisions — tag them in the resolution comment:
+
+```markdown
+## Answer
+
+<the decision itself>
+
+## Followups
+
+- [impl] Slice X into tracer-bullet implementation tickets via `/to-tickets`
+- [impl] Build the Y component per ADR-0042
+- [map] Chart a new map for Z (new investigation, unblocks post-decision)
+- [defer] Q blocked by W landing first; revisit when W closes
+```
+
+- **[impl]** — implementation work. Will be published as tickets via `/to-tickets`.
+- **[map]** — new decision/investigation work. Creates a successor execution map.
+- **[defer]** — parked for now. Added to successor map's Notes or Out of scope.
+
+**Handoff sequence:**
+
+1. **Collect followups.** Scan all closed decision tickets (everything in **Decisions so far**) for resolution comments with [impl], [map], or [defer] tags.
+2. **Group by destination:**
+   - **Implementation items** ([impl]) → prepare for `/to-tickets` handoff
+   - **New investigations** ([map]) → seed a successor execution map
+   - **Parked items** ([defer]) → add to successor map's Notes or rule out-of-scope
+
+3. **Implementation handoff** ([impl] items exist):
+   - Synthesize a spec: `.scratch/<map-slug>/implementation-spec.md`
+     - Map destination (inherited from parent)
+     - List of closed decisions (link + gist)
+     - Grouped implementation items
+   - Invoke `Skill("to-tickets", args: "<map-slug>")` to publish tracer-bullet tickets with blocking edges
+   - Report created ticket URLs and frontier once published
+
+4. **Create successor execution map** ([map] or [defer] items exist):
+   - **Title:** `<parent map name> — implementation`
+   - **Destination:** Same as parent (inherited)
+   - **Notes:** List all [defer] items (parked work); any standing preferences from parent Notes
+   - **Decisions so far:** Empty (successor has no resolved decisions yet)
+   - **Not yet specified:** Empty (successor's frontier is the published implementation tickets from step 3, or the empty set if no [impl] items)
+   - Label: `wayfinder:map`
+   - Parent reference: link to the completed decision map
+   - Wire the implementation tickets as child issues if they don't already exist as a set
+5. **Terminal condition:** When the successor execution map's frontier empties, report done — no further map is spawned. Execution maps don't hand off to new maps; they terminate.
+
+**Special case — explicit separate maps:**
+
+If a [map] item says "own map" or "separate effort" (e.g., "Chart a new map for admin web UI"), it spawns its own independent decision map, not folded into the successor execution map. Create it as a fresh `/wayfinder` invocation with its own scope and destination.
