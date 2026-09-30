@@ -397,6 +397,8 @@ After PR intake completes, if `PROJECT_SRS` is EMPTY, extract any `#\d+` GitHub 
 > ⛔ **NO SILENT SKIP**: If this step is not executed, the report MUST state the explicit user waiver text and reason.
 >
 > ⛔ **ORDER ENFORCEMENT**: Step 2 does not replace Step 1.5. Both gates must be resolved before diff/stat/log commands are allowed.
+>
+> **`--scope working-tree` only** — a slow build command (a full test suite) may be launched as a background task at Step 2.2 instead of run-and-wait. Steps 3–4.2 (diff, stats, fan-out finders, adversarial verification) may then proceed concurrently with it — they are read-only and do not depend on `BUILD_STATUS`. The gate itself is unchanged: Step 13 (report) and the grade/verdict still cannot be produced until the background build resolves to `BUILD_STATUS`. Committed scope keeps the run-and-wait form — the PR-context and divergence gates it also carries are not read-only-safe to parallelize this way.
 
 Build the project before reviewing to ensure generated API specifications are up to date and to validate compilation and tests.
 
@@ -636,6 +638,8 @@ Spawn 4 Explore agents **in parallel**. Pass each agent:
 - The full diff text from Step 4
 - All discovered document paths: `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`
 - The `--scope` value (so agents know whether Jira commit-message validation applies)
+- The ticket/spec/ADR text **verbatim** (quoted or linked), not the implementer's summary or framing of it — a finder reasoning from the implementer's own account of what the ticket requires cannot catch a place where the implementer's account is the thing that's wrong
+- Any doubt the implementer holds about their own change, phrased as a candidate finding for the finder to confirm or refute — never resolved by the orchestrator before the finders see it
 
 ### Finder A — Correctness & Security
 
