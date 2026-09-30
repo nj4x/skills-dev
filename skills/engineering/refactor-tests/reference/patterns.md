@@ -51,6 +51,8 @@ Cross-cutting tests are moved to a dedicated integration directory — not left 
 | Go | `integration/` (at project root) |
 | Java/Kotlin | `src/test/integration/` |
 
+**Directory guard check.** Before moving any file into the integration target, check whether that directory is constrained by a project-specific guard — a meta-test or CI check that restricts what may live there (e.g. a frozen baseline file, a marker/fixture requirement enforced by AST). Look for it the same way you'd look for the runner: a test file whose name references "tier", "honesty", "baseline", or the target directory itself, or a project doc (`AGENTS.md`/`CLAUDE.md`-pointed testing guide) describing the directory's membership rule. If such a guard exists and the candidate file would violate it (e.g. it doesn't carry the required marker/fixture and the baseline may not grow), do not move it — leave it in place and record it as pinned (same treatment as the Go build-tag exception below), with the guard's name as the reason.
+
 ## Test-file naming
 
 | Language | Test file name for source `<name>` |
