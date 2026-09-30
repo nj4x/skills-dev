@@ -37,7 +37,7 @@ Issues are tracked in GitHub Issues; skills use `gh issue create` to publish. Se
 
 ### Domain docs
 
-Single-context repo with root `CONTEXT.md`, `docs/adr/`, and `.data/requirements/`. See `docs/agents/domain.md`.
+Single-context repo with root `GLOSSARY.md`, `docs/adr/`, and `.data/requirements/`. See `docs/agents/domain.md`.
 
 ## Pre-conditions
 

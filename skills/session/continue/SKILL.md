@@ -34,7 +34,7 @@ Gather all four categories below. The independent discovery probes (git log, git
    - Phase-specific docs: `research/`, `design/`, `.data/requirements/`, `src/`
    - Task list or checklist files (if present)
    - Previous session plans in `~/.claude/plans/` (most recent edits)
-   - **Domain model** — `CONTEXT.md` (domain glossary), `CONTEXT-MAP.md` (multi-context), `docs/adr/` (ADRs written by `/domain-modeling` or `/grill-with-docs`)
+   - **Domain model** — `GLOSSARY.md` (domain glossary), `GLOSSARY-MAP.md` (multi-context), `docs/adr/` (ADRs written by `/domain-modeling` or `/grill-with-docs`)
    - **Agent skill setup** — `docs/agents/domain.md`, `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` (written by `/setup-skills`; indicate whether engineering skills have been configured)
    - **Requirements pipeline** — `.data/requirements/` holds FS/EARS docs (`*-FS-*.md`), SRS docs (`*-SRS-*.md`), API Definitions (`*-API-Definition-*.md`), and Use Case Diagrams (`*-Use-Case-Diagrams-*.md`) produced by the `/FS-skill`, `/SRS-skill`, and companion skills
    - **Data View** — `.data/output/*-Data-View-*.md` produced by `/data-view-skill` (DynamoDB schema + access patterns)
@@ -59,7 +59,7 @@ Gather all four categories below. The independent discovery probes (git log, git
 Map findings to exactly one workflow stage. This is the **triage** step — assign the project to a single current position:
 
 - **Preflight / discovery** — No artifacts yet; project is new or in planning phase
-- **Setup complete** — `docs/agents/` written (setup-skills ran), `CONTEXT.md` created; requirements work not yet started
+- **Setup complete** — `docs/agents/` written (setup-skills ran), `GLOSSARY.md` created; requirements work not yet started
 - **FS in progress / complete** — FS/EARS docs exist in `.data/requirements/`; SRS not yet started
 - **SRS in progress / complete** — SRS doc exists; API Definition and/or Use Case Diagrams may also exist; Data View not yet done
 - **Data View complete** — `.data/output/*-Data-View-*.md` exists; requirements pipeline is fully done; design/implementation not yet started
@@ -78,7 +78,7 @@ Based on the stage, propose 2–4 options:
 | Stage | Typical Next Actions |
 |-------|---|
 | Preflight | Run `/setup-skills` to configure engineering skills, start requirements discovery, define scope |
-| Setup complete | Run `/FS-skill` to write Feature Set requirements; start `CONTEXT.md` via `/domain-modeling` |
+| Setup complete | Run `/FS-skill` to write Feature Set requirements; start `GLOSSARY.md` via `/domain-modeling` |
 | FS in progress / complete | Run `/SRS-skill` to transform FS into SRS + API Definition + Use Case Diagrams |
 | SRS in progress / complete | Run `/data-view-skill` to produce Data View; review/refine SRS or API Definition |
 | Data View complete | Move to design — run `/to-spec` for PRD, create ADRs via `/domain-modeling` |
@@ -144,7 +144,7 @@ find . -name "MASTER_*PLAN*.md" -o -name "*Phase*.md" -o -name "*Checkpoint*.md"
 ls -la research/ design/ .data/requirements/ .data/output/ src/ 2>/dev/null
 stat -f %Sm -t %Y-%m-%d ~/.claude/plans/*.md | sort -rk1 | head -5
 # Domain model & ADRs
-ls CONTEXT.md CONTEXT-MAP.md docs/adr/ 2>/dev/null
+ls GLOSSARY.md GLOSSARY-MAP.md docs/adr/ 2>/dev/null
 # Agent skill setup
 ls docs/agents/ 2>/dev/null
 # Issue tracker

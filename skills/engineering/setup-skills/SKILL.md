@@ -1,6 +1,6 @@
 ---
 name: setup-skills
-description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, domain doc layout, and data folders. Run once before first use of the other engineering skills.
+description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, domain doc layout, and data folders, and migrate a legacy `CONTEXT.md` glossary to `GLOSSARY.md`. Run once before first use of the other engineering skills.
 disable-model-invocation: true
 ---
 
@@ -10,7 +10,8 @@ Scaffold the per-repo configuration that the engineering skills assume:
 
 - **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
-- **Domain docs** — where `CONTEXT.md`, ADRs, requirements, and reference docs live, and the consumer rules for reading them
+- **Domain docs** — where `GLOSSARY.md`, ADRs, requirements, and reference docs live, and the consumer rules for reading them
+- **Legacy glossary migration** — rename a pre-rename `CONTEXT.md`/`CONTEXT-MAP.md` to `GLOSSARY.md`/`GLOSSARY-MAP.md`, so the consumer skills find it
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -22,7 +23,8 @@ Look at the current repo to understand its starting state. Read whatever exists;
 
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
 - `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is there already an `## Agent skills` section in either?
-- `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
+- `GLOSSARY.md` and `GLOSSARY-MAP.md` at the repo root
+- Legacy glossary files from before the `GLOSSARY.md` rename: `CONTEXT.md` and `CONTEXT-MAP.md` at the root, plus per-context `CONTEXT.md` files (follow the links in `CONTEXT-MAP.md`, or run `fd -t f '^CONTEXT(-MAP)?\.md$'`). Also note every file that mentions `CONTEXT.md` or `CONTEXT-MAP.md` (`rg -l 'CONTEXT(-MAP)?\.md'`).
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
@@ -35,7 +37,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 
 Summarise what's present and what's missing. Then take the sections in order — one section, one answer, then the next.
 
-Lead each section with the recommended answer so the user can accept it in a word. Give a one-line explainer only when the choice genuinely branches; skip the section entirely when exploration already settled it (Section B when `triage` isn't installed, Section C when there's no monorepo).
+Lead each section with the recommended answer so the user can accept it in a word. Give a one-line explainer only when the choice genuinely branches; skip the section entirely when exploration already settled it (Section B when `triage` isn't installed, Section C when there's no monorepo, Section D when no legacy `CONTEXT.md`/`CONTEXT-MAP.md` exists).
 
 **Section A — Issue tracker.**
 
@@ -58,11 +60,27 @@ If it is installed, ask exactly one question:
 
 The defaults are the five canonical roles, each label string equal to its name: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. On **yes**, write them as-is. Only if the user says no — usually because their tracker already uses other names (e.g. `bug:triage` for `needs-triage`) — collect the overrides so `triage` applies existing labels instead of creating duplicates.
 
-**Section C — Domain docs.** Default to **single-context** — one `CONTEXT.md` + `docs/adr/` at the repo root. This fits almost every repo; write it without asking.
+**Section C — Domain docs.** Default to **single-context** — one `GLOSSARY.md` + `docs/adr/` at the repo root. This fits almost every repo; write it without asking.
 
-Offer **multi-context** — a root `CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
+Offer **multi-context** — a root `GLOSSARY-MAP.md` pointing to per-context `GLOSSARY.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
 
 In either case, also note what data folders exist (`.data/requirements/`, `.data/docs/`) and include them in the generated `docs/agents/domain.md` so skills know where to look for requirements and reference docs.
+
+If exploration found a legacy `CONTEXT-MAP.md`, the repo is already multi-context. Keep that layout; don't ask again.
+
+**Section D — Legacy glossary migration.** Skip this section entirely when exploration found no `CONTEXT.md` or `CONTEXT-MAP.md`.
+
+> Explainer: The skills now read the domain glossary from `GLOSSARY.md` (and `GLOSSARY-MAP.md` in multi-context repos). This repo still uses the old `CONTEXT.md` names, so the skills will not find its glossary until the files are renamed.
+
+Recommend **migrate**. The plan has three parts:
+
+- **Rename files in place.** Rename each `CONTEXT.md` to `GLOSSARY.md` and each `CONTEXT-MAP.md` to `GLOSSARY-MAP.md` in the same directory. File contents do not change, except the links in the map (next item).
+- **Rewrite live references.** Change every `CONTEXT.md` to `GLOSSARY.md` and every `CONTEXT-MAP.md` to `GLOSSARY-MAP.md` in these places: the links inside the renamed `GLOSSARY-MAP.md`, `CLAUDE.md`, `AGENTS.md`, and `docs/agents/*.md`.
+- **Leave history alone.** Other files that mention the old names can include ADRs, changelogs, dated notes, and source code. List them for the user, and let the user choose which ones to rewrite. ADRs and dated notes are records of the past, so default to leaving them as they are.
+
+Stop and ask the user when a directory has both `CONTEXT.md` and `GLOSSARY.md`. Never overwrite one with the other. The user merges them by hand, or chooses which file to keep.
+
+If the user declines the migration, record in `docs/agents/domain.md` that this repo keeps its glossary in `CONTEXT.md`. Otherwise the consumer skills will look only for `GLOSSARY.md`.
 
 ### 3. Confirm and edit
 
@@ -70,10 +88,13 @@ Show the user a draft of:
 
 - The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
+- The legacy glossary migration plan, when Section D ran: each file rename as `old path → new path`, and each file whose references will be rewritten
 
 Let them edit before writing.
 
 ### 4. Write
+
+**Migrate the legacy glossary first** (only when Section D ran and the user accepted). Rename with `git mv` in a git repo, so history follows the file. Use plain `mv` in a repo that is not under git. Then rewrite the references from the approved plan. Do this before you edit `CLAUDE.md`/`AGENTS.md` below, so the `## Agent skills` block and the docs files use the new names from the start. When the migration is done, run `rg 'CONTEXT(-MAP)?\.md'` again. Only the files that the user chose to leave alone must show hits.
 
 **Pick the file to edit:**
 
@@ -117,4 +138,4 @@ For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch us
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these files. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
