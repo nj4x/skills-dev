@@ -5,9 +5,9 @@ description: "Implement a piece of work based on a spec or set of tickets. Use w
 
 Use /tdd at every seam the ticket or spec names explicitly (look for a "Test seams" or "Acceptance criteria" section).
 
-After each substantive change, run typechecking and the test file(s) that cover that change. Run the full test suite once before invoking code-review.
+After each substantive change, run typechecking and the test file(s) that cover that change via `Skill("testing", args="--files <changed paths>")` — selective runner maps changed source files to covering tests, falls back to full suite only for uncovered files.
 
-Once done, invoke the `code-review` skill via `Skill("code-review")` — not via the Agent tool's `subagent_type` parameter.
+Once done, invoke the `code-review` skill via `Skill("code-review")` — not via the Agent tool's `subagent_type` parameter. Code-review's build gate runs the full suite as a mandatory guard.
 
 ## Verify-then-check checklist workflow
 
