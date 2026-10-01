@@ -1228,6 +1228,8 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 >
 > The report below is the primary deliverable of this skill. Generate it now in your response using the exact structure.
 
+> **Compact form (clean review):** when the final finding set has zero Critical and zero Major findings, emit instead: the `🔨 Build Status` line with the build command used and its exit status, the `Review mode` line, one line per Minor/Note finding (severity, file:line, evidence), and the grade and verdict. Skip the Positive-notes narration and every mandatory section whose check was `WAIVED` or `NOT_APPLICABLE`; keep any section that recorded a result (`PR Context Intake` when a PR exists, `Lineage` when it has findings). Any Critical or Major finding restores the full structure below.
+
 ```markdown
 ## Code Review
 
