@@ -502,6 +502,7 @@ class SupportsExecute(Protocol):
 ## 8. Testing Patterns
 
 - **`@pytest.mark.parametrize`** for data-driven tests instead of copy-pasted test bodies.
+- **Assert on output, not on fixture input**: every assertion targets what the code under test produced or received — a return value, a mock's call args, a written row. An assertion that only re-checks a literal the test itself constructed (`len(my_dict["key"]) == 2` where the test built `my_dict["key"]` as a 2-element list) tests the fixture, not the code, and passes even if the code under test is deleted. This is a no-op test, not thoroughness.
 - **Factory fixtures**: one factory closure, zero copy-paste setup.
 - **Fixture scoping**: `function` for mutable state, `session` for expensive setup (DB engine, config).
 - **Mock at the boundary**: mock external I/O (SMTP, HTTP, subprocess) in unit tests; use a real DB in integration tests.

@@ -713,6 +713,7 @@ Every Minor/Major/Critical finding must include evidence. Before reporting a fin
 3. For idiom/style suggestions, open the cited standard and read the full rule including exceptions or `When NOT to apply` clauses.
 4. For API, SRS, or Data View contract claims, quote the exact spec line that the code contradicts.
 5. Distinguish defects from preferences. If the code works and breaks no rule, report it as Note or drop it.
+6. Check the severity itself against Step 11's category definitions. A finding that matches none of the listed MAJOR examples (module boundary violation, missing business rule enforcement, wrong error code, missing event publishing, architecture violation) is not MAJOR — downgrade it to MINOR or NOTE, even when it reads as significant. Parameter order, call-site convention, and similar local-consistency preferences are MINOR at most.
 
 If evidence cannot be produced, drop the finding or downgrade it to Note.
 

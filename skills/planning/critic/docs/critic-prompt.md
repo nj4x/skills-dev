@@ -12,11 +12,11 @@ SHARED REVIEW CONTRACT:
 - Approve when no major issue remains. Use `none` when ready as-is, `minor` for optional improvements, and `major` for significant problems.
 - Prefix each issue `[<group>][major|minor] <claim> — <evidence>`.
 - **Evidence must be artifact-native — grounded in the artifact's own text, not the implementation:**
-  - **Groups A, B, C, D, E:** cite an artifact quote/paraphrase, a named section (e.g. "Phase 2: Error Handling"), or a concrete scenario tied to the artifact — for example, "path-resolution logic follows symlinks," not "`resolveFlagPath` at `caveman-config.js:40`." Function/variable names, file:line citations, type signatures, and code syntax belong to the implementation phase, not this review. Group B contradiction findings must quote both sides; a one-sided citation is speculative and capped at minor.
+  - **Groups A, B, C, D, E:** cite an artifact quote, a named section (e.g. "Phase 2: Error Handling"), or a concrete scenario tied to the artifact — for example, "path-resolution logic follows symlinks," not "`resolveFlagPath` at `caveman-config.js:40`." Function/variable names, file:line citations, type signatures, and code syntax belong to the implementation phase, not this review. A quote must be copyable verbatim from the artifact text you were given — re-open the artifact and confirm it before including the finding; a quote you cannot locate verbatim is fabricated, not paraphrased, and the finding must be dropped, never softened to Minor. Group B contradiction findings must quote both sides verbatim; a one-sided citation is speculative and capped at minor.
   - **Group G (Codebase Grounding only):** `file:line` citation is mandatory for present-code findings and absence findings.
-  - **Group F (Lineage):** cite the artifact document names and section/field references per the artifact-type requirements table.
+  - **Group F (Lineage):** cite the artifact document names and section/field references per the artifact-type requirements table, quoted verbatim.
   Speculative concerns without grounding are capped at minor.
-- Use empty issue/fix arrays when none. Do not invent concerns.
+- Use empty issue/fix arrays when none. Do not invent concerns. **Before returning, re-open every file your findings cite and confirm each quote is byte-for-byte present; drop any finding that fails this check.**
 
 [IF iteration >= 1 AND critic_induced_constructs is non-empty]
 CRITIC-INDUCED CONSTRUCTS (findings about these are capped at `minor` severity after pass 2):

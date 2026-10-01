@@ -102,27 +102,7 @@ For plan review: extract and strip the `FLAGGED_DECISIONS` block from the agent 
 
 For every artifact type, extract `INTRODUCED: [name]` and `ACCEPTED: [ID] [reason]` annotations before path validation or storing `artifact_text`. Record introduced constructs with `introduced_pass = iteration + 1`. Process acceptance proposals using the ledger protocol above. Strip all annotations from plan text and manifests before storing them.
 
-Parse the stripped JSON using the same temp-file harness as REVIEW_STEP:
-```bash
-tmpfile_fd="$(mktemp -u /tmp/pwc_flagged.XXXXXX)"
-```
-Write only the JSON array after the colon to `$tmp` using the Write tool, then validate:
-```bash
-FD_TMPFILE="$tmp" python3 - <<'PYEOF'
-import json, sys, os
-with open(os.environ['FD_TMPFILE']) as f:
-    raw = f.read().strip()
-try:
-    data = json.loads(raw)
-    assert isinstance(data, list), "expected array"
-    for item in data:
-        assert 'decision' in item and 'why_flagged' in item, f"missing key in {item}"
-except (json.JSONDecodeError, AssertionError) as e:
-    print(f"FLAGGED_DECISIONS_PARSE_ERROR: {e}", file=sys.stderr)
-    sys.exit(1)
-print(json.dumps(data))
-PYEOF
-```
+Parse the stripped JSON: `tmp="$(mktemp -u /tmp/pwc_flagged.XXXXXX)"`, write only the JSON array after the colon to `$tmp` with the Write tool, then run `python3 <skill dir>/scripts/critic_ledger.py flagged "$tmp"`.
 On non-zero exit: `rm -f "$tmp"`, then hard abort: `FLAGGED_DECISIONS parse failed at iteration <iteration+1>: <stderr content>`.
 On success: `rm -f "$tmp"`. If line not present or array is empty, `flagged = []`.
 
@@ -171,63 +151,20 @@ Invoke the Agent tool with:
 - `model: <critic_model>` (from Step 1c)
 - `prompt`: assemble from [critic-prompt.md](<skill dir>/docs/critic-prompt.md). Include only the group lens blocks named in `<groups>`, bind the template's `[IF …]`/`[insert … verbatim]` directives against `artifact_type`, `iteration`, `group_g_ok`, `critic_induced_constructs`, and the resolved artifact/content, and prepend the higher-effort line if `critic_effort == higher`.
 
-**Parse and validate the critic response:**
+**Every pass sends the full coordinator template.** On iteration > 0 the template is assembled exactly as on iteration 0, with the ledger summary added; it is never replaced by a shorter "re-check the fixes" prompt, and it never contains an unfilled `[insert …]` directive.
 
-Generate a unique temp-file path:
+**The verdict is the coordinator's final reply.** It arrives with the coordinator's task-completion notification. A message that arrives before that notification is interim: record nothing, act on nothing, and keep waiting.
+
+**Parse and validate the critic response:** `tmp="$(mktemp -u /tmp/pwc_critic.XXXXXX)"`, write the final reply to `$tmp` with the Write tool, then run
+
 ```bash
-tmp="$(mktemp -u /tmp/pwc_critic.XXXXXX)"
+python3 <skill dir>/scripts/critic_ledger.py upsert "<ledger_path>" "$tmp" --groups <groups, comma-separated> [--prior-major <open_major from the prior pass>]
 ```
 
-Write the agent's returned text to `$tmp` using the Write tool. Then validate:
-```bash
-CRITIC_TMPFILE="$tmp" python3 - <<'PYEOF'
-import json, sys, os
-
-with open(os.environ['CRITIC_TMPFILE']) as f:
-    raw = f.read().strip()
-
-if raw.startswith('```'):
-    parts = raw.split('```')
-    raw = parts[1]
-    if raw.startswith('json'):
-        raw = raw[4:]
-    raw = raw.strip()
-
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError as e:
-    print(f"PARSE_ERROR: {e}", file=sys.stderr)
-    sys.exit(1)
-
-for field, valid in [('verdict', {'approve','revise'}), ('severity', {'none','minor','major'})]:
-    if field not in data:
-        print(f"MISSING_FIELD: {field}", file=sys.stderr)
-        sys.exit(1)
-    if data[field] not in valid:
-        print(f"INVALID_VALUE: {field}={data[field]!r}", file=sys.stderr)
-        sys.exit(1)
-
-if data['verdict'] == 'approve' and data['severity'] == 'major':
-    print(f"INVALID_COMBINATION: verdict=approve cannot have severity=major", file=sys.stderr)
-    sys.exit(1)
-
-if data['verdict'] == 'revise' and data['severity'] == 'none':
-    print(f"INVALID_COMBINATION: verdict=revise cannot have severity=none", file=sys.stderr)
-    sys.exit(1)
-
-for field in ('top_issues', 'suggested_fixes'):
-    if field not in data or not isinstance(data[field], list):
-        print(f"MISSING_OR_INVALID: {field}", file=sys.stderr)
-        sys.exit(1)
-
-print(json.dumps(data))
-PYEOF
-```
+It validates the verdict shape, upserts every `[<group>][<severity>] claim — evidence` issue into the ledger (new IDs assigned, repeats matched by claim, open issues from groups that ran this pass and no longer appear marked `fixed`), and prints `{"open_major": N, "halt": bool}`. Pass `--prior-major` from pass 2 onward; `halt` is true when the open-major count did not decrease.
 
 On non-zero exit: run `rm -f "$tmp"`, then hard abort: "Critic agent returned invalid output at iteration `<iteration+1>`: `<stderr content>`."
 On success: run `rm -f "$tmp"`.
-
-Parse every issue string for its group and severity prefix before ledger persistence. The coordinator must preserve group and severity in each `top_issues` item (for example: `[A][major] claim — evidence`). Upsert the result into `ledger_path` as defined in Loop state and critic ledger, set unresolved old claims to `fixed` only when absent from this REVIEW_STEP, and recompute the count of open major records. On pass 2+, compare that count to the prior pass and set `halt` when it is non-decreasing.
 
 Store: `last_verdict`, `last_severity`, `top_issues`, `fixes`, `halt`.
 
