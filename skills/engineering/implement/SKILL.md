@@ -7,6 +7,8 @@ Fixed order, no step skipped or reordered: implement → test → review → che
 
 Before writing any code, use TaskCreate to add one task per remaining step — Test, Review, Checklist, Commit — and write the Checklist task's description as its completion criterion: "re-reading the ticket shows zero `- [ ]` and `## Status` reads `done`" (for a GitHub issue, `gh issue view <n> --json body -q .body` after `gh issue edit`). Chain them with `addBlockedBy` (Commit blockedBy Checklist, Checklist blockedBy Review, Review blockedBy Test). This makes the order a property of the task graph, not just this paragraph: git commit only once TaskList shows Commit unblocked. A follow-up fix discovered after Review or Checklist already completed (e.g. a bug found post-hoc) re-enters at Test — create a fresh Test/Review/Checklist/Commit chain for it; do not reuse or bypass the completed one.
 
+Run `git status --short` before the first edit. Modified or untracked files you did not write mean a shared working tree: enter a worktree (`EnterWorktree`, then run the worktree bootstrap the repo's AGENTS.md names, if any) so the commit holds only this ticket's hunks, or record the foreign paths now and stage by hunk (testing skill) at commit.
+
 Use /tdd at every seam the ticket or spec names explicitly (look for a "Test seams" or "Acceptance criteria" section).
 
 Before designing, check the ticket's stated root cause or premise against the code. When the code contradicts the ticket, record the mismatch in the checklist note and the commit message body, and write the commit message from what the code shows. Ticket-code mismatches: always record in final report and commit body so future readers know what was claimed vs. what was built.
@@ -41,6 +43,7 @@ For each ticket completed in this implementation effort:
    - Run named test(s) if the item identifies test IDs.
    - Inspect code if the item describes behavior but no named test exists.
    - Check output, logs, or observable state if the item is output-observable.
+   - A lint or gate item is checked only against the exact command and scope you ran. When a repo-wide run fails in files outside your diff (someone else's uncommitted work), record `clean for changed files; pre-existing failures: <paths>` in the note, and re-run the repo-wide command before commit, since the pre-commit hook runs it.
    - Record the verification method as a brief note (e.g., `test SAB-GRP-FR-2.0.1-P-001 passed`, `code: see ClassName.method`). Take every test name and symbol from your own run or grep, never from the review report.
    - When you verify work against code, re-grep the symbols you cite to confirm they still match the final diff; line numbers shift and references rot.
 3. If verification succeeds: rewrite the item as `- [x] <original text> — <verification note>`. Keep every item and its original text verbatim; an item for a branch not taken (e.g. "If fix: …" when the decision was document-only) becomes `- [x] <original text> — n/a: <branch chosen>`, never merged or dropped. Name code in notes by symbol (`run_root_cause_pass`), never `file:line`; line numbers shift with the same diff and rot afterward. Re-grep every symbol or path you cite in the note and the commit message against the final diff before writing it.
