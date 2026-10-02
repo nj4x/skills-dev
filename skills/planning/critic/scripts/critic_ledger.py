@@ -4,6 +4,9 @@
   critic_ledger.py validate <verdict-file>
   critic_ledger.py flagged <flagged-file>
   critic_ledger.py upsert <ledger-file> <verdict-file> --groups A,B,C,F [--prior-major N]
+  critic_ledger.py render-prompt --artifact-type T --iteration N --groups A,B,C,F --artifact-file F
+      [--adr-file P ...] [--codebase-root P] [--group-g-ok] [--constructs-file F] [--ledger F]
+      [--effort higher] --out F
 
 Exit 1 with a one-line reason on stderr on any invalid input.
 """
@@ -105,6 +108,100 @@ def upsert(ledger: list[dict], verdict: dict, groups: set[str]) -> list[dict]:
     return ledger
 
 
+_GROUP_HEADER = re.compile(r"^GROUP ([A-Z]) — ")
+_LEFTOVER = re.compile(r"\[insert |\[IF |\[ELSE|\[END IF\]|<CODEBASE_ROOT|<artifact_type>|<groups>")
+
+
+def _atom(atom: str, ctx: dict) -> bool:
+    if m := re.fullmatch(r"artifact_type == (\S+)", atom):
+        return ctx["artifact_type"] == m[1]
+    if m := re.fullmatch(r"artifact_type IN \{([^}]*)\}", atom):
+        return ctx["artifact_type"] in {v.strip() for v in m[1].split(",")}
+    if m := re.fullmatch(r"iteration (>=|==) (\d+)", atom):
+        return ctx["iteration"] >= int(m[2]) if m[1] == ">=" else ctx["iteration"] == int(m[2])
+    if atom == "group_g_ok":
+        return ctx["group_g_ok"]
+    if atom == "critic_induced_constructs is non-empty":
+        return bool(ctx["constructs"])
+    _fail(f"UNKNOWN_CONDITION: {atom}")
+    return False
+
+
+def _cond(expr: str, ctx: dict) -> bool:
+    return all(_atom(a.strip(), ctx) for a in re.split(r"\s+AND\s+", expr.strip()))
+
+
+def _resolve_conditionals(text: str, ctx: dict) -> str:
+    out: list[str] = []
+    frames: list[dict] = []  # parent_active, matched, active
+    for line in text.splitlines():
+        s = line.strip()
+        parent = frames[-1]["active"] if frames else True
+        if s.startswith("[IF ") and s.endswith("]"):
+            hit = parent and _cond(s[4:-1], ctx)
+            frames.append({"parent": parent, "matched": hit, "active": hit})
+        elif s.startswith("[ELSE IF ") and s.endswith("]") and frames:
+            f = frames[-1]
+            hit = f["parent"] and not f["matched"] and _cond(s[9:-1], ctx)
+            f["matched"] |= hit
+            f["active"] = hit
+        elif s == "[ELSE]" and frames:
+            f = frames[-1]
+            f["active"] = f["parent"] and not f["matched"]
+            f["matched"] = True
+        elif s == "[END IF]" and frames:
+            frames.pop()
+        elif parent:
+            out.append(line)
+    if frames:
+        _fail("UNBALANCED_CONDITIONALS: missing [END IF]")
+    return "\n".join(out)
+
+
+def _keep_groups(text: str, groups: set[str]) -> str:
+    out: list[str] = []
+    keep = True
+    for line in text.splitlines():
+        if m := _GROUP_HEADER.match(line):
+            keep = m[1] in groups
+        elif line.strip() == "---":
+            keep = True
+        if keep:
+            out.append(line)
+    return "\n".join(out)
+
+
+def render_prompt(args: argparse.Namespace) -> str:
+    template = Path(args.template).read_text()
+    start, end = template.index("```\n") + 4, template.rindex("\n```")
+    body = template[start:end]
+    groups = args.groups.split(",")
+    constructs = Path(args.constructs_file).read_text().strip() if args.constructs_file else ""
+    ctx = {
+        "artifact_type": args.artifact_type, "iteration": args.iteration,
+        "group_g_ok": args.group_g_ok, "constructs": constructs,
+    }
+    text = _keep_groups(_resolve_conditionals(body, ctx), set(groups))
+    artifact = Path(args.artifact_file).read_text().strip()
+    adr = "\n\n".join(f"=== {p} ===\n{Path(p).read_text().strip()}" for p in args.adr_file)
+    text = text.replace("`<groups>`", ", ".join(groups)).replace("[plan|design]", "plan" if args.artifact_type == "plan" else "design")
+    text = text.replace("<artifact_type>", args.artifact_type)
+    text = re.sub(r"^\[insert each ledger construct.*\]$", lambda _: constructs, text, flags=re.MULTILINE)
+    text = re.sub(r"^\[insert adr_content verbatim.*\]$", lambda _: adr, text, flags=re.MULTILINE)
+    text = re.sub(r"^\[insert (artifact|content) verbatim.*\]$", lambda _: artifact, text, flags=re.MULTILINE)
+    text = re.sub(r"^CODEBASE_ROOT: <.*>$", lambda _: f"CODEBASE_ROOT: {args.codebase_root}", text, flags=re.MULTILINE)
+    if args.iteration >= 1 and args.ledger and Path(args.ledger).exists():
+        open_major = [r for r in json.loads(Path(args.ledger).read_text()) if r["status"] == "open" and r["severity"] == "major"]
+        lines = [f"- {r['id']} (group {r['group']}): {r['claim']}" + ("" if r["group"] in groups else " [group not running this pass]") for r in open_major]
+        summary = "LEDGER SUMMARY (open majors from prior passes; a claim you no longer raise is recorded as fixed):\n" + ("\n".join(lines) or "- none")
+        text = text.replace("---\n\nSUB-AGENT PROMPTS", f"{summary}\n\n---\n\nSUB-AGENT PROMPTS", 1)
+    if left := _LEFTOVER.search(text):
+        _fail(f"UNFILLED_DIRECTIVE: {left[0]!r}")
+    if args.effort == "higher":
+        text = "Think step by step and reason at maximum depth before producing your JSON verdict.\n\n" + text
+    return re.sub(r"\n{3,}", "\n\n", text) + "\n"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -115,9 +212,28 @@ def main() -> None:
     up.add_argument("verdict_file")
     up.add_argument("--groups", required=True)
     up.add_argument("--prior-major", type=int)
+    rp = sub.add_parser("render-prompt")
+    rp.add_argument("--artifact-type", required=True, choices=["plan", "design-review", "spec", "tickets"])
+    rp.add_argument("--iteration", type=int, required=True)
+    rp.add_argument("--groups", required=True)
+    rp.add_argument("--artifact-file", required=True)
+    rp.add_argument("--adr-file", action="append", default=[])
+    rp.add_argument("--codebase-root", default="")
+    rp.add_argument("--group-g-ok", action="store_true")
+    rp.add_argument("--constructs-file")
+    rp.add_argument("--ledger")
+    rp.add_argument("--effort", default="normal")
+    rp.add_argument("--template", default=str(Path(__file__).resolve().parent.parent / "docs" / "critic-prompt.md"))
+    rp.add_argument("--out", required=True)
     args = parser.parse_args()
 
-    if args.cmd == "validate":
+    if args.cmd == "render-prompt":
+        try:
+            Path(args.out).write_text(render_prompt(args))
+        except (OSError, ValueError) as exc:
+            _fail(f"RENDER_ERROR: {exc}")
+        print(json.dumps({"out": args.out}))
+    elif args.cmd == "validate":
         print(json.dumps(validate_verdict(_load_json(args.verdict_file))))
     elif args.cmd == "flagged":
         print(json.dumps(validate_flagged(_load_json(args.flagged_file))))

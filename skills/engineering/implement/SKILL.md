@@ -9,7 +9,7 @@ Before writing any code, use TaskCreate to add one task per remaining step — T
 
 Use /tdd at every seam the ticket or spec names explicitly (look for a "Test seams" or "Acceptance criteria" section).
 
-Before designing, check the ticket's stated root cause or premise against the code. When the code contradicts the ticket, record the mismatch in the checklist note and the commit message body, and write the commit message from what the code shows.
+Before designing, check the ticket's stated root cause or premise against the code. When the code contradicts the ticket, record the mismatch in the checklist note and the commit message body, and write the commit message from what the code shows. Ticket-code mismatches: always record in final report and commit body so future readers know what was claimed vs. what was built.
 
 After each substantive change, run typechecking and the test file(s) that cover that change via `Skill("testing", args="--files <changed paths>")` — selective runner maps changed source files to covering tests, falls back to full suite only for uncovered files.
 
@@ -18,6 +18,8 @@ Once done, run review in a fresh session that inherits none of this session's co
 A diff that touches only docstrings, comments, message strings, and docs is a **light review**: brief the agent with effort `low`, hand it the diff, and have it verify each factual claim in the changed text against the code it names. The fresh session, `Skill("code-review")` call, and build gate are unchanged.
 
 Review is complete only when the agent's completion notification delivers its report with the build gate resolved (green or red, never in progress). Until then the Review task stays `in_progress`, Commit stays blocked, and the report's text comes from that notification alone — keep working on read-only steps (checklist verification) while it runs.
+
+**Re-review on any diff change**: if code changes after the review report arrives (even a one-word docstring fix to address a Minor finding), set Review back to `in_progress` and dispatch a fresh review session against the new diff before re-completing the task.
 
 A ticket that changes no code (a lineage ticket: ADRs, requirements, docs) still runs every step. Its Test step is lint only (the testing skill's docs-only rule), and code-review runs in its docs-only mode. The ticket's checklist still governs what "done" means — authoring the ADR is not done when the checklist also asks for FS merges or ticket-body updates.
 
@@ -40,6 +42,7 @@ For each ticket completed in this implementation effort:
    - Inspect code if the item describes behavior but no named test exists.
    - Check output, logs, or observable state if the item is output-observable.
    - Record the verification method as a brief note (e.g., `test SAB-GRP-FR-2.0.1-P-001 passed`, `code: see ClassName.method`).
+   - When you verify work against code, re-grep the symbols you cite to confirm they still match the final diff; line numbers shift and references rot.
 3. If verification succeeds: rewrite the item as `- [x] <original text> — <verification note>`. Keep every item and its original text verbatim; an item for a branch not taken (e.g. "If fix: …" when the decision was document-only) becomes `- [x] <original text> — n/a: <branch chosen>`, never merged or dropped. Name code in notes by symbol (`run_root_cause_pass`), never `file:line`; line numbers shift with the same diff and rot afterward. Re-grep every symbol or path you cite in the note and the commit message against the final diff before writing it.
 4. If an item cannot be verified (no test, no inspectable code, no observable output): do **not** check it. Append an inline comment: `— Item not verifiable: requires manual review or acceptance`.
    An item whose work has not been done is unfinished, not unverifiable: go back and do the work. "Deferred", "after merge", and "follow-up" are unfinished.

@@ -13,8 +13,8 @@ SHARED REVIEW CONTRACT:
 - Prefix each issue `[<group>][major|minor] <claim> — <evidence>`.
 - **Evidence must be artifact-native — grounded in the artifact's own text, not the implementation:**
   - **Groups A, B, C, D, E:** cite an artifact quote, a named section (e.g. "Phase 2: Error Handling"), or a concrete scenario tied to the artifact — for example, "path-resolution logic follows symlinks," not "`resolveFlagPath` at `caveman-config.js:40`." Function/variable names, file:line citations, type signatures, and code syntax belong to the implementation phase, not this review. A quote must be copyable verbatim from the artifact text you were given — re-open the artifact and confirm it before including the finding; a quote you cannot locate verbatim is fabricated, not paraphrased, and the finding must be dropped, never softened to Minor. Group B contradiction findings must quote both sides verbatim; a one-sided citation is speculative and capped at minor.
-  - **Group G (Codebase Grounding only):** `file:line` citation is mandatory for present-code findings and absence findings.
   - **Group F (Lineage):** cite the artifact document names and section/field references per the artifact-type requirements table, quoted verbatim.
+  - **Group G (Codebase Grounding, design-review ADRs only):** `file:line` citation is mandatory for artifact-existence findings; absence findings require the failed search evidence. (For specs/tickets, Group G evaluates implementation artifacts, not document references.)
   Speculative concerns without grounding are capped at minor.
 - Use empty issue/fix arrays when none. Do not invent concerns. **Before returning, re-open every file your findings cite and confirm each quote is byte-for-byte present; drop any finding that fails this check.**
 
@@ -154,7 +154,17 @@ For each matched artifact, check for a `lineage-rules` frontmatter key:
 - `lineage-rules: companion of SRS` → restrict Stage-2 to `**Source SRS**:` field only; skip all other Source fields
 - ADR-direct tickets (`ticket-subtype: adr-direct` + `**Source ADR**:` present): `**Spec**:` is optional; skip the missing-anchor Major finding for the Spec field only
 
-[IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_g_ok]
+[IF artifact_type == design-review AND iteration == 0 AND group_g_ok]
+GROUP G — Codebase Grounding (ADR Facts):
+You are an adversarial reviewer focused on CODEBASE GROUNDING. Scope: ADRs only. Search the codebase to verify the facts an ADR cites about existing code. `CODEBASE_ROOT` is provided below. Evaluate ONLY:
+- Verify every cited existing symbol (function, method, class, config key, schema field, table, type, ADR filename) exists at its cited location.
+- Do not flag intentionally new artifacts.
+- For an absent artifact, cite the search performed and the artifact quote that names it. A `file:line` citation is mandatory for findings about present code; absence findings instead require the failed search evidence.
+Search source code conceptually and cross-file, search docs and requirements as a document corpus. Use `rg`, `fd`, and Read for exact or local lookups.
+
+**Scope boundary:** Your job is existence verification only — confirm that named artifacts exist or report that they don't. Do NOT review behavior, signatures, implementation details, or semantics of the code you find. A finding like "class X is missing" is major; "class X's method signature is wrong" is out of scope and must be suppressed entirely, not downgraded to minor. Groups A/B/C will handle correctness and consistency concerns — Group G confirms existence only.
+
+[ELSE IF artifact_type IN {spec, tickets} AND iteration == 0 AND group_g_ok]
 GROUP G — Codebase Grounding:
 You are an adversarial reviewer focused on CODEBASE GROUNDING. `CODEBASE_ROOT` is provided below. Evaluate ONLY:
 - Verify every named existing function, method, class, config key, schema field, DB column, and type cited by the artifact exists at its cited location.
@@ -178,7 +188,11 @@ Return ONLY the merged JSON object — no markdown fences, no preamble:
 
 ---
 
-[IF artifact_type IN {spec, tickets}]
+[IF artifact_type == design-review AND group_g_ok]
+CODEBASE_ROOT: <CODEBASE_ROOT derived from $CLAUDE_PROJECT_DIR, falling back to $PWD; Group G is omitted when this is not a readable directory>
+[END IF]
+
+[IF artifact_type IN {spec, tickets} AND group_g_ok]
 CODEBASE_ROOT: <CODEBASE_ROOT derived from $CLAUDE_PROJECT_DIR, falling back to $PWD; Group G is omitted when this is not a readable directory>
 [END IF]
 

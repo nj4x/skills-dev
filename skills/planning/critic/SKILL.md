@@ -125,7 +125,7 @@ Before invoking the agent:
 1. **Resolve `artifact_type`** — **on iteration 0 only**. Persist the resolved value as loop state and reuse it unchanged on all subsequent iterations. Do NOT re-derive from `current_plan` on iteration > 0: for spec/tickets the revision agent returns a bare file-path string, which would fall through to `plan` and corrupt group selection, FINALIZE routing, and review-content assembly.
 
    Resolution rules (applied to `current_plan` on iteration 0 only), first match wins:
-   a. **Frontmatter** — after stripping a leading UTF-8 BOM and any leading whitespace/blank lines, if the text begins with a YAML frontmatter block (`---` fence) containing `artifact-type: <v>` where `<v>` is a recognized value (`spec` or `tickets`), set `artifact_type = <v>`.
+   a. **Frontmatter** — after stripping a leading UTF-8 BOM and any leading whitespace/blank lines, if the text begins with a YAML frontmatter block (`---` fence) containing `artifact-type: <v>` where `<v>` is a recognized value (`spec`, `tickets`, or `design-review`), set `artifact_type = <v>`.
    b. **Design-review sentinel** — else if the text contains `Design Decisions Reached During Grilling`, set `artifact_type = design-review`.
    c. **Plain plan** — else set `artifact_type = plan`.
 
@@ -133,7 +133,7 @@ Before invoking the agent:
 
 2. **Assemble review content** based on `artifact_type`:
 
-   - **`design-review`**: `current_plan` is a manifest of ADR file paths. Extract paths from the manifest body (lines after the `---` sentinel, or the plain markdown list). Verify each file exists (hard-abort naming any missing path). Read all ADR files into `adr_content` (one file-path header per file, then its content). Store `current_plan` as `artifact`.
+   - **`design-review`**: `current_plan` is a manifest of ADR file paths. Extract paths from the manifest body (the markdown list after any frontmatter block, or after the `---` sentinel). Verify each file exists (hard-abort naming any missing path). Read all ADR files into `adr_content` (one file-path header per file, then its content). Store `current_plan` as `artifact`.
 
    - **`spec`**: on iteration 0 record `spec_path = pickup_path` (the path from the `pickup:` sentinel); the review content for this iteration is `current_plan` as already read. On iteration > 0, re-read the file at `spec_path` into `content`; if missing, unreadable, or empty, write `.scratch/.../dirty` (derive staging dir as parent of `spec_path`) and hard-stop. Store `current_plan` as `artifact`.
 
@@ -149,9 +149,15 @@ Invoke the Agent tool with:
 - `subagent_type: "claude"`
 - `description: "Critique [implementation plan|design decisions|spec|tickets] — parallel coordinator (iteration <iteration+1>)"` (select label from `artifact_type`: `plan` → "implementation plan", `design-review` → "design decisions", `spec` → "spec", `tickets` → "tickets")
 - `model: <critic_model>` (from Step 1c)
-- `prompt`: assemble from [critic-prompt.md](<skill dir>/docs/critic-prompt.md). Include only the group lens blocks named in `<groups>`, bind the template's `[IF …]`/`[insert … verbatim]` directives against `artifact_type`, `iteration`, `group_g_ok`, `critic_induced_constructs`, and the resolved artifact/content, and prepend the higher-effort line if `critic_effort == higher`.
+- `prompt`: render the coordinator prompt with the script, never by hand:
 
-**Every pass sends the full coordinator template.** On iteration > 0 the template is assembled exactly as on iteration 0, with the ledger summary added; it is never replaced by a shorter "re-check the fixes" prompt, and it never contains an unfilled `[insert …]` directive.
+  ```bash
+  python3 <skill dir>/scripts/critic_ledger.py render-prompt --artifact-type <artifact_type> --iteration <iteration> --groups <groups, comma-separated> --artifact-file <artifact path> [--adr-file <path> ...] [--codebase-root <CODEBASE_ROOT> --group-g-ok] [--constructs-file <file of "- <name> (introduced pass N)" lines>] [--ledger <ledger_path>] [--effort higher] --out "$(mktemp -u /tmp/pwc_prompt.XXXXXX)"
+  ```
+
+  `--artifact-file` is the manifest path (`design-review`), the spec path, or the manifest path (`tickets`); for `plan`, write `current_plan` to a `mktemp -u` file first. `--adr-file` is repeated per ADR path the manifest lists. The script resolves the template's `[IF …]` blocks, keeps only the lens blocks named in `--groups`, inserts the artifact and ADR bodies, adds the ledger summary on iteration > 0, and exits non-zero on any unfilled directive (hard abort). Send as the Agent `prompt`: `Your complete instructions are in <out path>. Read that file in full and follow it exactly. Your final reply is only the merged JSON verdict.` Delete the rendered file on every exit path.
+
+**Every pass renders the full coordinator template.** On iteration > 0 it is rendered exactly as on iteration 0, with the ledger summary added; it is never replaced by a shorter "re-check the fixes" prompt.
 
 **The verdict is the coordinator's final reply.** It arrives with the coordinator's task-completion notification. A message that arrives before that notification is interim: record nothing, act on nothing, and keep waiting.
 

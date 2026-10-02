@@ -41,7 +41,7 @@ The whole map at low resolution, loaded once per session. Open tickets are **not
 
 ## Notes
 
-<domain; skills every session should consult; standing preferences for this effort>
+<domain; skills every session should consult; standing preferences for this effort; ADR numbers reserved for this map's tickets, with the draft file path of each>
 
 ## Decisions so far
 
@@ -127,7 +127,7 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 
 1. Load the **map** — the low-res view, not every ticket body. If every child issue is already closed, there is nothing to resolve: go straight to [Handoff](#handoff-when-the-map-closes). This is the entry point for a map whose last ticket closed in another session, and for an execution map being invoked to record its completion.
 2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it**: assign it to yourself before any work.
-3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use `/grilling` and `/domain-modeling`.
+3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. Before round 1, read in full every ADR the ticket cites and every sibling ADR from this map (closed tickets, draft files the Notes name) — their constraints bound the design, and `Explore` only locates code. If in doubt, use `/grilling` and `/domain-modeling`. A ticket whose answer lands as an ADR is resolved only once `/critic` has reviewed that ADR — including consistency against sibling ADRs from the same map — and its verdict is in hand; the resolution comment in step 4 waits for it. To invoke it, write `plans/wayfinder-<map>-<ticket>-adrs.md` with `artifact-type: design-review` frontmatter and a markdown list of the ADR draft paths (siblings to check go in a plain sentence beneath), then run `/critic pickup:<that path>`.
 4. Record the resolution. **Compose the resolution comment whole before you post it**: the answer, plus a `## Followups` block if resolving surfaced downstream items (see the [Followups convention](#handoff-when-the-map-closes)). The handoff reads those tags back out of the posted comment, so a comment posted before its tags are written strands them — the one failure this whole route exists to prevent. Post the composed comment, **close** the issue, and **append a context pointer** to the map's Decisions-so-far. Then check: **are all child issues now closed?** (every ticket on the map has a closed status, not merely moved off the frontier). If yes, proceed to [Handoff](#handoff-when-the-map-closes).
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
 
