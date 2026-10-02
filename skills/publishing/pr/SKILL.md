@@ -9,6 +9,13 @@ metadata:
     url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
+## Before writing
+
+1. Run the `code-review` skill on the branch. Done when it returns a verdict and every Critical/Major is fixed or listed under Merge Danger.
+2. Capture the red run: check out the base commit's source (`git stash` or a `/tmp` worktree), run the new or changed tests, and keep the failing output for **Before**. Done when you hold one failing and one passing run of the same test.
+
+## Template
+
 Use this template for writing the PR body:
 
 ```markdown
@@ -161,7 +168,7 @@ Concrete evidence that the change works. Show a before and after.
 
 Screenshots are S-tier - when the environment is set up for it and the change is visual.
 
-Execution-based evidence is A-tier. Test results, console output. Show the exact test that now fails and passes, using pseudocode.
+Execution-based evidence is A-tier. Test results, console output. Show the exact test that fails on the base commit and passes on the branch, using pseudocode. A production error message alone is context, not Before evidence.
 
 ### Merge Danger
 

@@ -640,6 +640,7 @@ Spawn 4 Explore agents **in parallel**. Pass each agent:
 - The `--scope` value (so agents know whether Jira commit-message validation applies)
 - The ticket/spec/ADR text **verbatim** (quoted or linked), not the implementer's summary or framing of it — a finder reasoning from the implementer's own account of what the ticket requires cannot catch a place where the implementer's account is the thing that's wrong
 - Any doubt the implementer holds about their own change, phrased as a candidate finding for the finder to confirm or refute — never resolved by the orchestrator before the finders see it
+- The scope rule: every finding carries `in_diff: yes|no` beside its severity — `yes` only when the cited line is added or modified by the diff, `no` when the diff leaves it untouched (pre-existing)
 
 ### Finder A — Correctness & Security
 
@@ -700,9 +701,10 @@ Prompt:
 After all 4 finders complete:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
-3. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
-4. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
-5. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
+3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval.
+4. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
+5. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
+6. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
 
 ### Mandatory Pre-Report Verification Protocol
 
@@ -714,6 +716,7 @@ Every Minor/Major/Critical finding must include evidence. Before reporting a fin
 4. For API, SRS, or Data View contract claims, quote the exact spec line that the code contradicts.
 5. Distinguish defects from preferences. If the code works and breaks no rule, report it as Note or drop it.
 6. Check the severity itself against Step 11's category definitions. A finding that matches none of the listed MAJOR examples (module boundary violation, missing business rule enforcement, wrong error code, missing event publishing, architecture violation) is not MAJOR — downgrade it to MINOR or NOTE, even when it reads as significant. Parameter order, call-site convention, and similar local-consistency preferences are MINOR at most.
+7. The recommended fix is part of the finding. Open the code the fix would change and confirm that applying it keeps every invariant the surrounding code relies on (for example, reading state from a base the code deliberately superseded). A finding whose fix fails that check is reported with a corrected fix, or with no fix.
 
 If evidence cannot be produced, drop the finding or downgrade it to Note.
 
@@ -793,13 +796,17 @@ Prompt template:
 > - Description: `[description]`
 > - Recommended fix: `[fix]`
 >
+> Also check two things: (1) whether the cited line is added or modified by the diff (`git diff` hunks), and (2) whether applying the recommended fix would keep every invariant the surrounding code relies on.
+>
 > Return one of:
-> - `CONFIRMED` — the finding is definitely real; the code has this problem
+> - `CONFIRMED` — the finding is definitely real; the code has this problem. Add `Corrected fix:` when the recommended fix fails check (2).
 > - `PLAUSIBLE` — the finding is likely real but requires runtime or context not visible in static analysis
+> - `PRE_EXISTING` — the problem is real but the cited line is outside the diff
 > - `REFUTED` — the finding is wrong, already handled, or inapplicable
 
 **Outcome mapping:**
 - `CONFIRMED` or `PLAUSIBLE` → include in main report at stated severity
+- `PRE_EXISTING` → move to the `📌 Pre-existing (outside this diff)` section at MINOR; exclude from grade calculation
 - `REFUTED` → move to `### 🔍 Candidate Issues (Not Confirmed)` section in the report; exclude from grade calculation
 
 > MINOR findings are **not** sent to verifiers (cost vs benefit). They proceed directly to Step 11.
@@ -844,7 +851,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Prefer omission over false positives.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Add `in_diff: yes|no` (`yes` only when the cited line is added or modified by the diff); an `in_diff: no` finding is reported MINOR in the `📌 Pre-existing (outside this diff)` section, outside the grade. Open the code a recommended fix would change and confirm the fix keeps the invariants that code relies on. Prefer omission over false positives.
 
 Wait for the agent to return findings, then proceed to Step 10.5 (Lineage Enforcement), then Step 11 with the unified finding list.
 
@@ -1315,6 +1322,10 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 ### 🔍 Candidate Issues (Not Confirmed) — effort = high only; omit section otherwise
 > These findings were raised but refuted by adversarial verification. They are excluded from the grade. Include for transparency.
 1. **[File]:[Line]** - [Issue] *(Refuted: [reason])*
+
+### 📌 Pre-existing (outside this diff) — omit section when empty
+> Real problems on lines the diff does not touch. Reported MINOR, excluded from the grade, never a reason to withhold approval; the author may file a follow-up.
+1. **[File]:[Line]** - [Issue] *(finder severity: [CRITICAL|MAJOR|MINOR]; [fix])*
 
 ### 🔗 Lineage (ADR-0061)
 - Lineage anchor: `[**Spec**: <slug> / **Source ADR**: <path> / none found — checks skipped]`

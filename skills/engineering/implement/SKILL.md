@@ -1,13 +1,13 @@
 ---
 name: implement
-description: "Implement a piece of work based on a spec or set of tickets. Use when the user says 'implement this', 'build this', or wants a ticket or spec worked through to a tested, reviewed state."
+description: "Implement a piece of work based on a spec or set of tickets. Use when the user says 'implement this', 'build this', agrees to a fix or change the agent proposed (after research or diagnosis, a bare 'yes' counts), or wants a ticket or spec worked through to a tested, reviewed state."
 ---
 
 Fixed order, no step skipped or reordered: implement → test → review → checklist → commit. Reaching "ready to commit" without having run the checklist step is a process error, not a shortcut — go back and run it.
 
 Before writing any code, use TaskCreate to add one task per remaining step — Test, Review, Checklist, Commit — and write the Checklist task's description as its completion criterion: "re-reading the ticket shows zero `- [ ]` and `## Status` reads `done`" (for a GitHub issue, `gh issue view <n> --json body -q .body` after `gh issue edit`). Chain them with `addBlockedBy` (Commit blockedBy Checklist, Checklist blockedBy Review, Review blockedBy Test). This makes the order a property of the task graph, not just this paragraph: git commit only once TaskList shows Commit unblocked. A follow-up fix discovered after Review or Checklist already completed (e.g. a bug found post-hoc) re-enters at Test — create a fresh Test/Review/Checklist/Commit chain for it; do not reuse or bypass the completed one.
 
-Run `git status --short` before the first edit. Modified or untracked files you did not write mean a shared working tree: enter a worktree (`EnterWorktree`, then run the worktree bootstrap the repo's AGENTS.md names, if any) so the commit holds only this ticket's hunks, or record the foreign paths now and stage by hunk (testing skill) at commit. At commit time, verify `git diff --cached --name-only` matches the files named in the commit message (or the message lists "unrelated concurrent changes"); if not, investigate (pre-existing edits are easy to accidentally include). #351 staled its own doc-change note because serve-diagnostics.md was edited concurrently and staged without scrutiny.
+Run `git branch --show-current` and `git status --short` before the first edit; on the default branch, `git switch -c <n>-<slug>` first, so every commit and push lands on a feature branch. When the repo's AGENTS.md calls for worktrees, enter one before any branch or edit, whatever `git status` shows. Otherwise, modified or untracked files you did not write mean a shared working tree: enter a worktree (`EnterWorktree`, then run the worktree bootstrap the repo's AGENTS.md names, if any) so the commit holds only this ticket's hunks, or record the foreign paths now and stage by hunk (testing skill) at commit. At commit time, verify `git diff --cached --name-only` matches the files named in the commit message (or the message lists "unrelated concurrent changes"); if not, investigate — foreign hunks slip into the index unnoticed.
 
 Use /tdd at every seam the ticket or spec names explicitly (look for a "Test seams" or "Acceptance criteria" section).
 
@@ -19,7 +19,7 @@ Once done, run review in a fresh session that inherits none of this session's co
 
 A diff that touches only docstrings, comments, message strings, and docs is a **light review**: brief the agent with effort `low`, hand it the diff, and have it verify each factual claim in the changed text against the code it names. The fresh session, `Skill("code-review")` call, and build gate are unchanged.
 
-Review is complete only when the agent's completion notification delivers its report with the build gate resolved (green or red, never in progress). Until then the Review task stays `in_progress`, Commit stays blocked, and the report's text comes from that notification alone — keep working on read-only steps (checklist verification) while it runs.
+Review is complete only when the agent's completion notification delivers its report with the build gate resolved (green or red, never in progress). Until then the Review task stays `in_progress`, Commit stays blocked, and the report's text comes from that notification alone — keep working on read-only steps (checklist verification) while it runs. A report the agent sends with `SendMessage` before that notification is provisional — wait for the notification. Read the final report then, and triage each Major/Critical finding yourself against the code before acting: a finding on a line the diff does not touch is pre-existing, so file it as a follow-up and keep it out of this change.
 
 **Re-review on any diff change**: if code changes after the review report arrives (even a one-word docstring fix to address a Minor finding), set Review back to `in_progress` and dispatch a fresh review session against the new diff before re-completing the task.
 
@@ -30,7 +30,7 @@ A ticket that changes no code (a lineage ticket: ADRs, requirements, docs) still
 Resolve where each ticket's checklist and Status field live before the checklist workflow, and use that same location for every edit in that workflow:
 
 - **Ticket is a repo file** (e.g. `.scratch/<slug>/draft-issues/*.md`): edit the file directly.
-- **Ticket is a GitHub issue** (see the project's `docs/agents/issue-tracker.md` if present): `gh issue view <n> --json body -q .body` to read it, edit the body text, `gh issue edit <n> --body-file <tmp>` to write it back. Closing the issue (`gh issue close <n>`) is a separate, later action — see that doc for when it applies; it is not part of this checklist workflow.
+- **Ticket is a GitHub issue** (see the project's `docs/agents/issue-tracker.md` if present): read it with `gh issue view <n> --json body -q .body`, and read that doc before the first checklist edit: when it names a ticket-check script, use the script to tick items and set Status, never a hand-built body. Without a script, edit the fetched body text with `gh issue edit <n> --body-file <tmp>`, keeping every section (a body rebuilt from only the touched sections drops the rest). Closing the issue (`gh issue close <n>`) is a separate, later action — see that doc for when it applies; it is not part of this checklist workflow.
 
 ## Verify-then-check checklist workflow
 
@@ -44,9 +44,9 @@ For each ticket completed in this implementation effort:
    - Inspect code if the item describes behavior but no named test exists.
    - Check output, logs, or observable state if the item is output-observable.
    - A lint or gate item is checked only against the exact command and scope you ran. When a repo-wide run fails in files outside your diff (someone else's uncommitted work), record `clean for changed files; pre-existing failures: <paths>` in the note, and re-run the repo-wide command before commit, since the pre-commit hook runs it.
-   - Record the verification method as a brief note (e.g., `test SAB-GRP-FR-2.0.1-P-001 passed`, `code: see ClassName.method`). Take every test name and symbol from your own run or grep, never from the review report.
+   - Record the verification method as a brief note (e.g., `test <test-id> passed`, `code: see ClassName.method`). Take every test name and symbol from your own run or grep, never from the review report.
    - When you verify work against code, re-grep the symbols you cite to confirm they still match the final diff; line numbers shift and references rot.
-3. If verification succeeds: rewrite the item as `- [x] <original text> — <verification note>`. Keep every item and its original text verbatim; an item for a branch not taken (e.g. "If fix: …" when the decision was document-only) becomes `- [x] <original text> — n/a: <branch chosen>`, never merged or dropped. Name code in notes by symbol (`run_root_cause_pass`), never `file:line`; line numbers shift with the same diff and rot afterward. Re-grep every symbol or path you cite in the note and the commit message against the final diff before writing it.
+3. If verification succeeds: rewrite the item as `- [x] <original text> — <verification note>`. Keep every item and its original text verbatim; an item for a branch not taken (e.g. "If fix: …" when the decision was document-only) becomes `- [x] <original text> — n/a: <branch chosen>`, never merged or dropped. An optional item is a branch too: tick it `n/a: <reason>`; never leave it open under a `done` Status. Name code in notes by symbol, never `file:line`; line numbers shift with each diff and rot afterward. Re-grep every symbol or path you cite in the note and the commit message against the final diff before writing it.
 4. If an item cannot be verified (no test, no inspectable code, no observable output): do **not** check it. Append an inline comment: `— Item not verifiable: requires manual review or acceptance`.
    An item whose work has not been done is unfinished, not unverifiable: go back and do the work. "Deferred", "after merge", and "follow-up" are unfinished.
 5. After all verifiable items are checked, update that ticket's `## Status` field to `done` — replace the whole body under that heading, not just insert a `done` line above the old text, or the section ends up self-contradicting (e.g. `done` followed by a stale `blocked` line). The ticket is `done` only when every item is checked or marked not verifiable.
@@ -56,4 +56,8 @@ Only once every completed ticket's checklist is verified and its Status is `done
 
 When committing, include any `Requirements:` field or inline `(ID)` tags from the ticket or spec in the commit message body and PR description so the trace survives into VCS history.
 
-After the commit, ask the user before pushing. A GitHub-issue ticket is closed (`gh issue close <n>`) only after its commits are pushed; until then it stays open and the final report says the push is pending.
+After the commit, push the feature branch and open the PR without asking; merging stays the user's. A GitHub-issue ticket is closed (`gh issue close <n>`) only after its commits are merged to the default branch; until then it stays open and the final report says the push or merge is pending.
+
+Run each push, merge and close as its own Bash call: one denied step cancels a chained command, and the silence reads as success. Report a push, PR or merge as done only after quoting its proof: `git ls-remote --heads origin <branch>` for a push, the URL `gh pr create` printed, `gh pr view <n> --json state,mergedAt` for a merge.
+
+A merge belongs in a PR from the feature branch: `gh pr create` needs no checkout of the default branch. When handing the user git commands for the main checkout, first read its branch from `git worktree list`, since other sessions leave it on feature branches.

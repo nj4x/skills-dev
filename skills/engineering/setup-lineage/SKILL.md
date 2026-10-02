@@ -1,7 +1,6 @@
 ---
 name: setup-lineage
 description: Retrofit an existing repo with lineage frontmatter and inline source-reference fields across the FS→SRS→ADR→Spec→Ticket chain. Standalone skill — not part of setup-skills.
-disable-model-invocation: true
 ---
 
 ## Requirements boundary
