@@ -5,7 +5,7 @@ description: "Implement a piece of work based on a spec or set of tickets. Use w
 
 Fixed order, no step skipped or reordered: implement → test → review → checklist → commit. Reaching "ready to commit" without having run the checklist step is a process error, not a shortcut — go back and run it.
 
-Before writing any code, use TaskCreate to add one task per remaining step — Test, Review, Checklist, Commit — and chain them with `addBlockedBy` (Commit blockedBy Checklist, Checklist blockedBy Review, Review blockedBy Test). This makes the order a property of the task graph, not just this paragraph: git commit only once TaskList shows Commit unblocked. A follow-up fix discovered after Review or Checklist already completed (e.g. a bug found post-hoc) re-enters at Test — create a fresh Test/Review/Checklist/Commit chain for it; do not reuse or bypass the completed one.
+Before writing any code, use TaskCreate to add one task per remaining step — Test, Review, Checklist, Commit — and write the Checklist task's description as its completion criterion: "re-reading the ticket shows zero `- [ ]` and `## Status` reads `done`" (for a GitHub issue, `gh issue view <n> --json body -q .body` after `gh issue edit`). Chain them with `addBlockedBy` (Commit blockedBy Checklist, Checklist blockedBy Review, Review blockedBy Test). This makes the order a property of the task graph, not just this paragraph: git commit only once TaskList shows Commit unblocked. A follow-up fix discovered after Review or Checklist already completed (e.g. a bug found post-hoc) re-enters at Test — create a fresh Test/Review/Checklist/Commit chain for it; do not reuse or bypass the completed one.
 
 Use /tdd at every seam the ticket or spec names explicitly (look for a "Test seams" or "Acceptance criteria" section).
 
@@ -41,7 +41,7 @@ For each ticket completed in this implementation effort:
    - Run named test(s) if the item identifies test IDs.
    - Inspect code if the item describes behavior but no named test exists.
    - Check output, logs, or observable state if the item is output-observable.
-   - Record the verification method as a brief note (e.g., `test SAB-GRP-FR-2.0.1-P-001 passed`, `code: see ClassName.method`).
+   - Record the verification method as a brief note (e.g., `test SAB-GRP-FR-2.0.1-P-001 passed`, `code: see ClassName.method`). Take every test name and symbol from your own run or grep, never from the review report.
    - When you verify work against code, re-grep the symbols you cite to confirm they still match the final diff; line numbers shift and references rot.
 3. If verification succeeds: rewrite the item as `- [x] <original text> — <verification note>`. Keep every item and its original text verbatim; an item for a branch not taken (e.g. "If fix: …" when the decision was document-only) becomes `- [x] <original text> — n/a: <branch chosen>`, never merged or dropped. Name code in notes by symbol (`run_root_cause_pass`), never `file:line`; line numbers shift with the same diff and rot afterward. Re-grep every symbol or path you cite in the note and the commit message against the final diff before writing it.
 4. If an item cannot be verified (no test, no inspectable code, no observable output): do **not** check it. Append an inline comment: `— Item not verifiable: requires manual review or acceptance`.
@@ -49,7 +49,7 @@ For each ticket completed in this implementation effort:
 5. After all verifiable items are checked, update that ticket's `## Status` field to `done` — replace the whole body under that heading, not just insert a `done` line above the old text, or the section ends up self-contradicting (e.g. `done` followed by a stale `blocked` line). The ticket is `done` only when every item is checked or marked not verifiable.
 6. If that ticket carries a `**Spec**:` field whose slug resolves to `.scratch/<slug>/spec.md`, and that spec has no other open sibling ticket, update the spec's inline `Status:` field to `done` too. A spec with open sibling tickets stays at its current status — one slice finishing does not close the spec.
 
-Only once every completed ticket's checklist is verified and its Status is `done` does this phase end — that is the signal to commit, not code-review's report.
+Only once every completed ticket's checklist is verified and its Status is `done` does this phase end — that is the signal to commit, not code-review's report. Confirm by re-reading the written ticket: any remaining `- [ ]`, or a Status other than `done`, means the phase is not over.
 
 When committing, include any `Requirements:` field or inline `(ID)` tags from the ticket or spec in the commit message body and PR description so the trace survives into VCS history.
 
