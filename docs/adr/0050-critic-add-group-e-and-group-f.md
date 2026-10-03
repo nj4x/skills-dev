@@ -39,7 +39,7 @@ Evaluation criteria:
 - For artifacts that are intentionally new (a ticket scaffolds a new function — that is expected), do not flag.
 - For absent artifacts: cite the search performed plus the artifact quote naming the missing symbol (e.g., "spec §3 cites `parse_watchlist()`; rg over `CODEBASE_ROOT` returns no definition") — a `file:line` is not required when the finding is absence.
 
-Tool guidance: search source code conceptually and cross-file, search docs and requirements as a document corpus, and for architecture-level questions start with a global search before reading individual files. Fall back to normal filesystem tools such as `rg`, `fd`, and Read for exact-string or local lookups.
+Tool guidance: use conceptual search (see `docs/agents/domain.md`); for architecture-level questions start with a global search before reading individual files. Fall back to normal filesystem tools such as `rg`, `fd`, and Read for exact-string or local lookups.
 
 Codebase root: the orchestrator derives `CODEBASE_ROOT` from `$CLAUDE_PROJECT_DIR` (falling back to `$PWD`). Before spawning Group F it checks that the path exists and is a readable directory. Semantic/indexed search is preferred when available, but it is not required: if the MCP server is unavailable, the root is unindexed or partially indexed, or a semantic search fails, Group F falls back to `rg`, `fd`, and Read against the filesystem. These fallback paths still produce the required evidence. `CODEBASE_ROOT: <path>` is injected into the coordinator prompt as a line immediately before the `SUB-AGENT PROMPTS` block so the Group F sub-agent can reference it directly.
 

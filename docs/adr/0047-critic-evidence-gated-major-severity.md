@@ -22,7 +22,7 @@ The orchestrator does not post-process or re-classify severity. Evidence checkin
 Evidence definitions by artifact type:
 
 - **Spec / tickets / plan**: a direct quote from the artifact text, or reference to a specific section/ticket.
-- **Codebase (Group F)**: `file:line` citation mandatory. Group F sub-agents receive the standard phrasing — search source code conceptually and cross-file, search docs and requirements as a document corpus, and for architecture-level questions start with a global search before reading individual files.
+- **Codebase (Group F)**: `file:line` citation mandatory. Group F sub-agents use conceptual search (see `docs/agents/domain.md`); for architecture-level questions start with a global search before reading individual files.
 - **Consistency contradictions (Group B)**: one quote per side of the contradiction.
 - **Edge-case / scenario (Group C)**: articulate the specific scenario and identify which part of the artifact fails to handle it.
 
