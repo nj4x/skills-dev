@@ -17,7 +17,7 @@ If not already done, explore to understand current state. Read `docs/agents/doma
 
 Rules: each slice cuts a narrow but COMPLETE path through every layer (schema, API, UI, tests); a completed slice is demoable; each slice fits in a single fresh context window; prefactoring goes first.
 
-Give each ticket blocking edges. Wide refactors are the exception — use expand–contract sequencing (expand, migrate batches, contract).
+Give each ticket blocking edges. Wide refactors are the exception — use expand–contract sequencing (expand, migrate batches, contract). When a ticket relies on an interface a blocker adds, the blocker's checklist names every function the dependent ticket calls with the new parameter, not just the entry point.
 
 ### 4. Quiz the user
 

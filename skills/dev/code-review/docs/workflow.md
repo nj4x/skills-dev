@@ -397,8 +397,6 @@ After PR intake completes, if `PROJECT_SRS` is EMPTY, extract any `#\d+` GitHub 
 > ⛔ **NO SILENT SKIP**: If this step is not executed, the report MUST state the explicit user waiver text and reason.
 >
 > ⛔ **ORDER ENFORCEMENT**: Step 2 does not replace Step 1.5. Both gates must be resolved before diff/stat/log commands are allowed.
->
-> **`--scope working-tree` only** — a slow build command (a full test suite) may be launched as a background task at Step 2.2 instead of run-and-wait. Steps 3–4.2 (diff, stats, fan-out finders, adversarial verification) may then proceed concurrently with it — they are read-only and do not depend on `BUILD_STATUS`. The gate itself is unchanged: Step 13 (report) and the grade/verdict still cannot be produced until the background build resolves to `BUILD_STATUS`. Committed scope keeps the run-and-wait form — the PR-context and divergence gates it also carries are not read-only-safe to parallelize this way.
 
 Build the project before reviewing to ensure generated API specifications are up to date and to validate compilation and tests.
 
@@ -463,6 +461,8 @@ Resolve `BUILD_COMMAND`: the `--build-cmd` value when supplied, otherwise the St
 ```
 
 For non-JVM project types add: "(OpenAPI artifact verification does not apply to this project type.)"
+
+Run `BUILD_COMMAND` in the foreground with the longest timeout the Bash tool allows (600000 ms), never with `run_in_background`: a background gate leaves the review waiting on a child task, so the coordinator sees interim completions instead of the report.
 
 **When `BUILD_COMMAND` does not resolve** — `PROJECT_TYPE = Unknown` and no `--build-cmd`, so there is no command to announce — ask: "No recognized build descriptor found. Please provide the validation command, or explicitly type `skip with risk accepted` to waive this gate." This is the build gate's only remaining ask.
 
@@ -634,7 +634,9 @@ Do not run this block for the default `--baseline merge-base`.
 >
 > When `--effort medium` or `--effort high`: Steps 5–10 are **replaced** by this step. Spawn the 4 agents below concurrently, then synthesize into a unified finding list and proceed to Step 4.2 (if high) or Step 11 (if medium).
 
-Spawn 4 Explore agents **in parallel**. Pass each agent:
+> ⛔ **Fan-out dispatch rule** (applies to every fan-out in this file: Step 4.1, the autonomous roster, Step 4.2). Issue all agent calls **in a single message**, in the **foreground** — no `run_in_background`. The calls block and return every finder report inline. Never use `SendMessage` or `notify_when_idle` to wait: `notify_when_idle` works only from the main conversation, and fails with an error when code-review itself runs as a subagent. Do not read the diff, search, or analyze while finders run — the orchestrator's only job in this window is to consume the returned reports. Resume only at Synthesis.
+
+Spawn 4 Explore agents **in parallel**, per the dispatch rule above. Pass each agent:
 - The full diff text from Step 4
 - All discovered document paths: `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`
 - The `--scope` value (so agents know whether Jira commit-message validation applies)
@@ -698,7 +700,7 @@ Prompt:
 
 ### Synthesis
 
-After all 4 finders complete:
+After all 4 finder reports return inline:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
 3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval.
@@ -715,8 +717,9 @@ Every Minor/Major/Critical finding must include evidence. Before reporting a fin
 3. For idiom/style suggestions, open the cited standard and read the full rule including exceptions or `When NOT to apply` clauses.
 4. For API, SRS, or Data View contract claims, quote the exact spec line that the code contradicts.
 5. Distinguish defects from preferences. If the code works and breaks no rule, report it as Note or drop it.
-6. Check the severity itself against Step 11's category definitions. A finding that matches none of the listed MAJOR examples (module boundary violation, missing business rule enforcement, wrong error code, missing event publishing, architecture violation) is not MAJOR — downgrade it to MINOR or NOTE, even when it reads as significant. Parameter order, call-site convention, and similar local-consistency preferences are MINOR at most.
+6. Check the severity itself against Step 11's category definitions. A finding that matches none of the listed MAJOR examples (module boundary violation, missing business rule enforcement, wrong error code, missing event publishing, architecture violation) is not MAJOR — downgrade it to MINOR or NOTE, even when it reads as significant. Parameter order, call-site convention, and similar local-consistency preferences are MINOR at most. So is a refactor proposal (a named field in place of tuple-position, a constant in place of repeated literals, a schema class in place of a dict) that names no input producing a wrong result.
 7. The recommended fix is part of the finding. Open the code the fix would change and confirm that applying it keeps every invariant the surrounding code relies on (for example, reading state from a base the code deliberately superseded). A finding whose fix fails that check is reported with a corrected fix, or with no fix.
+8. For a CRITICAL or MAJOR claim about concurrency, locking, ordering, or durability, write the failing interleaving as numbered steps (actor A does X, actor B does Y, state Z results) and open the code that brackets it: the enclosing `with`/`try`/transaction scope and the call that returns control. A claim that a lock, transaction or commit happens "before" or "after" something is read off that scope, not inferred from names. When the enclosing scope already orders the steps, drop the finding.
 
 If evidence cannot be produced, drop the finding or downgrade it to Note.
 
@@ -726,7 +729,7 @@ If evidence cannot be produced, drop the finding or downgrade it to Note.
 
 > **Mode gate**: Runs only when `REVIEW_MODE_AUTONOMOUS = YES` (`--mode autofix` or `review-to-merge`). In that case this profile **replaces** the 4 A/B/C/D finders of Step 4.1 — do not run both rosters. Effort is forced to `high`, so Step 4.2 adversarial verification always follows.
 
-Spawn 5 Explore agents **in parallel** (READ-ONLY for this discovery phase). Pass each agent the same inputs as Step 4.1 (full diff, `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`, the `--scope` value). The five angles isolate **Tests/Regressions** and **Operational risk** as first-class lanes because the mutating path will *write* regression tests and *merge*. Smells run in their own dedicated agent so they never inflate the per-agent context of the functional review lanes.
+Spawn 5 Explore agents **in parallel**, per the Step 4.1 dispatch rule (READ-ONLY for this discovery phase). Pass each agent the same inputs as Step 4.1 (full diff, `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`, the `--scope` value). The five angles isolate **Tests/Regressions** and **Operational risk** as first-class lanes because the mutating path will *write* regression tests and *merge*. Smells run in their own dedicated agent so they never inflate the per-agent context of the functional review lanes.
 
 ### Agent 1 — Correctness & Edge Cases
 
@@ -783,7 +786,7 @@ Reuse the Step 4.1 **Synthesis** and **Mandatory Pre-Report Verification Protoco
 
 > **Effort gate**: Only runs when `--effort high`. Skip when `--effort low` or `--effort medium`.
 
-For each **CRITICAL or MAJOR** finding from Step 4.1, spawn a targeted Explore agent (up to 4 concurrently; batch remaining findings if more than 4):
+For each **CRITICAL or MAJOR** finding from Step 4.1, spawn a targeted Explore agent (up to 4 concurrently, per the Step 4.1 dispatch rule; batch remaining findings if more than 4):
 
 Prompt template:
 > You are an adversarial code reviewer. Your job is to **refute** the finding below if possible.
@@ -817,7 +820,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 
 ## Step 4.9: Data Collection Complete — Spawn Review Subagent(s)
 
-> ⛔ **MANDATORY TRANSITION**: All prerequisite data (diff, file contents, commit log) is now collected. For ALL effort levels, code analysis runs in subagents — never inline in the orchestrator.
+> ⛔ **MANDATORY TRANSITION**: All prerequisite data (diff, file contents, commit log) is now collected. For ALL effort levels, code analysis runs in subagents — never inline in the orchestrator. While subagents run, the orchestrator does no review work of its own (see the Step 4.1 dispatch rule).
 
 **IF `--effort low`**: Spawn a single general-purpose Explore subagent. Pass it:
 - The complete diff text from Step 4
@@ -1223,6 +1226,8 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 - ⚠️ **REQUEST CHANGES**: B- to C
 - ❌ **REJECT**: D to F
 
+Copy one verdict string verbatim from this list, chosen by the grade of the confirmed findings. Any confirmed CRITICAL or MAJOR finding caps the verdict at ⚠️ **REQUEST CHANGES**, whatever the grade.
+
 ---
 
 ## Step 13: Generate Report
@@ -1254,6 +1259,7 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 - **Merge-base SHA:** [output of git merge-base origin/$REVIEW_BASE_REF HEAD or N/A]
 
 ### 🔨 Build Status: [SUCCESS / FAILED / TIMED_OUT / WAIVED]
+- Gate summary line: `[the runner's own final summary line, quoted / "n/a (waived)"]`
 
 ### 🔎 Build/OpenAPI Verification (MANDATORY)
 - Build command used: `[exact command / "waived (--no-build)" / "waived (user)"]`

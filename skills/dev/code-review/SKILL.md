@@ -77,7 +77,7 @@ After activation:
    - Adversarial verification (step 7a) and the grade scale apply as normal; the grade is computed from findings, never assigned.
 5. Resolve the build/OpenAPI gate before diff analysis. `--no-build` waives it outright (Step 2.0). Otherwise auto-detect the project type (Step 2.1): run `for f in build.gradle build.gradle.kts pom.xml pyproject.toml setup.py package.json Cargo.toml go.mod; do [ -f "$f" ] && echo "$f"; done`, then **announce-and-run** the resolved command (Step 2.2).
 6. Run the resolved build command; set `OPENAPI_APPLICABLE = YES` for Gradle/Maven only. If `OPENAPI_APPLICABLE = YES`, verify canonical OpenAPI artifact at `build/api-spec/openapi3.yaml`; on build timeout use `find build -name "openapi3.yaml"` to check; do not use `sleep` and do not use `ls` on a hardcoded path. If `OPENAPI_APPLICABLE = NO`, set `OPENAPI_STATUS = NOT_APPLICABLE`. Then retrieve stats and diff by scope: `origin/<base>...HEAD` (merge-base, three-dot; `<base>` discovered from the PR) for committed scope, `HEAD` for working-tree scope.
-7. Review according to effort level. For ALL effort levels, analysis runs in subagents — never inline. For `low`, spawn a single Explore subagent with all review angles merged into one prompt (Step 4.9 in workflow.md). For `medium` or `high`, spawn 4 parallel Explore agents: Finder A (Correctness/Security), Finder B (Architecture/Compliance), Finder C (Quality/Standards), and Finder D (Maintainability Smells) — see Step 4.1 in workflow.md.
+7. Review according to effort level. For ALL effort levels, analysis runs in subagents — never inline. For `low`, spawn a single Explore subagent with all review angles merged into one prompt (Step 4.9 in workflow.md). For `medium` or `high`, spawn 4 parallel Explore agents: Finder A (Correctness/Security), Finder B (Architecture/Compliance), Finder C (Quality/Standards), and Finder D (Maintainability Smells) — see Step 4.1 in workflow.md. Dispatch all finders in a single foreground message and wait on their inline reports; never `run_in_background`, `SendMessage`, or `notify_when_idle` (fails when code-review runs as a subagent), and do no review work while they run (Step 4.1 dispatch rule).
 7a. **For `--effort high` only — adversarial verification (Step 4.2 in workflow.md) is a separate, mandatory step, not an optional tail of Step 7.** This step is not complete until every CRITICAL or MAJOR finding from Step 7 carries a `CONFIRMED`/`PLAUSIBLE`/`REFUTED` verdict from a dedicated verifier subagent spawned per workflow.md Step 4.2 — the coordinator's own read of the diff does not satisfy this, even when the coordinator is confident. `REFUTED` findings move to the report's Not Confirmed section and drop out of the grade. MINOR and Finder D Notes skip this step by design (cost vs benefit) and proceed directly to Step 11.
 7.5. **Lineage enforcement (ADR-0061).** After the standard review passes complete, run these two additional checks (workflow.md Step 10.5). Append findings in a **Lineage** subsection of the report (step 8), separate from other findings.
 
@@ -149,6 +149,8 @@ After activation:
 | C | 60-69 | ⚠️ REQUEST CHANGES |
 | D | 50-59 | ❌ REJECT |
 | F | 0-49 | ❌ REJECT |
+
+Any confirmed CRITICAL or MAJOR finding caps the verdict at ⚠️ REQUEST CHANGES, whatever the grade.
 
 ---
 

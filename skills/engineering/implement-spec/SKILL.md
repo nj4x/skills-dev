@@ -12,7 +12,7 @@ The tickets are not a list of steps. They are a **task graph** with blocking rel
 
 Communication to and from subagents should be sparse. Communicate primarily through **context pointers**: to the spec, tickets, research notes, and previous commits. Don't duplicate information already available via pointers.
 
-**Implementer subagents** should be run in the background where possible for **maximum concurrency**.
+**Implementer subagents** should be run in the background where possible for **maximum concurrency** — when this skill runs in the main conversation. Launch independent implementers in a single message. When this skill itself runs as a subagent, launch them in the foreground instead (single message, results return inline): `notify_when_idle` and background-completion waits are main-conversation-only.
 
 ## Preconditions
 
