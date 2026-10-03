@@ -19,6 +19,23 @@ Read `reference/patterns.md` (beside this SKILL.md) before doing any work — it
 
 ---
 
+## Hard Invariants
+
+Every step relies on these preconditions:
+
+- Do NOT launch headless `claude` CLI processes via Bash.
+- Never pass plan or file text as a shell argument — write to a temp file if Bash must read it.
+- **Expected non-zero exits** (test runners, detection probes) are data, not errors; only hard-abort on process errors (127, signals).
+- Import rewriting and test editing are AST-based per language — never blind regex search-replace.
+- Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
+- Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
+- Update the ledger after every durable side effect so a mid-run compaction is recoverable.
+- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations.
+- `rm -f` any temp file on every exit path, including hard-abort paths.
+- Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
+
+---
+
 ## Step 0 — Audio suppression
 
 ```sh
@@ -224,17 +241,3 @@ msg="Refactor tests finished${proj_say:+ in ${proj_say}}."
 [ -f ~/.claude/hooks/say-cue-lib.sh ] && . ~/.claude/hooks/say-cue-lib.sh && say_skill_done "$msg" || true
 ```
 
----
-
-## Hard invariants
-
-- Do NOT launch headless `claude` CLI processes via Bash.
-- Never pass plan or file text as a shell argument — write to a temp file if Bash must read it.
-- **Expected non-zero exits** (test runners, detection probes) are data, not errors; only hard-abort on process errors (127, signals).
-- Import rewriting and test editing are AST-based per language — never blind regex search-replace.
-- Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
-- Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
-- Update the ledger after every durable side effect so a mid-run compaction is recoverable.
-- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations.
-- `rm -f` any temp file on every exit path, including hard-abort paths.
-- Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.

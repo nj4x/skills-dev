@@ -52,7 +52,13 @@ Gather all four categories below. The independent discovery probes (git log, git
    - Unresolved pull requests or approvals
    - Ambiguity in requirements (marked as provisional or needing clarity)
 
-**Reconnaissance complete when:** all four categories inspected; findings (including "not found" for absent artifacts) recorded.
+#### Phase 1 Completion Criteria
+
+- [ ] **Git state** — branch name, last 10–20 commits, uncommitted changes, remote status recorded
+- [ ] **Artifact inventory** — all four artifact categories (domain, agent setup, requirements, issues) probed; present files listed
+- [ ] **Completion markers** — docs and commits scanned for version/approval/status signals; findings recorded
+- [ ] **Blockers & open questions** — code/docs searched; uncommitted state noted; unresolved items listed
+- [ ] **No surprises remain** — all findings from categories 1–4 accounted for in triage (Step 2)
 
 ### Phase 2: Triage to a Stage
 
