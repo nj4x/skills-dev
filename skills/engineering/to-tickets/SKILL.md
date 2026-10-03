@@ -3,8 +3,6 @@ name: to-tickets
 description: Use when the user wants to create issues, tickets, or vertical slices from a plan, spec, or conversation. Publishes tracer-bullet slices with blocking edges to the configured tracker.
 ---
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-skills` if not.
-
 ## Process
 
 ### 1. Gather context

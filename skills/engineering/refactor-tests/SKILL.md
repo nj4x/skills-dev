@@ -1,7 +1,6 @@
 ---
 name: refactor-tests
 description: Reorganize a flat test suite to mirror source packages, prune redundant/dead tests, and cut Spring Boot context startup cost.
-disable-model-invocation: true
 argument-hint: "[project-path]"
 ---
 
