@@ -1,6 +1,6 @@
 ---
 name: domain-modeling
-description: Build and sharpen a project's domain model. Use when writing or editing a GLOSSARY.md, sharpening fuzzy domain terms, recording or editing an ADR, or when another skill needs to maintain the domain model.
+description: Build and sharpen a project's domain model. Use when discussing codebase terminology, writing or editing a GLOSSARY.md, or recording or editing an ADR, or when another skill needs to maintain the domain model.
 ---
 
 # Domain Modeling

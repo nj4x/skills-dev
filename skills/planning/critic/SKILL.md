@@ -21,7 +21,7 @@ test -f ~/.claude/skills/repeat/SKILL.md && echo FOUND || echo MISSING
 ```
 
 - **FOUND**: Read `~/.claude/skills/repeat/SKILL.md` and follow the repeat loop contract defined there, binding the extension points below (GENERATE_STEP, REVIEW_STEP, FINALIZE_STEP). The repeat contract governs Guards, Mode detection, Decision Protocol, and the loop — do not re-derive them here.
-- **MISSING**: stop with: `repeat skill not found. Install it with: ln -s "$(git rev-parse --show-toplevel)/skills/planning/repeat" ~/.claude/skills/repeat`
+- **MISSING**: stop with: `repeat skill not found. Install it with: ln -s "$(cd "$(dirname "$0")/../repeat" && pwd -P)" ~/.claude/skills/repeat`
 
 Apply the critic-specific overrides and extension point bindings below before starting.
 
@@ -44,7 +44,7 @@ Initialize to `[]` if absent. After each REVIEW_STEP, upsert severity-prefixed i
 ```json
 { "id": "ID-001", "group": "A", "claim": "...", "evidence": "...", "severity": "major", "fix": "...", "status": "open", "introduced_pass": null }
 ```
-Assign new IDs sequentially. Match repeats by ID when present, otherwise by normalized claim text; update evidence and severity. Compare only groups active in the current pass when resolving omissions: mark an open issue `fixed` when its owning group ran and no longer returns the claim; leave it unchanged when that group was skipped (for example, Group F after iteration 0). Never upsert issue findings or change issue `status` after GENERATE_STEP — only REVIEW_STEP resolves findings. GENERATE_STEP writes are limited to construct records and confirmed acceptance proposals, per Post-GENERATE_STEP.
+Assign new IDs sequentially. Match repeats by ID when present, otherwise by normalized claim text; update evidence and severity. Compare only groups active in the current pass when resolving omissions: mark an open issue `fixed` when its owning group ran and no longer returns the claim; leave it unchanged when that group was skipped (for example, Group G after iteration 0). Never upsert issue findings or change issue `status` after GENERATE_STEP — only REVIEW_STEP resolves findings. GENERATE_STEP writes are limited to construct records and confirmed acceptance proposals, per Post-GENERATE_STEP.
 
 The revision agent may propose that an issue be accepted by appending `ACCEPTED: [ID] [reason]`. Extract these annotations alongside `INTRODUCED:`. In guided mode, confirm each proposal via `/grilling resolve-decisions` (one decision per proposal: accept or keep open, with the proposed reason as context) before setting `status: accepted`; rejected proposals remain open. In auto mode, ignore acceptance proposals and keep those issues open.
 

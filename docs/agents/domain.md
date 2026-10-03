@@ -58,10 +58,6 @@ If your output contradicts an existing ADR, surface it explicitly rather than si
 
 > _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
 
-## Search concepts
-
-**Conceptual search**: Search source code cross-file by domain concept, not literal string; search requirements and design documents as document wholes, not individual words. Used when symbol-level or keyword search would over-match or miss the target entirely (e.g., finding all uses of an abstract pattern without searching for the pattern's name).
-
 ## Requirements ID conventions
 
 Formal requirements carry stable IDs (e.g. `REQ-1234`) assigned by `/FS-skill` and `/SRS-skill`. When downstream work traces to a requirement, carry the ID forward two ways:

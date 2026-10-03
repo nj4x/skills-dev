@@ -141,7 +141,7 @@ For each matched artifact, check for a `lineage-rules` frontmatter key:
 - Findings:
   - Missing anchor (required `**Source X**:` field absent for this artifact type): **Major**
   - Dangling reference (ID not found in source): **Critical**
-  - Circular reference (A traces to B traces to A): **Critical** (iteration 0 only; multi-artifact cycles require cross-manifest inspection)
+  - Circular reference (A traces to B traces to A): **Critical**
   - Source document not found: **Critical**
 
 **Requirements boundary**: Consult `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary).
