@@ -1,6 +1,6 @@
 # Provenance marks in refactor-tests: token cost vs. behaviour impact
 
-**Location:** `/Users/r.herasymenk/workspace/skills-dev/engineering/refactor-tests/reference/springboot.md`
+**Location:** `skills/engineering/refactor-tests/reference/springboot.md` (repo root)
 
 ## Executive Summary
 
@@ -147,5 +147,5 @@ The second is project-agnostic, inline, and more directly constrains agent behav
 
 - [Anthropic Platform Docs – Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
 - [Platform.claude.com – Best practices for creating agent skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices)
-- Anthropic CLAUDE.md (local: `/Users/r.herasymenk/.claude/skills/writing-for-agents/SKILL.md` and `SKILL-MECHANICS.md`)
+- Anthropic CLAUDE.md (local: `~/.claude/skills/writing-for-agents/SKILL.md` and `SKILL-MECHANICS.md`)
 - [Code.claude.com – Extend Claude with skills](https://code.claude.com/docs/en/skills)
