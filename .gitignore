@@ -22,3 +22,6 @@ skills/email/inbox/prefs.json
 
 # Refactor backups (git history is the backup once the refactor is committed)
 *.bak-*
+
+# Skill session artifacts (critic ledger files, etc.)
+plans/critic-ledger-*.json
