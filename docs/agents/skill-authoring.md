@@ -4,17 +4,17 @@ How skills are structured, installed, and grouped in this workspace.
 
 ## The SKILL.md contract
 
-A skill directory is centered on `SKILL.md`. Its YAML frontmatter defines the invoked `name`, the natural-language trigger `description`, an optional `argument-hint`, and whether it is directive-only (`disable-model-invocation: true`). An optional `version` field can track a load-bearing semantic for self-update or self-reference flows (e.g., `deepapi` uses it to track API contract versions). Supporting scripts, templates, and references remain beside that contract.
+A skill directory is centered on `SKILL.md`. Its YAML frontmatter defines the invoked `name`, the natural-language trigger `description`, an optional `argument-hint`, and whether it is directive-only (`disable-model-invocation: true`). Supporting scripts, templates, and references remain beside that contract.
 
 ## Installation (no build step)
 
 Skills are installed by symlinking their directory into `~/.claude/skills/<name>`, so a `SKILL.md` edit takes effect immediately — there is no build step.
 
 ```sh
-ln -s "$(pwd)/<category>/<skill>" ~/.claude/skills/<name>
+ln -s "$(pwd)/skills/<category>/<skill>" ~/.claude/skills/<name>
 ```
 
-The `publishing/html-view` skill also ships an `install.sh` for convenience.
+The `skills/publishing/html-view` skill also ships an `install.sh` for convenience.
 
 ## Categories
 

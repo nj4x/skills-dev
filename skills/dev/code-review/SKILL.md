@@ -38,7 +38,7 @@ Review code changes against project standards, security patterns, requirements, 
 
 ## Mutating-Mode Contract (`--mode autofix` | `review-to-merge`)
 
-The default `--mode review` is **read-only** — it reviews and reports, never mutating the repo. The `autofix` and `review-to-merge` modes invert that default: they implement fixes, write tests, commit, and (for `review-to-merge`) push and merge. This inversion is strictly opt-in and gated. See [workflow.md](docs/workflow.md) **Step 14** for the full RTM-1…RTM-7 phase spec, iteration caps, consent definitions, and recovery rows.
+The default `--mode review` is **read-only** — it reviews and reports, never mutating the repo. The `autofix` and `review-to-merge` modes invert that default: they implement fixes, write tests, commit, and (for `review-to-merge`) push and merge. This inversion is strictly opt-in and gated. See [workflow-mutating.md](docs/workflow-mutating.md) **Step 14** for the full RTM-1…RTM-7 phase spec, iteration caps, consent definitions, and recovery rows.
 
 ### Terminal-action table (authoritative)
 
@@ -54,7 +54,7 @@ The default `--mode review` is **read-only** — it reviews and reports, never m
 
 ### Consent definitions
 
-Two consent levels — **announced** (informational banner, no reply needed) and **BLOCKING consent gate** (print exact command + target, STOP, wait for explicit reply; never proceed on silence, never batch approvals; merge-to-main never implicitly pre-authorized). Full definitions in [workflow.md](docs/workflow.md) Step 14 *Consent model*.
+Two consent levels — **announced** (informational banner, no reply needed) and **BLOCKING consent gate** (print exact command + target, STOP, wait for explicit reply; never proceed on silence, never batch approvals; merge-to-main never implicitly pre-authorized). Full definitions in [workflow-mutating.md](docs/workflow-mutating.md) Step 14 *Consent model*.
 
 ---
 
@@ -67,9 +67,9 @@ Resolve scope before any repo gate, PR gate, build gate, diff retrieval, or revi
 After activation:
 
 1. Parse `--effort` and resolve or confirm `--scope`.
-1a. Parse `--mode` (default `review`). If `review`, follow the read-only contract below unchanged. If `autofix` or `review-to-merge`: force `--effort high` semantics, confirm a non-`main` feature branch first, run the standard read-only review through the report, then execute the Autonomous Mutating Phases (workflow.md Step 14, RTM-1…RTM-7) **after** the report. Scope compatibility: `autofix` runs on either `committed` or `working-tree`/`uncommitted` scope (working-tree commits the reviewed changes plus fixes together at RTM-5); only the `review-to-merge` merge step requires committed-scope semantics. An unrecognized `--mode` value is not guessed — list the three valid values and ask.
+1a. Parse `--mode` (default `review`). If `review`, follow the read-only contract below unchanged. If `autofix` or `review-to-merge`: force `--effort high` semantics, confirm a non-`main` feature branch first, run the standard read-only review through the report, then execute the Autonomous Mutating Phases (workflow-mutating.md Step 14, RTM-1…RTM-7) **after** the report. Scope compatibility: `autofix` runs on either `committed` or `working-tree`/`uncommitted` scope (working-tree commits the reviewed changes plus fixes together at RTM-5); only the `review-to-merge` merge step requires committed-scope semantics. An unrecognized `--mode` value is not guessed — list the three valid values and ask.
 2. Discover requirement and architecture documents: SRS, API Definition, Module View, Use Cases, and Data View.
-3. For `committed` scope: verify git repo and valid `HEAD`, resolve `REVIEW_BASE_REF` from the PR base branch (`baseRefName`, fallback `main`) before fetching, fetch `origin/$REVIEW_BASE_REF` and the current branch, handle branch divergence by asking the user, run PR context intake when `gh` is available, and print the PR Integration State block verbatim (Step 1.5.4) before any diff commands.
+3. For `committed` scope: verify git repo and valid `HEAD`, resolve `REVIEW_BASE_REF` from the PR base branch (`baseRefName`, fallback `main`) before fetching, fetch `origin/$REVIEW_BASE_REF` and the current branch, handle branch divergence by asking the user, run PR context intake when `gh` is available, and print the PR Integration State block verbatim (workflow-pr.md Step 1.5.4) before any diff commands.
 4. For `working-tree` scope: verify git repo and valid `HEAD`; skip fetch, branch divergence, PR gates, and committed-branch comparison. Untracked files that belong to the change are in scope; list them alongside `git diff HEAD`.
 4a. **Docs-only mode.** When every file in scope is documentation — Markdown, ADRs, FS/SRS/requirements, specs — announce `REVIEW_MODE = DOCS_ONLY` and adapt the review as follows; every other step runs unchanged:
    - Build gate: run the project's lint command only; `BUILD_STATUS` comes from lint, `OPENAPI_STATUS = NOT_APPLICABLE`.
@@ -95,7 +95,7 @@ After activation:
    - If the spec does not exist or has no frontmatter: skip this check.
 
 8. Generate the structured report (Step 13) with severity, evidence, grade, PR context status, build/OpenAPI status, and action items. Include a **Lineage** subsection after the standard findings, listing any code-to-spec or spec-to-ADR findings from step 7.5.
-9. If PR integration is enabled, proceed to PR write actions (Step 13.5) and offer PR comments or approval only after explicit user consent.
+9. If PR integration is enabled, proceed to PR write actions (workflow-pr.md Step 13.5) and offer PR comments or approval only after explicit user consent.
 10. Offer task tracking after the report (Step 13.6).
 
 ## Hard-Stop Rules
@@ -160,7 +160,10 @@ For detailed guidelines, see the following documents:
 
 | Topic | Document | Description |
 |-------|----------|-------------|
-| Main Workflow | [workflow.md](docs/workflow.md) | Complete step-by-step review process |
+| Main Workflow | [workflow.md](docs/workflow.md) | Orchestrator steps; stubs point to the three disclosed files below |
+| PR Context Steps | [workflow-pr.md](docs/workflow-pr.md) | Steps 1.5, 4.5, 13.5: read for `--scope committed` with `gh` available |
+| Compliance Reference | [workflow-compliance.md](docs/workflow-compliance.md) | Steps 5–10: read for `--effort low` and before grading API-doc or Data View mismatches |
+| Mutating Modes | [workflow-mutating.md](docs/workflow-mutating.md) | Step 4.1-RTM, Step 14, mutating error handling: read for `--mode autofix` or `review-to-merge` |
 | Security Patterns | [security-patterns.md](docs/security-patterns.md) | Hardcoded secrets, injection risks, CORS issues |
 | Architecture Patterns | [architecture-patterns.md](docs/architecture-patterns.md) | Field injection, business logic in controllers, entity exposure |
 | Kotlin Standards | [kotlin-standards.md](docs/kotlin-standards.md) | Vertical slice pattern, three-tier model, validation patterns, Data View alignment |

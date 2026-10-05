@@ -1,0 +1,102 @@
+[
+  {
+    "id": "ID-001",
+    "group": "A",
+    "claim": "Disposition I-030 marks the PRs-as-request-surface instruction 'verified', but issue-tracker.md has no YAML frontmatter, so \"update this file's frontmatter (add `prs_as_requests: true`)\" is unactionable.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-002",
+    "group": "A",
+    "claim": "skill-authoring.md holds upstream-sync decision records that the root pointer does not describe.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-003",
+    "group": "A",
+    "claim": "Refactor artifacts (two disposition maps in docs/agents/, untracked .bak-20261004-204736 backups) sit in agent-readable, committable locations.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-004",
+    "group": "A",
+    "claim": "`.scratch` local-tracker paths remain in skill-dependencies.md after Gate 1 chose GitHub only; nothing says they describe implement-spec's local-tracker mode.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-005",
+    "group": "B",
+    "claim": "search-strategy opener asserts the repo is indexed while the same file requires an explicit index_codebase step.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-006",
+    "group": "B",
+    "claim": "AGENTS.md header is harness-neutral while skill-authoring.md says the repo is Claude-Code-only.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-007",
+    "group": "C",
+    "claim": "issue-tracker.md title example `feature: add user authentication` is unconfirmed; observed titles use `task: \u2026`.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-008",
+    "group": "D",
+    "claim": "setup-skills step 4 edits CLAUDE.md when it exists, so a re-run would write a second `## Agent skills` block into the stub.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-009",
+    "group": "D",
+    "claim": "Disposition map records no verification step (parity test, satellite diff, pointer resolution).",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  },
+  {
+    "id": "ID-010",
+    "group": "E",
+    "claim": "The search_root pre-condition has two copies; only the CLAUDE.md copy is test-locked, so the search-strategy.md copy can drift.",
+    "evidence": "",
+    "severity": "minor",
+    "fix": "",
+    "status": "open",
+    "introduced_pass": null
+  }
+]

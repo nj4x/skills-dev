@@ -57,7 +57,7 @@ Each gate is a hard stop that enforces one invariant. Multiple enforcement block
 | **Diff** | No diff/stat/log/file-inspection command before both the PR-context and build gates are resolved. | "Forbidden before the gates are resolved" block (Step 1.5/2 zone); Step 3 prerequisite block; skill.md *Hard-Stop Rules* diff bullets. Multiple blocks because each marks the boundary from a different angle (what-is-forbidden, what-resolves-it, when-you-may-proceed). |
 | **Subagent** (Step 4.9) | All code analysis runs in subagents; never inline in the orchestrator regardless of effort level. | Step 4.9 "MANDATORY TRANSITION" block; ⛔ forbidden list at end of Step 4.9. |
 | **Report** (Step 13) | Once analysis is done, the full structured report must be generated immediately; never ask permission; section headings are mandatory. | Step 13 ⛔ "NON-OPTIONAL" block; skill.md Activation Contract step 8. |
-| **Mutating consent** (Step 14) | Every commit, push, and merge requires a BLOCKING consent gate. Mutating phases start only after all read-only gates are green and the report is delivered. | Step 14 BLOCKING consent table; RTM prerequisite block (in the Overview); skill.md *Hard-Stop Rules* mutating-mode bullets; skill.md terminal-action table. Multiple blocks because the mutating path is post-report and the read-only gate set must apply unchanged to it. |
+| **Mutating consent** (Step 14) | Every commit, push, and merge requires a BLOCKING consent gate. Mutating phases start only after all read-only gates are green and the report is delivered. | workflow-mutating.md Step 14 BLOCKING consent table; RTM prerequisite block (in the Overview); skill.md *Hard-Stop Rules* mutating-mode bullets; skill.md terminal-action table. Multiple blocks because the mutating path is post-report and the read-only gate set must apply unchanged to it. |
 
 ---
 
@@ -233,160 +233,7 @@ All subsequent committed-scope diff/log commands use `origin/$REVIEW_BASE_REF`, 
 
 ## Step 1.5: PR Context Discovery via GitHub CLI (MANDATORY WHEN `gh` IS AVAILABLE AND `--scope committed`)
 
-> **Scope gate**: If `--scope working-tree`, this step is **skipped entirely**. `PR_INTEGRATION = DISABLED` was already set in Step 1. Proceed to Step 2.
-
-This step is mandatory when `--scope committed` to avoid silent omission of existing PR feedback. If `gh` is available/authenticated, PR context intake MUST be completed before build/diff analysis.
-
-> ⛔ **MANDATORY HARD GATE**: If `gh` is available/authenticated and `--scope committed`, do not continue to Step 2 or any diff/stat/log command until helper-script PR intake is completed or explicitly waived by the user.
-
-> ⛔ **NO SILENT SKIP**: Skipping `gh auth status`, skipping helper-script intake, or failing to record PR state is a workflow violation.
-
-### 1.5.0 Resolution gate (must be satisfied before Step 2)
-
-Before moving to Step 2, record one of these states:
-- `PR_INTEGRATION = ENABLED` and `PR_CONTEXT_COLLECTED = YES`
-- `PR_INTEGRATION = DISABLED` and `PR_CONTEXT_COLLECTED = NO` with explicit reason
-
-Silent skip is forbidden.
-
-Also record all available PR state fields before Step 2:
-- `CURRENT_PR_NUMBER`
-- `CURRENT_PR_URL`
-- `CURRENT_PR_STATE`
-- `PR_UNRESOLVED_THREAD_COUNT`
-- `PR_THREAD_TRIAGE_COUNTS`
-- `REVIEW_BASE_REF`
-- `BASE_REF_SOURCE`
-
-### 1.5.1 Check `gh` availability and auth
-
-```bash
-command -v gh >/dev/null && gh auth status
-```
-
-- **IF unavailable or unauthenticated**:
-  - Set `PR_INTEGRATION = DISABLED`
-  - Set `PR_CONTEXT_COLLECTED = NO`
-  - Set `PR_INTEGRATION_REASON` with explicit detail (e.g., `gh not installed`, `gh auth failed`)
-  - Continue to Step 2.
-- **IF available/authenticated**:
-  - Set `PR_INTEGRATION = ENABLED`
-  - Continue to Step 1.5.2 (mandatory).
-
-### 1.5.2 Discover PR + unresolved threads (mandatory when enabled)
-
-Before running triage, ensure `REVIEW_BASE_REF` is resolved from PR metadata when available. The helper reads `pr.baseRefName` from discover output and falls back to `main`.
-
-Preferred command flow:
-
-```bash
-python3 <skill dir>/scripts/code_review_pr_helper.py discover \
-  --output /tmp/code-review-pr-discover.json
-
-python3 <skill dir>/scripts/code_review_pr_helper.py triage \
-  --discover-json /tmp/code-review-pr-discover.json \
-  --output /tmp/code-review-pr-triage.json
-```
-
-This helper-script flow is the default and preferred implementation. If `gh` is ready and the helper script exists, using ad-hoc `gh` commands instead of this flow is a workflow violation.
-
-Set (from helper output):
-- `CURRENT_PR_NUMBER`, `CURRENT_PR_URL`, `CURRENT_PR_STATE`
-- `PR_UNRESOLVED_THREAD_COUNT`
-- `PR_THREAD_TRIAGE_COUNTS` (`likely_addressed`, `still_open`, `needs_confirmation`)
-- `PR_CONTEXT_COLLECTED = YES`
-- `REVIEW_BASE_REF = pr.baseRefName` (fallback `main`)
-- `BASE_REF_SOURCE = pr-base` when read from PR metadata, otherwise `fallback-default`
-
-Notes:
-- Use `/tmp/...` for intermediate JSON artifacts.
-- Keep script path format consistent: `python3 <skill dir>/scripts/...`.
-- If PR discovery is ambiguous/missing, re-run with `--pr <number>`.
-- If user chooses to continue without PR linkage despite available `gh`, require explicit user waiver and set:
-  - `PR_INTEGRATION = DISABLED`
-  - `PR_CONTEXT_COLLECTED = NO`
-  - `PR_INTEGRATION_REASON = "User waived PR context intake"`
-
-### 1.5.2.1 Helper artifacts + thread coverage gate (mandatory)
-
-Before moving to Step 2, verify ALL of the following are true:
-- `/tmp/code-review-pr-discover.json` exists
-- `/tmp/code-review-pr-triage.json` exists
-- `PR_UNRESOLVED_THREAD_COUNT` was recorded (0 is valid, missing is not)
-
-Recommended verification commands:
-
-```bash
-test -f /tmp/code-review-pr-discover.json
-test -f /tmp/code-review-pr-triage.json
-```
-
-If any item is missing, STOP and either:
-- Re-run helper script intake, or
-- Record an explicit user waiver and set:
-  - `PR_INTEGRATION = DISABLED`
-  - `PR_CONTEXT_COLLECTED = NO`
-  - `PR_INTEGRATION_REASON = "User waived helper-script PR intake"`
-
-### 1.5.3 Manual fallback (only if helper script unavailable)
-
-If helper script is unavailable, use direct `gh` commands:
-
-```bash
-BRANCH=$(git branch --show-current)
-gh pr list --head "$BRANCH" --state all --json number,title,url,state,isDraft,reviewDecision
-```
-
-Then use GraphQL `reviewThreads` to collect unresolved thread metadata (`path`, `line`/`originalLine`, `isOutdated`, latest comment metadata).
-
-**Never use PR comments as a substitute for review threads.**
-- `gh pr view --comments` is NOT a valid replacement for unresolved review threads.
-- PR comments are supplemental only and must not be used to satisfy the PR context gate.
-
-### 1.5.3.1 CLI misuse guardrails (mandatory)
-
-The following patterns are forbidden and must not be used:
-- `gh pr view <num> --json comments,reviews --comments 10` (invalid flag usage)
-- Any `gh` command that mixes `--json` with unsupported flags or pagination flags
-
-Use correct alternatives instead:
-- For review threads: GraphQL `reviewThreads` query (helper script preferred)
-- For comments (supplemental only): `gh pr view <num> --json comments` (no `--comments` flag)
-
-### 1.5.4 Step gate verification
-
-> ⛔ **HARD STOP**: You MUST print the PR Integration State block below **verbatim in your response text** before proceeding to Step 2. Internal variables are not sufficient — the block must be visible in your output. Do not run any diff, stat, or log commands until this block appears in your response.
-
-Print this block in your response now:
-
-```text
-PR Integration State:
-  PR_INTEGRATION: [ENABLED|DISABLED]
-  PR_CONTEXT_COLLECTED: [YES|NO]
-  PR_INTEGRATION_REASON: [detail or N/A]
-  CURRENT_PR_NUMBER: [number or N/A]
-  CURRENT_PR_URL: [url or N/A]
-  CURRENT_PR_STATE: [state or N/A]
-  PR_UNRESOLVED_THREAD_COUNT: [count or N/A]
-  PR_THREAD_TRIAGE_COUNTS: [X/Y/Z or N/A]
-  REVIEW_BASE_REF: [base branch or main]
-  BASE_REF_SOURCE: [pr-base or fallback-default]
-  HELPER_ARTIFACT_DISCOVER: [/tmp/code-review-pr-discover.json or N/A]
-  HELPER_ARTIFACT_TRIAGE: [/tmp/code-review-pr-triage.json or N/A]
-```
-
-Only after this block is present in your response text may you proceed to Step 2.
-
-### 1.5.5 Rules for PR-thread handling
-
-- Never auto-resolve threads.
-- Never auto-post comments.
-- Never auto-approve PR.
-- All PR write actions are **explicit-user-consent only**.
-
-### 1.5.6 Supplemental spec from GitHub issues (committed scope only, when `PROJECT_SRS` is EMPTY)
-
-After PR intake completes, if `PROJECT_SRS` is EMPTY, extract any `#\d+` GitHub issue refs from the PR body and run `gh issue view <n>` for each. Store the fetched issue **body text** as `PROJECT_ISSUE_CONTEXT` and pass it to Step 9 as supplemental spec. Do NOT fetch Jira/Linear keys — bare non-`gh`-fetchable identifiers are dropped, not recorded. (Commit-message `[A-Z]+-\d+:` mining stays in Finder A at Step 4.1; do not duplicate it here.)
+> ⛔ **`--scope committed` with `gh` available: read [workflow-pr.md](workflow-pr.md) *Step 1.5* in full, and satisfy its 1.5.0 Resolution gate (including the verbatim PR Integration State block of 1.5.4) before Step 2.** `--scope working-tree`: skip this step; `PR_INTEGRATION = DISABLED` was set in Step 1.
 
 ---
 
@@ -454,7 +301,7 @@ Set `OPENAPI_APPLICABLE` to `YES` (Gradle/Maven) or `NO` (all others).
 
 Resolve `BUILD_COMMAND`: the `--build-cmd` value when supplied, otherwise the Step 2.1 project-type default.
 
-**When `BUILD_COMMAND` resolves** — **announce-and-run**: print the command in your response text at the **announced** consent level (Step 14 *Consent model*), then proceed to Step 2.3 (ADR-0073).
+**When `BUILD_COMMAND` resolves** — **announce-and-run**: print the command in your response text at the **announced** consent level (workflow-mutating.md Step 14 *Consent model*), then proceed to Step 2.3 (ADR-0073).
 
 ```
 🔨 Running build: `<BUILD_COMMAND>`
@@ -667,8 +514,8 @@ Prompt:
 >
 > **Architecture & Compliance:**
 > - Architecture: module boundary violations, circular dependencies, wrong-layer access (entity leaking beyond repository), field injection anti-patterns, N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
-> - API compliance: HTTP method/path/error-code alignment with PROJECT_API_DEFINITION, OpenAPI annotation completeness, API documentation parity (consistent-or-better vs API Definition text). Apply the framework-validation `BAD_REQUEST` allowance and the API-doc severity policy from workflow.md Steps 8.x.1 and 8.y — read them before grading any error-code or documentation mismatch.
-> - Data View compliance: PK/SK prefixes, GSI count/names/projections, attribute naming, access-pattern mapping — validate against PROJECT_DATA_VIEW when DDB entities/repos/configs are changed. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow.md Steps 8.5.1 and 8.5.2.
+> - API compliance: HTTP method/path/error-code alignment with PROJECT_API_DEFINITION, OpenAPI annotation completeness, API documentation parity (consistent-or-better vs API Definition text). Apply the framework-validation `BAD_REQUEST` allowance and the API-doc severity policy from workflow-compliance.md Steps 8.x.1 and 8.y — read them before grading any error-code or documentation mismatch.
+> - Data View compliance: PK/SK prefixes, GSI count/names/projections, attribute naming, access-pattern mapping — validate against PROJECT_DATA_VIEW when DDB entities/repos/configs are changed. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow-compliance.md Steps 8.5.1 and 8.5.2.
 > - Cross-file duplication: identify near-identical logic that can be extracted
 >
 > **Deep-Module Detection:** apply the two scenarios from the shared lens (deep-module-lens.md).
@@ -727,58 +574,7 @@ If evidence cannot be produced, drop the finding or downgrade it to Note.
 
 ## Step 4.1-RTM: Four-Agent Review Profile (mutating modes only)
 
-> **Mode gate**: Runs only when `REVIEW_MODE_AUTONOMOUS = YES` (`--mode autofix` or `review-to-merge`). In that case this profile **replaces** the 4 A/B/C/D finders of Step 4.1 — do not run both rosters. Effort is forced to `high`, so Step 4.2 adversarial verification always follows.
-
-Spawn 5 Explore agents **in parallel**, per the Step 4.1 dispatch rule (READ-ONLY for this discovery phase). Pass each agent the same inputs as Step 4.1 (full diff, `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`, the `--scope` value). The five angles isolate **Tests/Regressions** and **Operational risk** as first-class lanes because the mutating path will *write* regression tests and *merge*. Smells run in their own dedicated agent so they never inflate the per-agent context of the functional review lanes.
-
-### Agent 1 — Correctness & Edge Cases
-
-Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Correctness & Edge Cases**: logic bugs, off-by-one and boundary conditions, null/empty/overflow handling, incorrect error handling, removed behavior callers rely on, stale-data risks, race conditions, data mutation from ambiguous input.
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`. Omit findings you are not confident about.
-
-### Agent 2 — Tests & Regressions
-
-Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Tests & Regressions**: missing coverage for changed paths, regressions introduced by the diff, brittle/flaky tests, test gaps per changed function, framework/standards adherence (Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`; pytest patterns for Python), test independence, event-exhaustiveness checks. For each changed function lacking a regression test, name the test that should exist.
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix` (or the missing test to add). Omit findings you are not confident about.
-
-### Agent 3 — Architecture & Maintainability
-
-Apply the shared **Deep-Module Lens** ([deep-module-lens.md](deep-module-lens.md)).
-
-Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angles are **Architecture & Maintainability** and **Deep-Module Detection**.
->
-> First read `~/.claude/skills/code-review/docs/deep-module-lens.md` — it contains the pre-read list, bounded-context rule, and the two deep-module detection scenarios; apply them exactly.
->
-> **Architecture & Maintainability:**
-> - Module boundary violations, circular dependencies, wrong-layer access, field-injection anti-patterns, duplication that should be extracted
-> - Naming, complexity, dependency direction, dead code, over-engineering
-> - N+1 queries, missing pagination, DynamoDB Limit+FilterExpression misuse
-> - API + Data View compliance when PROJECT_API_DEFINITION / PROJECT_DATA_VIEW is provided and the diff touches controllers/API models or DDB entities/repos/configs: grade per the severity policies and allowances in workflow.md Steps 8.x.1, 8.y, 8.5.1, and 8.5.2 — read them before grading any API-doc or Data View mismatch.
->
-> **Deep-Module Detection:** apply the two scenarios from the shared lens (deep-module-lens.md).
->
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Omit findings you are not confident about.
-
-### Agent 4 — Security & Operational Risk
-
-Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Security & Operational Risk**: hardcoded secrets/tokens, PII in logs, SQL/command injection, weak auth, insecure CORS, exposed internals — PLUS operational concerns relevant to autonomously merging this change: migration/rollback safety, config and feature-flag risk, idempotency, observability/logging gaps, and merge-safety (anything that would be unsafe to land on main).
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`. Omit findings you are not confident about.
-
-### Agent 5 — Maintainability Smells
-
-Prompt:
-> You are a high-recall code reviewer (READ-ONLY). Your angle is **Maintainability Smells** from Fowler's _Refactoring_, chapter 3.
-> First read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and its binding rules (repo overrides baseline, skip tooling-enforced smells, Notes-only, judgement-call standard). Apply them exactly.
-> **De-dup precedence for this roster:** skip a `file:line` if Agents 1, 2, 3, or 4 already reported it at any severity.
-> For each finding return: `severity = NOTE`, `file:line`, `smell name`, `description`, `suggested fix`. Omit findings you are not confident about.
-
-### Synthesis (shared)
-
-Reuse the Step 4.1 **Synthesis** and **Mandatory Pre-Report Verification Protocol** blocks verbatim (merge, dedupe by `file:line` keeping higher severity with Agent 5 Notes always losing to any Agent 1–4 finding at the same file:line; sort CRITICAL → MAJOR → MINOR → NOTE → POSITIVE; Agent 5 Notes are never sent to the adversarial verifier). Then proceed to Step 4.2 (adversarial verification — always runs, effort is `high`).
+> `REVIEW_MODE_AUTONOMOUS = YES`: read [workflow-mutating.md](workflow-mutating.md) *Step 4.1-RTM*. Its 5-agent roster replaces the A/B/C/D finders of Step 4.1; Step 4.2 follows.
 
 ---
 
@@ -844,9 +640,9 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Deep-Module Detection**: Apply the two scenarios from `~/.claude/skills/code-review/docs/deep-module-lens.md` (the shared lens used by medium/high-effort finders). Use codebase-design vocabulary (module, interface, depth, seam, adapter, leverage, locality) in all findings.
 >
-> **API compliance** (when API_DEFINITION provided): HTTP method + path matches spec; request/response fields correct; error codes correct; pagination follows project pattern; OpenAPI annotations present; API documentation semantically consistent-or-better vs API Definition. Apply the framework-validation `BAD_REQUEST` allowance and API-doc severity policy from workflow.md Steps 8.x.1 and 8.y before grading any error-code or documentation mismatch.
+> **API compliance** (when API_DEFINITION provided): HTTP method + path matches spec; request/response fields correct; error codes correct; pagination follows project pattern; OpenAPI annotations present; API documentation semantically consistent-or-better vs API Definition. Apply the framework-validation `BAD_REQUEST` allowance and API-doc severity policy from workflow-compliance.md Steps 8.x.1 and 8.y before grading any error-code or documentation mismatch.
 >
-> **Data View compliance** (when DATA_VIEW provided, if DDB entities/repos/constants changed): PK/SK prefixes match; GSI count/names/projections match; attribute naming correct; access-pattern mapping to Data View; transactional semantics correct. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow.md Steps 8.5.1 and 8.5.2.
+> **Data View compliance** (when DATA_VIEW provided, if DDB entities/repos/constants changed): PK/SK prefixes match; GSI count/names/projections match; attribute naming correct; access-pattern mapping to Data View; transactional semantics correct. Grade per the Data View severity policy and pre-existing-vs-in-scope rule in workflow-compliance.md Steps 8.5.1 and 8.5.2.
 >
 > **Business logic** (when SRS provided, for UseCase/validator/event-handler changes): business rules enforced; authorization correct; state transitions respected; events published correctly. Apply 2x severity multiplier for UseCase findings.
 >
@@ -873,299 +669,19 @@ Wait for the agent to return findings, then proceed to Step 10.5 (Lineage Enforc
 
 ## Step 4.5: Reconcile Existing Unresolved PR Threads (scope = committed and PR integration enabled)
 
-> **Scope gate**: Skip entirely when `--scope working-tree`.
->
-> **PREREQUISITE**: `PR_INTEGRATION = ENABLED` (applies regardless of `PR_UNRESOLVED_THREAD_COUNT` value — even 0 requires the dedupe command so new findings are tagged as "Not yet tracked in PR discussion").
-
-For each unresolved thread (if any), compare comment intent against current `origin/$REVIEW_BASE_REF..HEAD` diff and full method/file context.
-
-Classify each thread:
-- **Likely addressed**: code changes appear to resolve the concern
-- **Still open**: concern remains unresolved
-- **Needs human confirmation**: ambiguous or requires business/context decision
-
-Important:
-- This classification is advisory only.
-- Do not mark threads resolved automatically.
-- Include thread URL in report for quick manual follow-up.
-
-Also de-duplicate findings:
-- If a newly discovered issue already exists in unresolved PR comments, tag it as **Already tracked in PR thread**.
-- Tag truly new issues as **Not yet tracked in PR discussion**.
-
-Recommended helper command:
-
-```bash
-python3 <skill dir>/scripts/code_review_pr_helper.py dedupe \
-  --discover-json /tmp/code-review-pr-discover.json \
-  --findings /tmp/code-review-findings.json \
-  --output /tmp/code-review-pr-dedupe.json
-```
+> `--scope committed` with `PR_INTEGRATION = ENABLED`: read [workflow-pr.md](workflow-pr.md) *Step 4.5* and run it before Step 11. `--scope working-tree`: skip.
 
 ---
 
 # Compliance Reference (Steps 5–10)
 
-> ⛔ **These are NOT orchestrator steps.** All effort levels analyze via subagents (Step 4.1 finders, or the Step 4.9 single subagent), never inline. This section is the **detailed compliance reference** those subagents consult. The Finder prompts point here for the parts they cannot carry inline — the framework-validation `BAD_REQUEST` allowance (Step 8.x.1), the Data View severity policy (Step 8.5.1), and the API documentation severity policy (Step 8.y). The compliance reference ends at Step 10; orchestrator steps resume at Step 10.5 (Lineage) under the divider below.
-
-## Step 5: Validate Commit Messages
-
-> **Scope gate**: Only applies when `--scope committed`. Skip when `--scope working-tree` (changes are uncommitted, no commit messages to validate).
-
-Check each commit in `origin/$REVIEW_BASE_REF..HEAD` (two-dot range: commits unique to this branch) for Jira ticket reference:
-- Pattern: `[A-Z]+-\d+:` at start
-- **🟠 MAJOR issue** if missing
-
----
-
-## Step 6: Kotlin Coding Standards
-
-Validate code against the project's established Kotlin conventions.
-
-**Key areas to check:**
-- [ ] **Vertical Slice**: UseCases are `@Service` with `operator fun invoke()`. Controllers are thin (no business logic). Constructor injection only — no `@Autowired` on fields.
-- [ ] **Three-Tier Model**: API models → Resources → Entities. Entities must NOT leak beyond `RepositoryImpl`. Repositories accept/return Resources only. Tier conversions via extension functions.
-- [ ] **Request/Response models**: Request models use `@JsonIgnoreProperties(ignoreUnknown = true)`. Response models do NOT (they are serialized, not deserialized).
-- [ ] **Kotlin idioms**: `data class` with `val`, extension functions for conversions, sealed interfaces for events, `checkNotNull {}` for preconditions, named constants (not magic strings).
-- [ ] **Validation**: Custom validators in `validator/` sub-package, validation at API layer via `@Valid @RequestBody`. `isValid(null) = false` is **correct** for required fields — do NOT flag as dead code.
-- [ ] **Error handling**: Extend base exception class, use `ErrorCode` enum, centralized `@RestControllerAdvice`. Never expose stack traces.
-- [ ] **Events**: Sealed `Event` hierarchy, critical vs non-critical distinction, Kafka headers, exhaustiveness enforced in tests.
-- [ ] **DynamoDB**: AWS SDK v2 Enhanced Client, no `AttributeValue` leaking outside repository, `@DynamoDbVersionAttribute` for optimistic locking.
-
-→ See [kotlin-standards.md](kotlin-standards.md) for full standards, examples, and anti-patterns.
-
-#### Python Projects (`PROJECT_TYPE = Python`)
-
-> This is a per-language addendum to the inline (effort=low) review path. It does **not** replace the Kotlin/JVM guidance above — apply it only when `PROJECT_TYPE = Python`.
-
-When reviewing Python code, apply standards from [python-standards.md](python-standards.md):
-
-**Pydantic & Type Annotations**
-- All validators use `@field_validator`/`@model_validator` (pydantic v2) — flag any legacy `@validator`/`@root_validator`
-- `from typing import List/Dict/Optional/Iterator` → flag as deprecated; require `collections.abc` / built-ins
-- Missing `__all__` on public `__init__.py` modules → flag as MINOR
-- `TYPE_CHECKING` import pattern for type-only cross-module refs — verify it is used where needed
-
-**DRY & Code Quality**
-- Three or more near-identical code blocks → flag as MINOR with suggested abstraction
-- Repeated audit-detail dicts with same base keys → flag, suggest `_build_audit` helper
-- Inline `str.partition(":")` typed-id parsing → flag if `parse_typed_id` helper exists in `schemas/`
-- `str(exc)` / raw exception text in audit records or user-visible output → flag as MINOR (m-2 pattern)
-
-**SQL / DB**
-- f-string or `%`-format SQL with variable identifiers → flag as MAJOR (psycopg2.sql.Identifier required)
-- All values must be parameterized (`%s`) → any string-interpolated value is CRITICAL
-
-**Testing**
-- `except Exception: pass` or `except Exception as e: pass` (unused binding) in conftest teardown → flag as MINOR
-- Non-parametrized near-duplicate test bodies → flag as MINOR
-- `from typing import Iterator` in test fixtures → flag as MINOR
-
----
-
-## Step 7: Module Architecture & Boundaries
-
-> **PREREQUISITE**: This step requires `PROJECT_MODULE_VIEW`.
-> **IF `PROJECT_MODULE_VIEW` is EMPTY**: Skip this entire step. Add to the report: "⚠️ Module View document not found — module boundary validation was skipped."
-
-**IF `PROJECT_MODULE_VIEW` is set**: Read the file at `PROJECT_MODULE_VIEW` and validate changes against the module architecture defined in it.
-
-**Essential rules to check (adapt based on what the Module View document defines):**
-- **Zero circular dependencies** — modules depend downward only
-- **Module boundaries** are respected as defined in the Module View
-- **Shared modules** (e.g., `common/`) have no dependencies on feature modules
-- **Dependency modules** (e.g., `dependencies/`) contain external API clients only
-- **Cross-module reads** go through interfaces, not direct module access
-- **Event consumers** use dependency inversion — handlers depend on interfaces, not on feature modules
-- **One-way dependencies only** as specified in the Module View dependency matrix
-
----
-
-## Step 8: API Definition Compliance
-
-> **PREREQUISITE**: This step requires `PROJECT_API_DEFINITION`.
-> **IF `PROJECT_API_DEFINITION` is EMPTY**: Skip the specification validation parts of this step. Add to the report: "⚠️ API Definition document not found — API specification validation was skipped."
-
-**IF `PROJECT_API_DEFINITION` is set**: When changes touch Controllers, API models (request/response DTOs), path constants, or error codes — read the file at `PROJECT_API_DEFINITION` and validate against it.
-
-**What to check:**
-- HTTP method + path matches the specification
-- Request/response field names, types, optionality, and constraints match
-- Error codes and HTTP status codes are correct (with framework-validation allowance below)
-- Pagination follows the project's established pattern
-- Path parameter semantics are correct
-- Gateway-injected headers are used correctly
-- API category paths are respected (e.g., `/internal/` for service-to-service, `/v2/` for admin, `/v2/me/` for self-service)
-- OpenAPI documentation annotations are present and accurate
-- **Generated API specifications are present and include new endpoints**
-  - Look for generated spec files (e.g., `build/api-spec/openapi3.yaml` or similar)
-  - **CRITICAL**: API specifications MUST be present and MUST contain all APIs under development
-  - **IF `BUILD_STATUS = SUCCESS`** and spec files are still missing or incomplete → this is a **🔴 CRITICAL** violation (the build ran but specs were not generated properly)
-  - **IF `BUILD_STATUS = WAIVED`** and spec files are missing → note in the report: "⚠️ API specs not found and build/OpenAPI gate was waived in Step 2 — re-run the review with a build to validate API specifications"
-  - **CRITICAL**: If new endpoints are missing from specifications, this is a critical violation
-- **API documentation quality parity (consistent or better) vs API Definition**
-  - Method documentation (summary/description/comments) must be semantically consistent with API Definition documentation
-  - Payload documentation for request/response fields must preserve API Definition meaning (intent, constraints, required/optional semantics)
-  - More detailed documentation is allowed and encouraged, as long as it does not contradict the API Definition
-  - Missing key meaning/constraint from API Definition in implementation docs is considered a quality defect
-
-### 8.x API Documentation Consistency Validation (MANDATORY when API changed)
-
-For each changed endpoint, compare API documentation sources (generated OpenAPI descriptions and/or API documentation snippets in code/tests) against `PROJECT_API_DEFINITION`:
-
-1. Method-level text quality:
-   - HTTP method/path context is documented correctly
-   - Summary and description are equivalent or better than API Definition text
-2. Payload text quality:
-   - Request field descriptions preserve API Definition semantics and constraints
-   - Response field descriptions preserve semantics and do not weaken meaning
-3. Error documentation quality:
-   - Error code descriptions/status semantics are consistent with API Definition
-
-### 8.x.1 Framework/Native Validation Allowance (IMPORTANT)
-
-When an error is produced by native Kotlin/Spring/Jackson/Bean Validation behavior (not domain business logic),
-it is acceptable for documentation/spec examples to use generic `BAD_REQUEST` semantics.
-
-Treat as **PASS (no mismatch)** when ALL of the following are true:
-- Failure source is framework/native validation (e.g., Kotlin nullability binding failure, enum parsing failure,
-  `@Valid`/`@NotBlank`/`@Size`/other annotation-based validation failure, malformed request body/path/query parameter format)
-- There is no custom domain error-mapping logic in the changed implementation for that case
-- HTTP status semantics remain correct (typically 400)
-
-Treat as **FAIL (mismatch)** when ANY of the following are true:
-- API Definition requires a domain-specific error code for a business-rule failure handled in service/use-case logic
-- Implementation documentation weakens or replaces a domain-specific business error with generic `BAD_REQUEST`
-- Documentation contradicts API Definition error semantics
-
-Examples:
-- ✅ Acceptable generic `BAD_REQUEST`: invalid enum value rejected by framework binding
-- ✅ Acceptable generic `BAD_REQUEST`: `@Size(min=1)` violation on request field
-- ❌ Not acceptable generic `BAD_REQUEST`: documented domain case like `TEACHER_GROUP_IMMUTABLE` or
-  `MEMBER_LIMIT_EXCEEDED` when that rule is business logic and explicitly defined in API Definition
-
-**Acceptance rule: "consistent or better"**
-- PASS: Equivalent meaning OR richer detail with no contradiction
-- PASS: Generic `BAD_REQUEST` is allowed for framework/native validation-originated failures (per 8.x.1)
-- FAIL: Contradiction, omission of key semantics/constraints, or weaker/misleading text
-
-### 8.y Severity Policy for API Documentation Mismatches
-
-- 🔴 **Critical**: Documentation contradicts API Definition semantics (method behavior, payload meaning, or error behavior)
-- 🟠 **Major**: Key API Definition semantics/constraints are missing or significantly weaker in implementation docs
-- 🟡 **Minor**: Wording/style clarity issues without semantic mismatch
-- ℹ️ **No Issue**: Generic `BAD_REQUEST` used for framework/native validation-originated failures (allowed by 8.x.1)
-- 🟢 **Positive**: Documentation is more detailed than API Definition while remaining fully consistent
-
----
-
-## Step 8.5: Data View Compliance (DynamoDB Data Model & Access Patterns)
-
-> **PREREQUISITE**: This step requires `PROJECT_DATA_VIEW`.
-> **IF `PROJECT_DATA_VIEW` is EMPTY**: Skip this entire step. Add to the report: "⚠️ Data View document not found — data model and access pattern validation was skipped."
-
-> **Applies when** changes touch any of the following:
-> - DynamoDB entities (`@DynamoDbBean`-annotated classes)
-> - Repository implementations (e.g. `*RepositoryImpl.kt`, `ddb/` sub-packages)
-> - DDB constants (table name, GSI names, attribute names, key prefixes/suffixes)
-> - `DynamoDbConfig` / local DDB scaffolding (`LocalDynamoDbConfig`, synthetic key entities used for local table creation)
-> - Query/update expressions or new access paths
-
-**IF `PROJECT_DATA_VIEW` is set**: Read the file at `PROJECT_DATA_VIEW` and validate the change against the documented data model and access patterns.
-
-**What to check:**
-
-1. **Table strategy & name**
-   - Single-table vs multi-table strategy is respected as defined in the Data View
-   - Canonical table name constant matches Data View (e.g., `GROUP_MGMT_TABLE_NAME = "group_mgmt"`)
-   - Environment prefix/postfix composition is applied through a single canonical bean (not duplicated in multiple places)
-
-2. **Primary keys (PK/SK)**
-   - Partition key and sort key prefixes match Data View conventions (e.g. `G#`, `M#U#`, `M#G#`, `TI#`, `GN#`)
-   - Key composition formulas match (e.g., `memberIdKey = "M#{memberId}#{memberType}"`)
-   - Polymorphic sort key prefixes do not collide across entity types (e.g. `GN#` for groups vs `TI#` for task items)
-   - Key attribute names use the constants defined in the project (no magic strings)
-
-3. **GSIs (Global Secondary Indexes)**
-   - GSI count matches Data View (e.g. Data View says 5 GSIs → code/local scaffolding must have 5)
-   - For each GSI: PK attribute, SK attribute, and projection type match Data View
-   - GSI names match the canonical constants
-   - Synthetic "all-GSI" entities used for local table creation (e.g. `KeyEntity` in `LocalDynamoDbConfig`) expose EVERY GSI listed in Data View — a missing GSI causes local-dev tests that exercise that access path to silently fall back to scans or fail
-
-4. **Attributes**
-   - Attribute names match Data View (use constants from `DdbConstant` or equivalent)
-   - Required attributes (per Data View schema rows) are non-nullable in the entity type; optional attributes are nullable
-   - Denormalized fields (e.g. `parentId`, `memberNameLower`, `parentSortKey`) are populated on writes as specified
-   - TTL-bearing items (e.g. task items) use `Expirable`/`@DynamoDbConvertedBy(InstantToNumberConverter)` and set the correct attribute
-
-5. **Access patterns**
-   - New or changed repository method maps to an access pattern documented in the Data View "Access Patterns Summary" table
-   - The query strategy chosen (Query vs GetItem vs Scan) matches the documented strategy
-   - If a new access pattern is introduced that is NOT in the Data View, flag it and ask whether the Data View document should be updated first
-
-6. **Transactional semantics**
-   - TransactWrite / BatchWrite operations match the atomicity boundaries described in Data View
-   - Optimistic locking (`@DynamoDbVersionAttribute`) is used for items that the Data View marks with a `version` attribute
-   - Conditional expressions for uniqueness (e.g. `attribute_not_exists(PK)` on GroupKey marker creation) are preserved
-
-### 8.5.1 Severity Policy for Data View Mismatches
-
-- 🔴 **Critical**: Data model change that breaks an access pattern, corrupts key-space (PK/SK prefix collision), or silently drops a GSI relied on by production access paths
-- 🟠 **Major**: Attribute/GSI/Access-pattern mismatch vs Data View; magic strings used instead of canonical constants; denormalized field not populated on write; local-dev scaffolding missing a GSI that Data View lists
-- 🟡 **Minor**: Naming drift from Data View (e.g. constant present but unused), comment/documentation drift, stylistic inconsistency
-- 🟢 **Positive**: Change reduces duplication (single canonical table-name / key-composition bean), adds a GSI that Data View already requires, introduces missing `Auditable`/`Expirable` traits where Data View mandates them
-
-### 8.5.2 Pre-existing vs in-scope findings
-
-When a Data View gap is discovered (e.g., a GSI missing from a synthetic `KeyEntity`) but the reviewed diff does NOT touch the relevant code, report the gap as a **contextual observation out of scope**, not as a finding on this review. Still include it under a `📊 Data View Observations (out of scope)` bullet list in the report so it is not lost.
-
----
-
-## Step 9: Business Logic & SRS Validation
-
-> **PREREQUISITE**: This step requires `PROJECT_SRS` and optionally `PROJECT_USE_CASES`.
-> **IF both `PROJECT_SRS` and `PROJECT_USE_CASES` are EMPTY**: Skip this entire step. Add to the report: "⚠️ SRS and Use Case documents not found — business logic validation was skipped."
-> **IF `PROJECT_SRS` is EMPTY but `PROJECT_USE_CASES` is set** (or vice versa): Perform partial validation using whichever document is available. Note the missing document in the report.
-
-**IF `PROJECT_SRS` is set**: When changes touch UseCase classes, validators, event handlers, or repository logic — read the file at `PROJECT_SRS` and validate against its functional requirements.
-
-**IF `PROJECT_USE_CASES` is set**: Also read the file at `PROJECT_USE_CASES` and cross-reference use case specifications.
-
-**What to check:**
-- Business rules from the SRS are correctly enforced in use case implementations
-- Authorization checks follow the permission matrix defined in the SRS
-- State transitions and immutability rules are respected
-- Nesting/hierarchy validation rules are implemented (circular reference prevention, etc.)
-- Events are published on the correct topics with correct payloads after successful operations
-- Consumed events trigger correct cascade behavior
-- Error conditions from the SRS error code reference are handled with the correct error codes
-- Read full method context — not just diff lines — to understand complete business flow
-
-**Apply 2x severity multiplier** for business logic violations in UseCase classes.
-
----
-
-## Step 10: Testing Standards
-
-When reviewing test files, validate against established testing patterns.
-
-**Key areas to check:**
-- [ ] **Frameworks**: Kotlin Test Framework preferred over JUnit Jupiter. MockK is the primary mocking library (not Mockito, except for simple validator tests).
-- [ ] **MockK type erasure pitfall**: Use `match { it is SpecificType }` instead of `any<SpecificType>()` inside `verify {}` — generics are erased at runtime.
-- [ ] **Test naming**: Backtick descriptive names (`` `should return X when Y` ``).
-- [ ] **Test types**: Controllers → `@ControllerDocumentationTest` + MockMvc. UseCases → `@ExtendWith(MockKExtension::class)`. DynamoDB → `@DdbTest`.
-- [ ] **Event tests**: Sealed class exhaustiveness with `require(generatedEvents.size == allConcreteSubclasses.size)`.
-- [ ] **Test independence**: No shared mutable state between tests.
-
-> ⚠️ **Anti-false-positive — Controller Test Full Dependency Mocking**: In `@ControllerDocumentationTest` classes, `@MockkBean` declarations for controller dependencies that are **not directly invoked** in that test's scenarios are **NOT** a violation. They are mandatory for Spring application context wiring of the full controller dependency graph. Do **NOT** report these as "unnecessary dependencies" or flag them as a quality issue.
-
-→ See [testing-standards.md](testing-standards.md) for full patterns, import lists, and code examples.
+> Steps 5–10 (commit messages, Kotlin and Python standards, module architecture, API definition, Data View 8.5, business logic, testing standards) live in [workflow-compliance.md](workflow-compliance.md). Read it when `--effort low` (Step 4.9 applies it), and read Steps 8.x.1, 8.y, 8.5.1 and 8.5.2 there before grading an API-doc or Data View mismatch. They are NOT orchestrator steps: all effort levels analyze through subagents.
 
 ---
 
 # Orchestrator Steps (resume)
 
-> The Compliance Reference above ends here. Steps 10.5 onward are **real orchestrator steps** run by the orchestrator (not subagent reference material), per Step 4.1/4.2/4.9 routing.
+> The Compliance Reference (disclosed in workflow-compliance.md) ends here. Steps 10.5 onward are **real orchestrator steps** run by the orchestrator (not subagent reference material), per Step 4.1/4.2/4.9 routing.
 
 ## Step 10.5: Lineage Enforcement (ADR-0061)
 
@@ -1239,8 +755,10 @@ Copy one verdict string verbatim from this list, chosen by the grade of the conf
 > - Produce a free-form report that deviates from the section structure below — **the exact section headings are mandatory**, including `🔎 Build/OpenAPI Verification`, `🧾 API Documentation Consistency Check`, `📊 Data View Compliance Check`, `🔗 PR Context Intake`, and `🔗 Lineage`; omitting any mandatory section is a workflow violation
 >
 > The report below is the primary deliverable of this skill. Generate it now in your response using the exact structure.
+>
+> **Citation rule:** every finding and action item names the enclosing function or class in backticks next to `file:line`. `file:line` is valid for this diff only, because the next edit moves it; the code name survives. A reader who copies a finding into a ticket, commit or PR cites the code name, never the line.
 
-> **Compact form (clean review):** when the final finding set has zero Critical and zero Major findings, emit instead: the `🔨 Build Status` line with the build command used and its exit status, the `Review mode` line, one line per Minor/Note finding (severity, file:line, evidence), and the grade and verdict. Skip the Positive-notes narration and every mandatory section whose check was `WAIVED` or `NOT_APPLICABLE`; keep any section that recorded a result (`PR Context Intake` when a PR exists, `Lineage` when it has findings). Any Critical or Major finding restores the full structure below.
+> **Compact form (clean review):** when the final finding set has zero Critical and zero Major findings, emit instead: the `🔨 Build Status` line with the build command used and its exit status, the `Review mode` line, one line per Minor/Note finding (severity, `code_name`, file:line, evidence), and the grade and verdict. Skip the Positive-notes narration and every mandatory section whose check was `WAIVED` or `NOT_APPLICABLE`; keep any section that recorded a result (`PR Context Intake` when a PR exists, `Lineage` when it has findings). Any Critical or Major finding restores the full structure below.
 
 ```markdown
 ## Code Review
@@ -1307,31 +825,31 @@ Copy one verdict string verbatim from this list, chosen by the grade of the conf
 - Helper artifacts: `[/tmp/code-review-pr-discover.json, /tmp/code-review-pr-triage.json or N/A]`
 
 ### 🔴 Critical Issues (X found)
-1. **[File]:[Line]** - [Issue]
+1. **[File]:[Line]** (`[code_name]`) - [Issue]
    - **Fix**: [Solution]
    - **Impact**: [Why it matters]
 
 ### 🟠 Major Issues (X found)
-1. **[File]:[Line]** - [Issue]
+1. **[File]:[Line]** (`[code_name]`) - [Issue]
    - **Fix**: [Solution]
 
 ### 🟡 Minor Issues (X found)
-1. **[File]:[Line]** - [Issue]
+1. **[File]:[Line]** (`[code_name]`) - [Issue]
    - **Fix**: [Solution]
 
 ### ℹ️ Notes (X found) - non-blocking observations, do not affect grade
-1. **[File]:[Line]** - [Observation]
+1. **[File]:[Line]** (`[code_name]`) - [Observation]
 
 ### 🟢 Positive Highlights (X found)
 1. **[File]** - [What's good]
 
 ### 🔍 Candidate Issues (Not Confirmed) — effort = high only; omit section otherwise
 > These findings were raised but refuted by adversarial verification. They are excluded from the grade. Include for transparency.
-1. **[File]:[Line]** - [Issue] *(Refuted: [reason])*
+1. **[File]:[Line]** (`[code_name]`) - [Issue] *(Refuted: [reason])*
 
 ### 📌 Pre-existing (outside this diff) — omit section when empty
 > Real problems on lines the diff does not touch. Reported MINOR, excluded from the grade, never a reason to withhold approval; the author may file a follow-up.
-1. **[File]:[Line]** - [Issue] *(finder severity: [CRITICAL|MAJOR|MINOR]; [fix])*
+1. **[File]:[Line]** (`[code_name]`) - [Issue] *(finder severity: [CRITICAL|MAJOR|MINOR]; [fix])*
 
 ### 🔗 Lineage (ADR-0061)
 - Lineage anchor: `[**Spec**: <slug> / **Source ADR**: <path> / none found — checks skipped]`
@@ -1350,7 +868,7 @@ Copy one verdict string verbatim from this list, chosen by the grade of the conf
 **Summary**: [1-2 sentence executive summary]
 
 ### 🔨 Action Items
-- [ ] [Specific action with file:line reference]
+- [ ] [Specific action: `code_name` (function or class) + file:line]
 
 ---
 
@@ -1365,70 +883,7 @@ After presenting report, ask: "Would you like me to help address any of these fi
 
 ## Step 13.5: Conditional Mandatory PR Write Actions (EXPLICIT CONSENT REQUIRED)
 
-> ⛔ **CONDITIONAL MANDATORY**: This step MUST be executed when `PR_INTEGRATION = ENABLED` and `CURRENT_PR_NUMBER` is resolved. It is only truly optional when `PR_INTEGRATION = DISABLED`.
-
-### 13.5.0 Script-driven flow (recommended)
-
-Draft review comments from findings:
-
-```bash
-python3 <skill dir>/scripts/code_review_pr_helper.py draft-comments \
-  --input /tmp/code-review-pr-dedupe.json \
-  --only-untracked \
-  --output /tmp/code-review-pr-draft-comments.json
-```
-
-Publish comments (only after explicit user approval):
-
-```bash
-python3 <skill dir>/scripts/code_review_pr_helper.py publish-comments \
-  --discover-json /tmp/code-review-pr-discover.json \
-  --drafts /tmp/code-review-pr-draft-comments.json \
-  --confirm I_UNDERSTAND_POST_TO_PR \
-  --output /tmp/code-review-pr-publish-result.json
-```
-
-Approve PR (only after explicit user approval):
-
-```bash
-python3 <skill dir>/scripts/code_review_pr_helper.py approve \
-  --discover-json /tmp/code-review-pr-discover.json \
-  --message "Reviewed and approved." \
-  --confirm I_UNDERSTAND_APPROVE_PR \
-  --output /tmp/code-review-pr-approve-result.json
-```
-
-Safety requirements remain mandatory:
-- Do not execute `publish-comments` without explicit consent.
-- Do not execute `approve` without explicit consent.
-- Never auto-resolve PR threads.
-
-### 13.5.1 Offer comment publishing for discovered findings
-
-Ask user:
-- which findings to publish (`all`, `selected`, `none`)
-- whether to publish as inline comments (preferred) or PR-level summary comment
-
-Before posting, present drafted comment text for approval.
-
-Only after explicit approval, post comments using `gh`.
-
-### 13.5.2 Offer PR approval flow
-
-If verdict is approval-eligible:
-- Propose approval message
-- Ask user: "Do you want me to approve PR #[number] with this message?"
-- Only upon explicit consent, run approval command (e.g., `gh pr review --approve`)
-
-If not approval-eligible:
-- Offer to draft request-changes message instead
-
-### 13.5.3 Auditability
-
-Record in final response:
-- whether comments were posted
-- whether approval was submitted
-- exact PR URLs for posted artifacts
+> `PR_INTEGRATION = ENABLED` and `CURRENT_PR_NUMBER` resolved: read [workflow-pr.md](workflow-pr.md) *Step 13.5* and run it right after the report; every PR write waits for explicit user consent. Otherwise skip.
 
 ---
 
@@ -1453,56 +908,7 @@ After the report (and after Step 13.5 when PR integration is active), ask the us
 
 ## Step 14: Autonomous Mutating Modes (`--mode autofix` / `review-to-merge`)
 
-> **Mode gate**: This step runs **only** when `REVIEW_MODE_AUTONOMOUS = YES`. In `review` mode the workflow ends after Step 13.6.
->
-> ⛔ **Prerequisite (non-bypassable)**: do not begin any RTM phase until the report (Step 13) exists and every read-only gate is resolved (Step 1/1.5 branch+divergence, Step 1.5 PR-context, Step 2 build with `BUILD_STATUS` **not** `FAILED` or `WAIVED`, Step 4.1-RTM + 4.2 verification). See the "RTM/Autofix prerequisite" block under *Non-negotiable execution order*. If `BUILD_STATUS` is `FAILED` or `WAIVED`, report and STOP — do not mutate.
-
-This step inverts the skill's read-only default: it implements fixes, writes tests, commits, and (for `review-to-merge`) pushes and merges. All mutation is gated.
-
-### Design decisions: iteration caps and exit behavior
-
-| Loop | Cap | Exit behavior when cap is hit |
-|------|-----|-------------------------------|
-| Fix-implementation attempts per finding | **3** | Mark that finding `UNRESOLVED`, revert/leave its code untouched (see recovery rows), continue remaining findings, surface it in the final summary as needing manual attention. Never blocks other fixes. |
-| Full-suite debug re-runs after fixes applied | **3** | STOP. Do not commit (if uncommitted); if commits already made, do not push/merge. Report failing tests, the loop's commit SHAs, and recovery options. Terminal stop — no auto-merge, no further retries. |
-| Adversarial final-review passes (RTM-6) | **2** | If an accepted Major/Critical is still unaddressed after 2 passes, STOP before push/merge; report the gap. |
-| Critic passes over the fix plan (RTM-2) | **fixed 3** (impossible-assumptions, missing-deps/schema-mismatch, test-gap) | Bounded analysis, not a retry loop — run exactly the three, then proceed. No cap-exhaustion state. |
-
-**Exit-state guarantee:** whenever any cap is hit, the terminal state is "report + stop," never push or merge. The only path to push/merge is a fully green suite + a clean adversarial final review + the consent gates below.
-
-### Consent model: BLOCKING gates
-
-- **announced (informational):** the agent prints a banner of what it is about to do; no user reply required. Used for non-mutating progress (e.g. "entering RTM-3, implementing 4 fixes").
-- **BLOCKING consent gate (hard gate):** the agent prints the exact git command + target, then STOPS and waits for an explicit user reply before executing. It does not proceed on silence, does not infer consent, and does not batch multiple mutating actions behind one approval. Same force as the Step 1.5 "print verbatim then wait" gate.
-
-| Action | Gate | Default |
-|--------|------|---------|
-| Commit (RTM-5) | BLOCKING | Explicit confirmation before `git commit`. No auto-proceed. |
-| Push (RTM-7) | BLOCKING | Explicit confirmation before `git push`. No auto-proceed. |
-| Merge to main (RTM-7) | BLOCKING | Explicit confirmation before merge. No auto-proceed. |
-
-**Operator pre-authorization:** a session may run under "Auto Mode"; the operator MAY pre-authorize specific actions up front (e.g. "autofix and commit without stopping"). When pre-authorized, that gate is satisfied without a per-action pause, but the banner is still announced. **Merge to main is never implicitly auto-authorized** — it always requires a per-action confirmation or an explicit "merge to main without stopping" instruction.
-
-### Phases
-
-**RTM-1 — Status/branch/upstream/scope confirmation.** Confirm `git status`, current branch, upstream tracking, and review scope (reuse Step 1 outputs). If branch/upstream/scope is unclear, default to the safe interpretation — committed scope on the current non-`main` feature branch — and state the assumption. If on `main`, state it immediately, propose a feature branch, and block (do not mutate `main`). **Capture the pre-RTM HEAD SHA** as the rollback anchor for every recovery row.
-
-**Scope-specific handling:**
-- **`--scope committed`** (default): fixes are committed as new commits on the feature branch per RTM-5.
-- **`--scope working-tree` (or its alias `uncommitted`) + `--mode autofix`**: this is a naturally supported combination. Review the working tree, implement fixes on top of the existing uncommitted work, and commit the reviewed changes **plus** the fixes together at RTM-5 behind the normal BLOCKING consent gate. Do NOT hard-block or ask the user to switch scope — the uncommitted work under review is the intended commit content. The BLOCKING gate at RTM-5 is where the user reviews the exact staged set before confirming; print `git status` there so the staged set is visible.
-- **`--scope working-tree` + `--mode review-to-merge`**: the merge step (RTM-7) requires committed-scope semantics and a feature branch. Run review + autofix + commit as above, but before RTM-7 confirm a non-`main` feature branch exists; if only `main` is present, STOP after commit and report (do not merge working-tree fixes straight to `main`).
-
-**RTM-2 — Consolidate fix plan + 3 critic passes.** From the Step 4.1-RTM / 4.2 verified findings, filter to Major/Critical and build an ordered fix plan (each entry: finding id, `file:line`, root cause, proposed fix, regression test to add, dependencies/order). Quarantine any finding that requires a genuine product decision — these are the only stop-for-user items in the loop. Then run the three fixed critic passes over the plan (reuse the Step 4.2 adversarial style, retargeted at the plan): (1) impossible assumptions, (2) missing dependencies / schema or contract mismatches (cross-check `PROJECT_DATA_VIEW` / `PROJECT_API_DEFINITION` / `PROJECT_SRS`), (3) test-coverage gaps. Drop or rewrite plan items the critics refute.
-
-**RTM-3 — Implement fixes + regression tests + selective suite.** Per accepted finding: implement the fix following the relevant standards docs (kotlin/python/testing/security/architecture), one logical change per fix, traceable to a finding id; add or update a regression test that fails before and passes after (3-attempt cap per finding). After all fixes, run the tests via the `testing` skill's selective runner (`--files <changed files from review scope + fix-touched files>`); the testing skill maps those files to their covering tests and **falls back to the full suite automatically when any changed file has zero coverage**, so the safety net is preserved without code-review implementing its own. Loop: if any test fails → debug → re-run, within the 3-rerun cap. Hard rule: do not proceed to commit while the run is red. The user may request a full-suite run explicitly. This is the autonomous fix flow from `~/.claude/CLAUDE.md` (identify Major/Critical → implement → regression tests → run relevant tests → debug to 100% → structured commit), stopping only for genuine product decisions.
-
-**RTM-4 — Summarize changes.** Produce a structured summary: each finding → its fix → its regression test → suite result.
-
-**RTM-5 — Commit (BLOCKING consent gate).** Stage ALL changes per the global git convention (modified files + renames + new files; never a partial set). For `--scope working-tree`/`uncommitted` this stages the reviewed uncommitted work together with the autofixes — that combined set is the intended commit. Print `git status` as part of the BLOCKING banner so the user sees the exact staged set before confirming. Use a structured commit message listing each finding and its fix, with the `Co-Authored-By` trailer. See git-commands.md for the message format. **`autofix` terminates here** — report the commit SHA and summary.
-
-**RTM-6 — Adversarial final review (≤2 passes).** Re-run adversarial verification against the **original** finding list: for each original Critical/Major, confirm it is now actually resolved (`CONFIRMED-FIXED` / `STILL-OPEN` / `REGRESSED`). Also scan the implemented diff for *new* findings (regressions, new security/operational risk). If anything is `STILL-OPEN`, `REGRESSED`, or a new Critical/Major appears → return to RTM-3 (bounded by the cap) or, if the cap is hit, STOP before push and report the gap + commit SHA.
-
-**RTM-7 — Push (BLOCKING gate) then safe merge to main (BLOCKING gate).** Push the feature branch (BLOCKING). Then re-evaluate the merge-safety gate: tests green, RTM-6 clean, branch not behind base (re-fetch base), no conflicts, no-merge-without-consent honored. If safe and confirmed: if a PR exists, merge via the existing PR/repo workflow; otherwise merge the working branch into `main` per the global convention (see git-commands.md). If any safety condition fails → STOP after push, report exactly what blocked the merge, do not force. Record the audit trail: commit SHA, pushed branch, merge result/URL. **`review-to-merge` terminates here.**
+> `REVIEW_MODE_AUTONOMOUS = YES`: read [workflow-mutating.md](workflow-mutating.md) *Step 14* (RTM-1…RTM-7, iteration caps, BLOCKING consent gates, recovery rows) after the report exists and every read-only gate is resolved. `--mode review`: the workflow ends after Step 13.6.
 
 ---
 
@@ -1519,13 +925,7 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 ### Mutating-mode error handling (`REVIEW_MODE_AUTONOMOUS = YES`)
 
-- `BUILD_STATUS` is `FAILED` or `WAIVED` at the prerequisite gate → report and STOP; do not start the mutating path (mutation on an unverified baseline is unsafe).
-- Suite 3-rerun cap hit, **commits already made** → (1) run `git log <pre-RTM-sha>..HEAD` and report the exact loop SHAs; (2) offer a concrete revert command (`git revert <sha>...` or `git reset --hard <pre-RTM-sha>` with an explicit warning) — do NOT auto-execute; (3) NEVER push/merge. Terminal stop.
-- Suite cap hit, **no commit yet** → leave the working tree as-is, report applied vs failing fixes, offer a discard option (`git restore <files>`) — do not auto-discard. NEVER commit.
-- Single finding unresolvable in 3 attempts → revert that finding's partial edits (or leave untouched if not yet written), mark `UNRESOLVED`, continue other findings.
-- RTM-6 finds an unaddressed accepted finding (`STILL-OPEN`/`REGRESSED`) after the cap → stop before push/merge; report the gap + commit SHA.
-- Merge unsafe at RTM-7 (conflicts, protected branch, branch behind base, failing CI on main) → stop after push (branch pushed, mergeable state reported); report why; never force.
-- Product-decision finding encountered during the loop → stop and ask the user (the only mandatory blocking question inside the autonomous loop).
+- Read [workflow-mutating.md](workflow-mutating.md) *Error Handling (mutating modes)*.
 
 ---
 

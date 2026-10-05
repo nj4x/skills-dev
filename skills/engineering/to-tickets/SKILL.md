@@ -84,6 +84,10 @@ ready-for-agent
 
 ## Checklist
 - [ ] ...
+
+## On close
+<post-merge work only; omit this section when there is none>
+- [ ] ...
 ```
 
 **ADR-direct ticket (user-confirmed):**
@@ -114,7 +118,13 @@ ready-for-agent
 
 ## Checklist
 - [ ] ...
+
+## On close
+<post-merge work only; omit this section when there is none>
+- [ ] ...
 ```
+
+**Post-merge work goes under `## On close`.** A closing comment, an operator follow-up, or any step that can only run after the merge is an `## On close` item, never a `## Checklist` item: the implement skill ticks the whole checklist before the commit, so a post-merge item in it either blocks `done` forever or gets ticked early. In repos that ship `scripts/ticket_check.sh`, `<n> done` skips `## On close` and `close-ready` requires it ticked before `gh issue close`; without the script, tick those items by hand before closing.
 
 **Zero-slice guard:** if the ticket list is empty, stop — there is nothing to stage or publish.
 

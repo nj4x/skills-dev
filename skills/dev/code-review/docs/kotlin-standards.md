@@ -102,4 +102,4 @@ Each feature module follows a three-tier model convention:
 - **Data model must match the project's Data View document**: table name, PK/SK prefixes, GSI PK/SK attributes, attribute names, and TTL semantics must align with `PROJECT_DATA_VIEW`. Use the `constants/` package (e.g., `DdbConstant.GROUP_MGMT_TABLE_NAME`, `GSI_ID`, `PREFIX_GROUP`) — no magic strings for table/GSI/attribute names.
 - **Access patterns must map to the Data View access-pattern table**: a new repository query/update should correspond to a documented access pattern. If it does not, flag it and ask whether Data View should be updated first.
 
-See [workflow.md §Step 8.5](workflow.md) for the full Data View compliance check.
+See [workflow-compliance.md §Step 8.5](workflow-compliance.md) for the full Data View compliance check.

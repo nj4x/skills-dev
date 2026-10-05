@@ -60,9 +60,9 @@ If your output contradicts an existing ADR, surface it explicitly rather than si
 
 ## Requirements ID conventions
 
-Formal requirements carry stable IDs (e.g. `REQ-1234`) assigned by `/FS-skill` and `/SRS-skill`. When downstream work traces to a requirement, carry the ID forward two ways:
+Formal requirements carry stable IDs (e.g. `GRP-FS-CRUD-001`) assigned by `/FS-skill` and `/SRS-skill`. When downstream work traces to a requirement, carry the ID forward two ways:
 
-- **`Requirements:` field** — a labelled line on tickets and ADRs listing the IDs the artifact satisfies (e.g. `Requirements: REQ-1234, REQ-1240`).
+- **`Requirements:` field** — a labelled line on tickets and ADRs listing the IDs the artifact satisfies (e.g. `Requirements: GRP-FS-CRUD-001, GRP-FS-TCHR-016`).
 - **Inline `(ID)` tags** — parenthetical IDs on individual spec items (user stories, implementation decisions) that trace to a requirement.
 
 `GLOSSARY.md` never carries requirement IDs — it stays a pure glossary of names and definitions. IDs live in specs, tickets, ADRs, and commit/PR bodies.

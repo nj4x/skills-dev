@@ -19,3 +19,6 @@ skills/email/inbox/prefs.json
 
 # Scratch artifacts (issue tracker markdown files are committed; only ignore temp/generated)
 .scratch
+
+# Refactor backups (git history is the backup once the refactor is committed)
+*.bak-*

@@ -1,6 +1,6 @@
 # Search strategy
 
-This project centers on `mcp/mcp-vectors`, so semantic search is available and cheap. Use it liberally for understanding; use `rg`/`fd` for surgical lookups.
+`mcp-vectors` indexes this repo, so semantic search is available and cheap. Use it liberally for understanding; use `rg`/`fd` for surgical lookups.
 
 ## Choosing a tool
 

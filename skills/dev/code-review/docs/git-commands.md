@@ -118,7 +118,7 @@ Do not use PR comments as a substitute for unresolved review-thread intake.
 
 ## Autonomous Mutating-Mode Commands (`--mode autofix` / `review-to-merge`)
 
-Reference for the commit and merge steps of workflow.md Step 14 (RTM-5 / RTM-7). These run **only** when `REVIEW_MODE_AUTONOMOUS = YES`, only after every read-only gate is green, and each is a BLOCKING consent gate — print the exact command and wait for explicit user confirmation before executing. Capture the pre-RTM HEAD anchor first so every recovery path has a rollback target.
+Reference for the commit and merge steps of workflow-mutating.md Step 14 (RTM-5 / RTM-7). These run **only** when `REVIEW_MODE_AUTONOMOUS = YES`, only after every read-only gate is green, and each is a BLOCKING consent gate — print the exact command and wait for explicit user confirmation before executing. Capture the pre-RTM HEAD anchor first so every recovery path has a rollback target.
 
 ```bash
 PRE_RTM_SHA=$(git rev-parse HEAD)   # rollback anchor, captured at RTM-1
