@@ -742,7 +742,7 @@ These MAJOR findings **count toward the grade** (Step 12) exactly like any other
 - ⚠️ **REQUEST CHANGES**: B- to C
 - ❌ **REJECT**: D to F
 
-Copy one verdict string verbatim from this list, chosen by the grade of the confirmed findings. Any confirmed CRITICAL or MAJOR finding caps the verdict at ⚠️ **REQUEST CHANGES**, whatever the grade.
+Copy one verdict string verbatim from this list, chosen by the grade of the confirmed findings. Any confirmed CRITICAL or MAJOR finding caps the verdict at ⚠️ **REQUEST CHANGES**, whatever the grade. With zero confirmed CRITICAL and MAJOR findings the verdict is at least ✅ **APPROVE WITH COMMENTS**, whatever the grade.
 
 ---
 
