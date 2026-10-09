@@ -887,28 +887,9 @@ After presenting report, ask: "Would you like me to help address any of these fi
 
 ---
 
-## Step 13.6: Task Tracking Offer (always, consent-gated)
-
-After the report (and after Step 13.5 when PR integration is active), ask the user once:
-
-> "Would you like me to create task list items for the remediation action items in this review?"
-
-**IF yes:**
-- Call `TaskCreate` for each distinct action item listed in the `🔨 Action Items` section of the report.
-- Group related findings into a single task when they share a root cause or file (prefer fewer, more specific tasks over one task per finding).
-- Use these field values:
-  - `subject`: imperative form — e.g., `Fix make_typed_id ValueError for non-UUID PK in _write.py`
-  - `description`: finding text + `file:line` + severity level + recommended fix from the report
-  - `activeForm`: `Fixing [short description]` — e.g., `Fixing make_typed_id ValueError`
-- After creating all tasks, report the created task IDs at the end of the response.
-
-**IF no:** skip silently.
-
----
-
 ## Step 14: Autonomous Mutating Modes (`--mode autofix` / `review-to-merge`)
 
-> `REVIEW_MODE_AUTONOMOUS = YES`: read [workflow-mutating.md](workflow-mutating.md) *Step 14* (RTM-1…RTM-7, iteration caps, BLOCKING consent gates, recovery rows) after the report exists and every read-only gate is resolved. `--mode review`: the workflow ends after Step 13.6.
+> `REVIEW_MODE_AUTONOMOUS = YES`: read [workflow-mutating.md](workflow-mutating.md) *Step 14* (RTM-1…RTM-7, iteration caps, BLOCKING consent gates, recovery rows) after the report exists and every read-only gate is resolved. `--mode review`: the workflow ends after the report (and Step 13.5 when PR integration is active).
 
 ---
 
@@ -961,7 +942,6 @@ After the report (and after Step 13.5 when PR integration is active), ask the us
 - [ ] No worktree created unless `--baseline merge-preview` was explicitly requested
 - [ ] **IF PR integration enabled**: Step 13.5 was offered to user after report (PR write actions: comment publishing + approval flow)
 - [ ] No PR write action executed without explicit user consent
-- [ ] Step 13.6 task tracking offer presented to user after report
 - [ ] **IF mutating mode (`autofix`/`review-to-merge`)**: `--mode` was explicitly requested; `REVIEW_MODE_AUTONOMOUS = YES` recorded; effort forced to `high`
 - [ ] **IF mutating mode**: on a non-`main` feature branch; all read-only gates resolved and `BUILD_STATUS` not `FAILED`/`WAIVED` before any mutation; pre-RTM HEAD SHA captured
 - [ ] **IF mutating mode**: Step 4.1-RTM 4-agent profile used (replacing A/B/C); RTM-2 three critic passes completed; every fix has a regression test; selective suite (testing skill, full-suite fallback on uncovered files) green before commit

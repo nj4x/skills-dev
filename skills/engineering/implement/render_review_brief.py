@@ -10,7 +10,7 @@ Usage:
 
 Fixed text comes from review-brief.md; only the slots take input, so the brief carries no
 paraphrase of the diff. Works with any test runner. Exits 1 with the reason when the test evidence holds no count,
-no check is given, or a check is not a question (ends without `?`).
+no check is given, a check is not a question (ends without `?`), or --git is not a single git binary path.
 """
 
 from __future__ import annotations
@@ -34,6 +34,12 @@ def _slots(args: argparse.Namespace) -> dict[str, str]:
         sys.exit(
             "--test-evidence quotes the Test step's summary line verbatim from the test runner, counts included "
             "(`7916 passed in 677s`, `Tests run: 12, Failures: 0`, `ok ./... 0.4s`), or reads `docs-only: lint only`"
+        )
+    git_form = args.git.strip().split()
+    if len(git_form) != 1 or Path(git_form[0]).name != "git":
+        sys.exit(
+            "--git is the git binary the reviewer prefixes to each subcommand, e.g. `git` or `/usr/bin/git`: "
+            "one token, no subcommand, no prose"
         )
     checks = [c.strip() for c in args.check if c.strip()]
     if not checks:

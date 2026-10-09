@@ -22,5 +22,6 @@ Report rules:
 - Take every line count and test count from `git diff --stat` or the build gate output. State no test count, deploy step, or runtime behaviour you did not read from a command's output or from code.
 - Return Critical, Major and Minor findings with file and symbol. A finding names a line this diff changed and the failure it causes. List each check that passed under "Verified", one line each, apart from the findings.
 - Run every finder and verifier code-review dispatches in the foreground, and report only after each has returned. Quote each finder's own verdict line from its returned report; a finder that has not returned has no verdict to quote.
-- Give no grade, score or emoji.
-- Put any summary, statistics and action items above the verdict. The report's last line is `Verdict: approve` or `Verdict: request-changes`, with no heading mark or emoji before it and nothing after it. Approve only with zero Critical and Major findings.
+- Report findings as severity counts and plain text: omit the code-review grade, score and emoji.
+- The verdict follows the counts: `approve` when Critical and Major are both zero, whatever the Minor count; `request-changes` when either is above zero.
+- Put any summary, statistics and action items above the verdict. The report's last line is `Verdict: approve` or `Verdict: request-changes`, with no heading mark or emoji before it and nothing after it.
