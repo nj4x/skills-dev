@@ -63,7 +63,7 @@ Reuse the Step 4.1 **Synthesis** and **Mandatory Pre-Report Verification Protoco
 
 ## Step 14: Autonomous Mutating Modes (`--mode autofix` / `review-to-merge`)
 
-> **Mode gate**: This step runs **only** when `REVIEW_MODE_AUTONOMOUS = YES`. In `review` mode the workflow ends after Step 13.6.
+> **Mode gate**: This step runs **only** when `REVIEW_MODE_AUTONOMOUS = YES`. In `review` mode the workflow ends after the report (and Step 13.5 when PR integration is active).
 >
 > ⛔ **Prerequisite (non-bypassable)**: do not begin any RTM phase until the report (Step 13) exists and every read-only gate is resolved (Step 1/1.5 branch+divergence, Step 1.5 PR-context, Step 2 build with `BUILD_STATUS` **not** `FAILED` or `WAIVED`, Step 4.1-RTM + 4.2 verification). See the "RTM/Autofix prerequisite" block under *Non-negotiable execution order*. If `BUILD_STATUS` is `FAILED` or `WAIVED`, report and STOP — do not mutate.
 

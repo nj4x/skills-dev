@@ -96,7 +96,6 @@ After activation:
 
 8. Generate the structured report (Step 13) with severity, evidence, grade, PR context status, build/OpenAPI status, and action items. Include a **Lineage** subsection after the standard findings, listing any code-to-spec or spec-to-ADR findings from step 7.5.
 9. If PR integration is enabled, proceed to PR write actions (workflow-pr.md Step 13.5) and offer PR comments or approval only after explicit user consent.
-10. Offer task tracking after the report (Step 13.6).
 
 ## Hard-Stop Rules
 
@@ -150,7 +149,7 @@ After activation:
 | D | 50-59 | ❌ REJECT |
 | F | 0-49 | ❌ REJECT |
 
-Any confirmed CRITICAL or MAJOR finding caps the verdict at ⚠️ REQUEST CHANGES, whatever the grade.
+Verdict precedence: the table row for the grade; then any confirmed CRITICAL or MAJOR finding caps it at ⚠️ REQUEST CHANGES; then, with zero confirmed CRITICAL and MAJOR findings, it is at least ✅ APPROVE WITH COMMENTS.
 
 ---
 

@@ -10,7 +10,7 @@ Usage:
 
 Fixed text comes from review-brief.md; only the slots take input, so the brief carries no
 paraphrase of the diff. Works with any test runner. Exits 1 with the reason when the test evidence holds no count,
-no check is given, or a check is not a question (ends without `?`).
+no check is given, a check is not a question (ends without `?`), or --git is not a single git binary path.
 """
 
 from __future__ import annotations
@@ -35,6 +35,12 @@ def _slots(args: argparse.Namespace) -> dict[str, str]:
             "--test-evidence quotes the Test step's summary line verbatim from the test runner, counts included "
             "(`7916 passed in 677s`, `Tests run: 12, Failures: 0`, `ok ./... 0.4s`), or reads `docs-only: lint only`"
         )
+    git_form = args.git.strip().split()
+    if len(git_form) != 1 or Path(git_form[0]).name != "git":
+        sys.exit(
+            "--git is the git binary the reviewer prefixes to each subcommand, e.g. `git` or `/usr/bin/git`: "
+            "a single path whose basename is `git`"
+        )
     checks = [c.strip() for c in args.check if c.strip()]
     if not checks:
         sys.exit("give at least one --check: a ticket requirement the diff must satisfy, phrased as a question")
@@ -50,7 +56,7 @@ def _slots(args: argparse.Namespace) -> dict[str, str]:
         "worktree": args.worktree,
         "branch": args.branch,
         "effort": args.effort,
-        "git": args.git,
+        "git": git_form[0],
         "build_cmd": _escape(_escape(args.build_cmd)),
         "test_evidence": args.test_evidence.strip(),
         "diff_changed": args.diff_changed.strip(),
@@ -64,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ticket", type=int, required=True)
     parser.add_argument("--worktree", required=True, help="absolute worktree path")
     parser.add_argument("--branch", required=True)
-    parser.add_argument("--git", default="git", help="git command form the repo requires")
+    parser.add_argument("--git", default="git", help="git binary the repo requires, e.g. /usr/bin/git")
     parser.add_argument("--build-cmd", required=True, help="lint && type-check; tests belong to the Test step")
     parser.add_argument("--test-evidence", required=True)
     parser.add_argument("--scope", choices=["working-tree", "committed"], default="working-tree")

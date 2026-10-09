@@ -119,7 +119,7 @@ When invoked in **autonomous mode**, identify the next incomplete phase and driv
 
 **The mission:** implement the next incomplete phase from the project spec, fully test it, and commit it — iterating until tests pass without asking for help unless truly blocked.
 
-Track progress with `TaskCreate`/`TaskUpdate`. Follow the six steps:
+Follow the six steps:
 
 1. **Discover State** — Read `CLAUDE.md`, the task/state file, and `git log --oneline -10`. Identify the next incomplete phase and its requirements.
 2. **Plan with Critic** — Write a detailed plan to the task file. Critique it for spec violations, missing edge cases, and API mismatches with existing code. Revise until sound. Prefer `/critic` for non-trivial phases.

@@ -1,6 +1,6 @@
 # Autonomous Mode — Full Reference
 
-When `/continue` is invoked in **autonomous mode**, drive the next incomplete phase to a committed, fully-tested state without stopping for user choices. Use `TaskCreate`/`TaskUpdate` to surface progress. Follow these six steps in order.
+When `/continue` is invoked in **autonomous mode**, drive the next incomplete phase to a committed, fully-tested state without stopping for user choices. Follow these six steps in order.
 
 ## Step 1 — Discover State
 
