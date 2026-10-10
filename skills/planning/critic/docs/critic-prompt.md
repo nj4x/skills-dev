@@ -18,6 +18,13 @@ SHARED REVIEW CONTRACT:
   Speculative concerns without grounding are capped at minor.
 - Use empty issue/fix arrays when none. Do not invent concerns. **Before returning, re-open every file your findings cite and confirm each quote is byte-for-byte present; drop any finding that fails this check.**
 
+[IF artifact_type IN {spec, tickets}]
+SEVERITY CALIBRATION (spec and tickets): a mandatory code review checks every implemented ticket against this artifact, so do not comb it for detail that review will catch. Report what would mislead an implementer.
+- Group C (edge cases) and the Group A simplicity lens: every finding is `minor`, never `major`.
+- These stay eligible for `major` in every group: a `Blocked by` cycle or dangling slug; a cross-ticket config-key or type mismatch (Group E); a self-contradiction quoted verbatim on both sides (Group B); a dangling or circular lineage reference (Group F); a named existing symbol that does not exist (Group G).
+- In the capped lenses, every other finding is `minor`.
+[END IF]
+
 [IF iteration >= 1 AND critic_induced_constructs is non-empty]
 CRITIC-INDUCED CONSTRUCTS (findings about these are capped at `minor` severity after pass 2):
 [insert each ledger construct as "- <name> (introduced pass <introduced_pass>)"]
