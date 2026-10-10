@@ -8,7 +8,7 @@ Review the {{scope}} changes for {{subject}} in {{worktree}} (branch {{branch}})
 
 Read {{sources}} first, then the docs they cite and the repo's coding standards.
 
-Call `Skill("code-review", args="--build-cmd \"{{build_cmd}}\" --effort {{effort}}")` yourself and return its report, reformatted per the Report rules below. The build gate must resolve (green or red) before you report. The Test step owns test execution: read test files and cite the test evidence below; run lint and type check only.
+Call `Skill("code-review", args="--build-cmd \"{{build_cmd}}\" --effort {{effort}} --scope {{scope}}")` yourself and return its report, reformatted per the Report rules below. The build gate must resolve (green or red) before you report. The Test step owns test execution: read test files and cite the test evidence below; run lint and type check only.
 
 Test evidence from the Test step, on this exact tree: `{{test_evidence}}`.
 

@@ -11,7 +11,7 @@ Usage:
 Integration review (implement-spec): add --spec and repeat --ticket once per merged ticket.
 
 Each --spec and --ticket value is a GitHub issue number (all digits) or a file path, resolved against --worktree when relative.
-Fixed text comes from review-brief.md; only the slots take input, so the brief carries no paraphrase of the diff. Works with any test runner. Exits 1 with the reason when the test evidence holds no count, no check is given, a check is not a question (ends without `?`), --git is not a single git binary path, or a pointer is not an existing file.
+Fixed text comes from review-brief.md; only the slots take input, so the brief carries no paraphrase of the diff. Works with any test runner. Exits 1 with the reason when the test evidence holds no digit, no check is given, a check is not a question (ends without `?`), --git is not a single git binary path, or a pointer is not an existing file.
 """
 
 from __future__ import annotations
@@ -30,8 +30,12 @@ def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _is_issue(value: str) -> bool:
+    return value.isascii() and value.isdigit()
+
+
 def _pointer(value: str, worktree: str) -> str:
-    if value.isdigit():
+    if _is_issue(value):
         return value
     path = Path(value)
     if not path.is_absolute():
@@ -42,11 +46,11 @@ def _pointer(value: str, worktree: str) -> str:
 
 
 def _label(pointer: str) -> str:
-    return f"#{pointer}" if pointer.isdigit() else pointer
+    return f"#{pointer}" if _is_issue(pointer) else pointer
 
 
 def _source(pointer: str) -> str:
-    if pointer.isdigit():
+    if _is_issue(pointer):
         return f"{_label(pointer)} (`gh issue view {pointer} --json body -q .body`)"
     return f"`{pointer}` (Read tool)"
 

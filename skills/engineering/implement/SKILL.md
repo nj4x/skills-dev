@@ -38,7 +38,7 @@ A ticket that changes no code (a lineage ticket: ADRs, requirements, docs) still
 
 ## Round limit and stop
 
-A **round** is one review whose report has Critical or Major above zero, or one re-review run after a Minor-only fix. A delta review counts as a round. Allow at most 3 rounds. Three is the first value that allows one fix and one re-review after a failed round.
+A **round** is one review whose report has Critical or Major above zero, or one re-review run after a Minor-only fix. A delta review counts as a round. Allow at most 3 rounds. The limit of 3 is a chosen bound on review cost: it allows two fix passes, each followed by a re-review.
 
 After the third round ends, run no fix pass. When its report has zero Critical and zero Major, the review is complete: list the open Minor findings as "left as is". Otherwise, stop.
 
@@ -77,7 +77,7 @@ Only once every completed ticket's checklist is verified and its Status is `done
 
 When committing, stage each file by name (`git add <path>…`, never `git add -A`) and read `git diff --cached --name-only` before the commit; include any `Requirements:` field or inline `(ID)` tags from the ticket or spec in the commit message body and PR description so the trace survives into VCS history. Every test count, test name and pass figure in the commit message and PR body comes from your own test-runner output or a grep of the diff, never from the review report; name the scope as the testing skill words it ("N covering tests").
 
-**Commit-only brief**: when the brief that started this run says commit-only (the `implement-spec` orchestrator sends it), the Test, Review and Checklist steps run as written. After the commit, skip the push, the PR, and the proof commands, and report the branch and the commit hash. The orchestrator created your worktree on the integration branch: work there and skip the branch switch and worktree entry above.
+**Commit-only brief**: when the brief that started this run says commit-only (the `implement-spec` orchestrator sends it), the Test, Review and Checklist steps run as written, except checklist step 6 (the spec's inline `Status`): skip it, because the orchestrator alone sets the spec's `Status` after its integration review. After the commit, skip the push, the PR, and the proof commands, and report the branch and the commit hash. The orchestrator created your worktree on the integration branch: work there and skip the branch switch and worktree entry above.
 
 After the commit, push the feature branch and open the PR without asking; write the PR body with `Skill("pr")`; merging stays the user's. A GitHub-issue ticket is closed (`gh issue close <n>`) only after its commits are merged to the default branch; until then it stays open and the final report says the push or merge is pending.
 
