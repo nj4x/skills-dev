@@ -109,7 +109,12 @@ Identify all in-scope artifacts using these five path-convention globs:
 - `docs/adr/*.md`
 - `.scratch/*/spec.md`
 - `.scratch/*/issues/*.md`
+- `.scratch/*/draft-issues/*.md` (tickets staged before publish; treated as `.scratch/*/issues/*.md`)
 
+[IF spec_ref]
+**Spec in the issue tracker:** the spec for this artifact is `[insert spec_ref verbatim]`, not a `.scratch/*/spec.md` file. Resolve every `**Spec**:` field against that reference. A missing `.scratch/*/spec.md` is not a finding, and neither is a `**Spec**:` value that names an issue number instead of a slug.
+
+[END IF]
 For each matched artifact, check for a `lineage-rules` frontmatter key:
 - Missing key → **Major**: "Artifact missing `lineage-rules` frontmatter; lineage cannot be audited." (No further Group F checks on this artifact.)
 - Exception: `docs/adr/` files whose filename prefix is `< 0056` (e.g. `0001-` through `0055-`) → **Informational** (legacy artifact; user must confirm whether to retrofit)
@@ -136,8 +141,8 @@ For each matched artifact, check for a `lineage-rules` frontmatter key:
   - FS IDs: search `.data/requirements/*-FS-*.md`
   - SRS IDs: search `.data/requirements/*-SRS-*.md`
   - ADR IDs: search `docs/adr/*.md` by filename
-  - Spec slugs: search `.scratch/*/spec.md`
-  - Ticket files: search `.scratch/*/issues/*.md`
+  - Spec slugs: search `.scratch/*/spec.md` (skip when the spec lives in the issue tracker, see above)
+  - Ticket files: search `.scratch/*/issues/*.md` and `.scratch/*/draft-issues/*.md`
 - Findings:
   - Missing anchor (required `**Source X**:` field absent for this artifact type): **Major**
   - Dangling reference (ID not found in source): **Critical**

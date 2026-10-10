@@ -137,7 +137,7 @@ Before invoking the agent:
 
    - **`spec`**: on iteration 0 record `spec_path = pickup_path` (the path from the `pickup:` sentinel); the review content for this iteration is `current_plan` as already read. On iteration > 0, re-read the file at `spec_path` into `content`; if missing, unreadable, or empty, write `.scratch/.../dirty` (derive staging dir as parent of `spec_path`) and hard-stop. Store `current_plan` as `artifact`.
 
-   - **`tickets`**: on iteration 0 record `manifest_path = pickup_path`. On every iteration (0 and above), **re-read the manifest from `manifest_path`** — do not use `current_plan`, which is a bare path string on iteration > 0. Then assemble `content` as the re-read manifest body followed by the current on-disk body of every ticket file it lists, in dependency order. **Manifest-body parse rules** — ignore blank lines and `#`-prefixed comment lines; each remaining line must be a relative path (no leading `/`, no `..` segment, no shell metacharacters `;|&$()` `` ` ``); a violating or missing/unreadable path is a hard-error naming the offending path and the manifest. Store the re-read manifest content as `artifact`.
+   - **`tickets`**: on iteration 0 record `manifest_path = pickup_path`. On every iteration (0 and above), **re-read the manifest from `manifest_path`** — do not use `current_plan`, which is a bare path string on iteration > 0. `render-prompt` assembles `content` as that manifest followed by the current on-disk body of every ticket file it lists, in dependency order. **Manifest-body parse rules** (enforced by the script) — ignore blank lines and `#`-prefixed comment lines; each remaining line must be a relative path (no leading `/`, no `..` segment, no shell metacharacters `;|&$()` `` ` ``); a violating or missing/unreadable path is a hard-error naming the offending path and the manifest. Store the re-read manifest content as `artifact`.
 
    - **`plan`**: use `current_plan` as the review content directly. Store it as `artifact`.
 
@@ -152,25 +152,25 @@ Invoke the Agent tool with:
 - `prompt`: render the coordinator prompt with the script, never by hand:
 
   ```bash
-  python3 <skill dir>/scripts/critic_ledger.py render-prompt --artifact-type <artifact_type> --iteration <iteration> --groups <groups, comma-separated> --artifact-file <artifact path> [--adr-file <path> ...] [--codebase-root <CODEBASE_ROOT> --group-g-ok] [--constructs-file <file of "- <name> (introduced pass N)" lines>] [--ledger <ledger_path>] [--effort higher] --out "$(mktemp -u /tmp/pwc_prompt.XXXXXX)"
+  python3 <skill dir>/scripts/critic_ledger.py render-prompt --artifact-type <artifact_type> --iteration <iteration> --groups <groups, comma-separated> --artifact-file <artifact path> [--adr-file <path> ...] [--codebase-root <CODEBASE_ROOT> --group-g-ok] [--constructs-file <file of "- <name> (introduced pass N)" lines>] [--ledger <ledger_path>] [--effort higher] [--spec-ref "<tracker spec reference>"] --verdict-out "<verdict_path>" --out "$(mktemp -u /tmp/pwc_prompt.XXXXXX)"
   ```
 
-  `--artifact-file` is the manifest path (`design-review`), the spec path, or the manifest path (`tickets`); for `plan`, write `current_plan` to a `mktemp -u` file first. `--adr-file` is repeated per ADR path the manifest lists. The script resolves the template's `[IF …]` blocks, keeps only the lens blocks named in `--groups`, inserts the artifact and ADR bodies, adds the ledger summary on iteration > 0, and exits non-zero on any unfilled directive (hard abort). Send as the Agent `prompt`: `Your complete instructions are in <out path>. Read that file in full and follow it exactly. Your final reply is only the merged JSON verdict.` Delete the rendered file on every exit path.
+  `--artifact-file` is the manifest path (`design-review`), the spec path, or the manifest path (`tickets`); for `plan`, write `current_plan` to a `mktemp -u` file first. For `tickets` the script appends the body of every ticket the manifest lists (paths resolve against the current directory, or `--base-dir`), so pass the manifest itself, never a pre-assembled file. `--adr-file` is repeated per ADR path the manifest lists. Pass `--spec-ref` when the spec lives in the issue tracker instead of `.scratch/*/spec.md` (for example `"GitHub issue #24, body at /tmp/spec24.md"`); Group F then resolves `**Spec**:` against it. Set `verdict_path` = `"$(mktemp -u /tmp/pwc_verdict.XXXXXX)"` once per pass. The script resolves the template's `[IF …]` blocks, keeps only the lens blocks named in `--groups`, inserts the artifact and ADR bodies, adds the ledger summary on iteration > 0, and exits non-zero on any unfilled directive (hard abort). Send as the Agent `prompt`: `Your complete instructions are in <out path>. Read that file in full and follow it exactly. Your final reply is only the path of the verdict file.` Delete the rendered file on every exit path.
 
 **Every pass renders the full coordinator template.** On iteration > 0 it is rendered exactly as on iteration 0, with the ledger summary added; it is never replaced by a shorter "re-check the fixes" prompt.
 
-**The verdict is the coordinator's final reply.** It arrives with the coordinator's task-completion notification. A message that arrives before that notification is interim: record nothing, act on nothing, and keep waiting.
+**The verdict is the file at `verdict_path`.** The coordinator writes it and replies with the path, delivered with its task-completion notification. A message that arrives before that notification is interim: record nothing, act on nothing, and keep waiting. Never retype the verdict.
 
-**Parse and validate the critic response:** `tmp="$(mktemp -u /tmp/pwc_critic.XXXXXX)"`, write the final reply to `$tmp` with the Write tool, then run
+**Parse and validate the critic response:** run
 
 ```bash
-python3 <skill dir>/scripts/critic_ledger.py upsert "<ledger_path>" "$tmp" --groups <groups, comma-separated> [--prior-major <open_major from the prior pass>]
+python3 <skill dir>/scripts/critic_ledger.py upsert "<ledger_path>" "<verdict_path>" --groups <groups, comma-separated> [--prior-major <open_major from the prior pass>]
 ```
 
 It validates the verdict shape, upserts every `[<group>][<severity>] claim — evidence` issue into the ledger (new IDs assigned, repeats matched by claim, open issues from groups that ran this pass and no longer appear marked `fixed`), and prints `{"open_major": N, "halt": bool}`. Pass `--prior-major` from pass 2 onward; `halt` is true when the open-major count did not decrease.
 
-On non-zero exit: run `rm -f "$tmp"`, then hard abort: "Critic agent returned invalid output at iteration `<iteration+1>`: `<stderr content>`."
-On success: run `rm -f "$tmp"`.
+On non-zero exit (including a missing `verdict_path`): run `rm -f "<verdict_path>"`, then hard abort: "Critic agent returned invalid output at iteration `<iteration+1>`: `<stderr content>`."
+On success: run `rm -f "<verdict_path>"`. Read the verdict from the file before deleting it when you need `top_issues` and `fixes` for the revision prompt.
 
 Store: `last_verdict`, `last_severity`, `top_issues`, `fixes`, `halt`.
 

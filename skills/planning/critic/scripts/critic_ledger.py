@@ -6,7 +6,10 @@
   critic_ledger.py upsert <ledger-file> <verdict-file> --groups A,B,C,F [--prior-major N]
   critic_ledger.py render-prompt --artifact-type T --iteration N --groups A,B,C,F --artifact-file F
       [--adr-file P ...] [--codebase-root P] [--group-g-ok] [--constructs-file F] [--ledger F]
-      [--effort higher] --out F
+      [--effort higher] [--verdict-out F] [--spec-ref TEXT] [--base-dir D] --out F
+
+For --artifact-type tickets, --artifact-file is the manifest: the script appends the body of every
+ticket file it lists (paths resolve against --base-dir, default the current directory).
 
 Exit 1 with a one-line reason on stderr on any invalid input.
 """
@@ -121,6 +124,8 @@ def _atom(atom: str, ctx: dict) -> bool:
         return ctx["iteration"] >= int(m[2]) if m[1] == ">=" else ctx["iteration"] == int(m[2])
     if atom == "group_g_ok":
         return ctx["group_g_ok"]
+    if atom == "spec_ref":
+        return bool(ctx["spec_ref"])
     if atom == "critic_induced_constructs is non-empty":
         return bool(ctx["constructs"])
     _fail(f"UNKNOWN_CONDITION: {atom}")
@@ -171,6 +176,29 @@ def _keep_groups(text: str, groups: set[str]) -> str:
     return "\n".join(out)
 
 
+_BAD_PATH = re.compile(r"[;|&$()`]")
+
+
+def _expand_tickets(manifest: str, manifest_name: str, base: Path) -> str:
+    """Append the body of every ticket file the manifest lists, in manifest order."""
+    lines = manifest.splitlines()
+    if lines and lines[0].strip() == "---":
+        end = next((i for i, ln in enumerate(lines[1:], 1) if ln.strip() == "---"), 0)
+        lines = lines[end + 1:]
+    parts = [manifest]
+    for line in lines:
+        rel = line.strip()
+        if not rel or rel.startswith("#"):
+            continue
+        if rel.startswith("/") or ".." in Path(rel).parts or _BAD_PATH.search(rel):
+            raise ValueError(f"manifest {manifest_name}: invalid ticket path {rel!r}")
+        path = base / rel
+        if not path.is_file():
+            raise ValueError(f"manifest {manifest_name}: missing ticket file {rel!r}")
+        parts.append(f"===== {rel} =====\n{path.read_text().strip()}")
+    return "\n\n".join(parts)
+
+
 def render_prompt(args: argparse.Namespace) -> str:
     template = Path(args.template).read_text()
     start, end = template.index("```\n") + 4, template.rindex("\n```")
@@ -179,10 +207,13 @@ def render_prompt(args: argparse.Namespace) -> str:
     constructs = Path(args.constructs_file).read_text().strip() if args.constructs_file else ""
     ctx = {
         "artifact_type": args.artifact_type, "iteration": args.iteration,
-        "group_g_ok": args.group_g_ok, "constructs": constructs,
+        "group_g_ok": args.group_g_ok, "constructs": constructs, "spec_ref": args.spec_ref,
     }
     text = _keep_groups(_resolve_conditionals(body, ctx), set(groups))
     artifact = Path(args.artifact_file).read_text().strip()
+    if args.artifact_type == "tickets":
+        artifact = _expand_tickets(artifact, args.artifact_file, Path(args.base_dir))
+    text = text.replace("[insert spec_ref verbatim]", args.spec_ref)
     adr = "\n\n".join(f"=== {p} ===\n{Path(p).read_text().strip()}" for p in args.adr_file)
     text = text.replace("`<groups>`", ", ".join(groups)).replace("[plan|design]", "plan" if args.artifact_type == "plan" else "design")
     text = text.replace("<artifact_type>", args.artifact_type)
@@ -197,6 +228,12 @@ def render_prompt(args: argparse.Namespace) -> str:
         text = text.replace("---\n\nSUB-AGENT PROMPTS", f"{summary}\n\n---\n\nSUB-AGENT PROMPTS", 1)
     if left := _LEFTOVER.search(text):
         _fail(f"UNFILLED_DIRECTIVE: {left[0]!r}")
+    if args.verdict_out:
+        text += (
+            f"\n\nVERDICT DELIVERY (overrides the reply format above): write the merged JSON object, "
+            f"raw with no fences, to `{args.verdict_out}` with the Write tool. "
+            f"Your final reply is only that path.\n"
+        )
     if args.effort == "higher":
         text = "Think step by step and reason at maximum depth before producing your JSON verdict.\n\n" + text
     return re.sub(r"\n{3,}", "\n\n", text) + "\n"
@@ -223,6 +260,9 @@ def main() -> None:
     rp.add_argument("--constructs-file")
     rp.add_argument("--ledger")
     rp.add_argument("--effort", default="normal")
+    rp.add_argument("--verdict-out")
+    rp.add_argument("--spec-ref", default="")
+    rp.add_argument("--base-dir", default=".")
     rp.add_argument("--template", default=str(Path(__file__).resolve().parent.parent / "docs" / "critic-prompt.md"))
     rp.add_argument("--out", required=True)
     args = parser.parse_args()
