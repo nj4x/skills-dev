@@ -4,11 +4,11 @@
 
 ---
 
-Review the {{scope}} changes for ticket #{{ticket}} in {{worktree}} (branch {{branch}}). Effort: {{effort}}. Run git as `{{git}}`; run one plain command per Bash call.
+Review the {{scope}} changes for {{subject}} in {{worktree}} (branch {{branch}}). Effort: {{effort}}. Run git as `{{git}}`; run one plain command per Bash call.
 
-Read the ticket first: `gh issue view {{ticket}} --json body -q .body`, then the docs it cites and the repo's coding standards.
+Read {{sources}} first, then the docs they cite and the repo's coding standards.
 
-Call `Skill("code-review", args="--build-cmd \"{{build_cmd}}\"")` yourself and return its report, reformatted per the Report rules below. The build gate must resolve (green or red) before you report. The Test step owns test execution: read test files and cite the test evidence below; run lint and type check only.
+Call `Skill("code-review", args="--build-cmd \"{{build_cmd}}\" --effort {{effort}} --scope {{scope}}")` yourself and return its report, reformatted per the Report rules below. The build gate must resolve (green or red) before you report. The Test step owns test execution: read test files and cite the test evidence below; run lint and type check only.
 
 Test evidence from the Test step, on this exact tree: `{{test_evidence}}`.
 
