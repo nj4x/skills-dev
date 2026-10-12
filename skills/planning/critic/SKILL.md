@@ -159,7 +159,13 @@ Invoke the Agent tool with:
 
 **Every pass renders the full coordinator template.** On iteration > 0 it is rendered exactly as on iteration 0, with the ledger summary added; it is never replaced by a shorter "re-check the fixes" prompt.
 
-**The verdict is the file at `verdict_path`.** The coordinator writes it and replies with the path, delivered with its task-completion notification. A message that arrives before that notification is interim: record nothing, act on nothing, and keep waiting. Never retype the verdict.
+**The verdict is the file at `verdict_path`.** The coordinator writes it and replies with the path. The file is the completion signal, not the task-completion notification, which may arrive later. When the coordinator's reply arrives, hold the turn open with one bounded wait on the file, then run `upsert`:
+
+```bash
+for i in $(seq 60); do [ -s "<verdict_path>" ] && break; sleep 2; done
+```
+
+A reply that names another path, or no path, is interim chatter: record nothing. A file still absent after the wait is a hard abort. Never retype the verdict.
 
 **Parse and validate the critic response:** run
 

@@ -60,6 +60,20 @@ _Avoid_: availability check, status check
 The classification of how complete a committed Report Build is: `complete` (all communities have prose), `partial` (some failed), `rebuilding` (prose not yet generated), or `failed` (permanently parked after retry exhaustion).
 _Avoid_: report status, completeness
 
+### Requirements lineage
+
+**FS** (Feature Set):
+A requirements document whose items each state one observable product outcome or business rule in domain words, verifiable by a product acceptance scenario. Includes user-visible behavior. Excludes mechanisms. Root of the FS→SRS→ADR→Spec→Ticket chain.
+_Avoid_: feature spec, product requirements, PRD
+
+**SRS** (Software Requirements Specification):
+A requirements document whose items each state one system-level guarantee toward an actor, refining FS items with preconditions, postconditions, invariants, failure behavior, per-actor authorization, and measurable non-functional targets. Excludes UI presentation and mechanisms. Every item traces to at least one FS item.
+_Avoid_: technical spec, system spec, design spec
+
+**Mechanism**:
+How a requirement is realized or invoked: endpoints, transports, topics, schemas, storage, providers, libraries, modules, deployment topology. Belongs in an ADR, never in FS or SRS.
+_Avoid_: implementation detail, technical requirement
+
 ### vscode-agent-bridge
 
 The vscode-agent-bridge MCP server, VS Code extension, and their domain terminology moved to the peer-agent-kit repository at `~/workspace/peer-agent-kit`.

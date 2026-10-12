@@ -13,6 +13,12 @@ Invocation and realization mechanisms belong in ADRs, not FS/SRS: endpoints, tra
 
 > **Note**: SRS should be informed by and adhere to FS.
 
+The FS skill writes FS items only. For the granularity of each type, see the Granularity subsection of [Requirements boundary](../../../engineering/setup-lineage/SKILL.md#granularity).
+
+### Quality Expectations (Non-Functional)
+
+Capture quality expectations in FS only when the product, a regulation, or a partner requires them. State them as user-perceived outcomes, for example "The system shall show search results without noticeable delay" or "The system shall keep group data available during business hours". Do not add metrics, thresholds, or percentiles; the SRS makes each expectation measurable. Group them under a `QUAL` category.
+
 ---
 
 ## Category Discovery
@@ -41,6 +47,7 @@ Make suitable acronyms for each category (3-5 uppercase letters). Examples (not 
 | ROLE | Roles | Role and permission assignments |
 | VALID | Validation | Validation rules |
 | AUTH | Authorization | Authorization and access control |
+| QUAL | Quality | User-perceived quality expectations (non-functional) |
 
 ---
 
@@ -64,6 +71,6 @@ Example: OU-FS-DOMAIN-1
 
 Where:
 - **Category Acronym**: 3-5 uppercase letters (e.g., GRP, OU, ROLE)
-- **Type**: FS (Feature Set) or SRS (Software Requirements Specification)
+- **Type**: Always `FS`
 - **Grouping**: Related topic within the category
 - **Number**: Sequential identifier

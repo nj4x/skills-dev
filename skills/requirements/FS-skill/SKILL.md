@@ -74,7 +74,7 @@ See [MCP-Usage.md](<skill dir>/docs/MCP-Usage.md) for additional MCP tool detail
 
 ## 4. Identify Categories
 
-Read `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary). Draft only outcomes, capabilities, lifecycle behavior, and material safety constraints; rewrite invocation mechanisms as observable constraints and route their realization to an ADR.
+Read `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary), including its Granularity subsection. Draft only outcomes, capabilities, lifecycle behavior, and material safety constraints; rewrite invocation mechanisms as observable constraints and route their realization to an ADR. Keep each item at FS granularity: one observable product outcome or business rule, verifiable by a product acceptance scenario. Leave preconditions, failure branches, attribute lists, and measurable quality targets to the SRS.
 
 Follow rules in [Categorization.md](<skill dir>/docs/Categorization.md) for:
 - Requirement type classification (FS vs SRS)
@@ -127,6 +127,7 @@ Follow [Quality-Check.md](<skill dir>/docs/Quality-Check.md) for:
    - Requirements that could be more specific
    - Gaps in coverage based on source documents
 3. **Block finalization** for any new or materially edited requirement that defines an invocation or realization mechanism; rewrite it to an outcome, capability, lifecycle behavior, or safety constraint.
+   - Flag items below FS granularity (step sequences, error branches, attribute lists, numeric quality targets); merge them into the outcome they detail and note the detail for the SRS.
 4. **Provide improvement suggestions** to the user
 5. **Ask explicitly**: "Would you like to make any changes, additions, or refinements to these requirements?"
 6. Proceed only after the user responds
