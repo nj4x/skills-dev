@@ -30,7 +30,7 @@ Example: OU-FS-DOMAIN-1
 | Component | Description | Example |
 |-----------|-------------|---------|
 | Category Acronym | 3-5 uppercase letters | GRP, OU, ROLE |
-| Type | FS or SRS | FS |
+| Type | Always `FS`; SRS IDs use their own format, defined in `SRS-skill/SKILL.md` | FS |
 | Grouping | Related topic | DOMAIN, MEMB |
 | Number | Sequential identifier | 001, 002 |
 

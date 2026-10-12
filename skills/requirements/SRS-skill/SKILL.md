@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Transform Feature Set (FS) requirements into Software Requirements Specification (SRS) documents. Requires an existing FS/EARS document as input and two user confirmation gates.
 
-Read `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary). Route invocation and realization mechanisms to an ADR; do not put them in SRS.
+Read `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../../engineering/setup-lineage/SKILL.md#requirements-boundary), including its Granularity subsection. Route invocation and realization mechanisms to an ADR; do not put them in SRS. An SRS item refines FS with precision, not technology: it adds conditions, failure behavior, and measurable targets, and it adds no product intent and no mechanism.
 
 For API contracts, use-case sequences, or data realization, create an ADR through `/grill-with-docs`; do not generate companion documents.
 
@@ -40,11 +40,11 @@ When referencing wiki documents, use MCP tool `generate_wiki_link(path="./path/t
 
 ## 3. Filter for System-Contract Requirements
 
-Apply filtering criteria from [Backend-Filtering.md](docs/Backend-Filtering.md). Create a mapping table:
+Apply the filter and extract steps from [Backend-Filtering.md](docs/Backend-Filtering.md); apply its refine step when generating requirements in step 7. Create a mapping table:
 
 | FS Requirement ID | Include/Exclude | Reason |
 |-------------------|-----------------|--------|
-| GRP-FS-STRUC-001 | Include | Data persistence - nested structure |
+| GRP-FS-STRUC-001 | Include | Lifecycle - nested structure |
 | GRP-FS-TCHR-016 | Exclude | Pure UI display ordering |
 | GRP-FS-TCHR-015 | Include (partial) | Delete operation (ignore UI trigger) |
 
@@ -109,9 +109,15 @@ Examples:
 - SAB-ROLE-FR-2.0.1
 ```
 
-Where DOMAIN is system domain abbreviation (e.g., SAB-ROLE, SAB-GRP), TYPE is FR/NFR/TR, VERSION is Major.Minor, SECTION is requirement group number, SUBSECTION is requirement number within group.
+Where DOMAIN is system domain abbreviation (e.g., SAB-ROLE, SAB-GRP), TYPE is FR (functional) or NFR (non-functional), VERSION is Major.Minor, SECTION is requirement group number, SUBSECTION is requirement number within group.
 
-### 7.3 Attribution
+This is the only SRS ID format. FS IDs use the format in [Requirement-Format.md](../FS-skill/docs/Requirement-Format.md). There is no technical-requirement type: a technical choice is a mechanism and belongs in an ADR. When revising an existing SRS that carries legacy `TR` IDs, keep the IDs, report them as drift, and rewrite each item to an FR or NFR contract only when the user asks.
+
+### 7.3 Non-Functional Requirements
+
+Write an NFR item when an FS item states a quality expectation or a safety, regulatory, or partner constraint. Each NFR item states a metric, a threshold, a unit, and the condition under which it applies, for example "The system shall return group search results within 500 ms at the 95th percentile under 200 concurrent searches." Do not name the technology that achieves the target. If the FS states no threshold, ask the user for one; do not invent it.
+
+### 7.4 Attribution
 
 Every SRS requirement must trace back to source FS requirements:
 
@@ -120,7 +126,7 @@ Every SRS requirement must trace back to source FS requirements:
 - GRP-FS-CRUD-001: The system shall allow users with Super Admin role to create groups.
 ```
 
-### 7.4 FS Anchor Preflight (ADR-0058)
+### 7.5 FS Anchor Preflight (ADR-0058)
 
 For every generated SRS requirement, ensure a `**Source FS**:` field is present and valid:
 
@@ -137,8 +143,10 @@ For every generated SRS requirement, ensure a `**Source FS**:` field is present 
 1. Cross-reference every SRS requirement against source FS documents
 2. Verify all SRS requirements express capability, lifecycle, or safety contracts — not invocation or realization mechanisms
 3. Flag any requirements that define an invocation or realization mechanism; rewrite to capability/lifecycle/safety contract and route mechanism to an ADR
-4. Verify all entity attributes are accounted for
-5. Verify event semantics are complete and correctly classified
+4. Flag any requirement copied from FS without refinement; add its preconditions, postconditions, failure behavior, and per-actor authorization, or record why none apply
+5. Verify every NFR item states a metric, threshold, unit, and condition
+6. Verify all entity attributes are accounted for
+7. Verify event semantics are complete and correctly classified
 
 ## 9. Iterative Refinement Loop
 
@@ -158,7 +166,7 @@ Mark changes with **Added**, **Modified**, **Removed** markers.
 
 ### 9.3 Validation Against Source FS
 
-Cross-reference every SRS requirement against source FS. Block finalization if any requirement defines an invocation or realization mechanism, or carries no `**Source FS**:` field after the step 7.4 preflight. Surface all issues before blocking; return to step 9.1.
+Cross-reference every SRS requirement against source FS. Block finalization if any requirement defines an invocation or realization mechanism, or carries no `**Source FS**:` field after the step 7.5 preflight. Surface all issues before blocking; return to step 9.1.
 
 ### 9.4 Confirmation Gate
 

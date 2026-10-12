@@ -13,6 +13,26 @@ New or materially edited FS/SRS items must meet this boundary. Rewrite mechanism
 
 All lineage-enabled skills must consult this section when authoring, refining, linking, or auditing requirements.
 
+### Granularity
+
+The three layers answer different questions: FS says what the product does for its users, SRS says what the system guarantees at its boundary, and an ADR says how the system does it.
+
+**FS item** — one observable product outcome or business rule, in domain words.
+
+- A product acceptance scenario verifies it without knowledge of system internals.
+- It covers roles and permissions, business rules with their parameters (for example "nesting limited to 2 levels"), lifecycle states, user-visible behavior including UI, and material safety, regulatory, or partner constraints stated as observable effects.
+- It does not split an outcome into steps, error branches, or attribute lists.
+- Quality expectations appear as user-perceived outcomes (for example "search results appear without noticeable delay"); SRS makes them measurable.
+
+**SRS item** — one system-level guarantee between an actor (or external system) and the system. No UI.
+
+- A system-level test with defined preconditions and expected results verifies it.
+- It refines FS with precision, not technology: preconditions, postconditions, invariants, failure and edge behavior (rejected input, denied access, conflicting change), authorization per actor, entities and attributes in business terms, observable events, and measurable non-functional targets (metric, threshold, unit, condition).
+- It traces to at least one FS item; one FS item may yield several SRS items.
+- When an SRS item adds product intent that no FS item states, add or amend the FS item first.
+
+**Placement test** — what a user or the business observes goes to FS; what the system must always guarantee, including failure cases, goes to SRS; how it is achieved goes to an ADR.
+
 ## Phase 1 — Auto-Inference (FS→SRS only)
 
 1. Scan all FS documents at `.data/requirements/*-FS-*.md`. For each, extract requirement IDs and one-line summaries.
