@@ -231,8 +231,9 @@ def render_prompt(args: argparse.Namespace) -> str:
     if args.verdict_out:
         text += (
             f"\n\nVERDICT DELIVERY (overrides the reply format above): write the merged JSON object, "
-            f"raw with no fences, to `{args.verdict_out}` with the Write tool. "
-            f"Your final reply is only that path.\n"
+            f"raw with no fences, to `{args.verdict_out}.part` with the Write tool, "
+            f"then run `mv {args.verdict_out}.part {args.verdict_out}` so the file exists only when complete. "
+            f"Your final reply is only `{args.verdict_out}`.\n"
         )
     if args.effort == "higher":
         text = "Think step by step and reason at maximum depth before producing your JSON verdict.\n\n" + text

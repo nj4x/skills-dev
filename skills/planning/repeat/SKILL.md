@@ -204,4 +204,5 @@ Callers extend FINALIZE_STEP with artifact-type-specific output (file writes, pl
 - Non-zero Bash exit, unparseable reviewer response, or missing/invalid required field = hard abort. Never treat these as approval or revise.
 - In `guided` mode (default), `/grilling resolve-decisions` is invoked by the **orchestrator only** — never delegated to a sub-agent.
 - Temp files created during a run must be removed on every exit path, including hard-abort paths.
+- While a background agent's result is pending, keep the turn alive with a bounded wait on its output file (a Bash `for … sleep` loop). A text-only turn ends the loop until the user nudges.
 - The audio-cue suppression marker (written by `say_skill_start`, removed by `say_skill_done`/`say_skill_cancel`) MUST be cleared on every exit path (normal finalize, cap/backstop finalize, and hard-abort) so a crashed loop never permanently silences the global Stop cue. Use `say_skill_done "$msg"` on paths that should speak; use `say_skill_cancel` on hard-abort paths where speaking is inappropriate.
