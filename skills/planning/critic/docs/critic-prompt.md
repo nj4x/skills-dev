@@ -110,9 +110,10 @@ GROUP F — Lineage Auditing:
 You are an adversarial reviewer focused on LINEAGE AUDITING. This group runs on ALL artifact types in two stages.
 
 **Stage 1 — Universal pre-gate (always runs)**:
-Identify all in-scope artifacts using these five path-convention globs:
-- `.data/requirements/*-FS-*.md`
-- `.data/requirements/*-SRS-*.md`
+Locate the requirements corpus through `engineering/setup-lineage/SKILL.md` → [Requirements corpus lookup](../../engineering/setup-lineage/SKILL.md#requirements-corpus-lookup): the `## Requirements corpus` block in `docs/agents/domain.md` when present, else `.data/requirements/`.
+
+Identify all in-scope artifacts using these path-convention globs:
+- FS and SRS documents: `.data/requirements/*-FS-*.md` and `.data/requirements/*-SRS-*.md` when the block is absent; with the block, the files under its `legacy-corpus` matching those globs. Family files under the block's `path` are checked by the project's corpus checker; Group F resolves IDs against them (Stage 2) but does not audit their frontmatter.
 - `docs/adr/*.md`
 - `.scratch/*/spec.md`
 - `.scratch/*/issues/*.md`
@@ -145,8 +146,9 @@ For each matched artifact, check for a `lineage-rules` frontmatter key:
 - **Ticket subtype dispatch** (`.scratch/*/issues/*.md` artifacts): inspect `ticket-subtype` frontmatter key — value `adr-direct` → use adr-direct row; absent or any other value → use spec-linked row
 - For each `**Source X**:` field present in the artifact body, extract referenced IDs
 - Use convention-based lookup to verify each ID exists in its source document:
-  - FS IDs: search `.data/requirements/*-FS-*.md`
-  - SRS IDs: search `.data/requirements/*-SRS-*.md`
+  - FS and SRS IDs, block present: run the block's `resolver` on each ID. Exit 0 resolves; exit 1 is a dangling reference; exit 2 is source document not found. When the resolver cannot run, use the block's `fallback` for IDs matching `id-pattern`, and search `legacy-index`, then `legacy-corpus`, for other IDs. Report which method resolved each ID.
+  - FS IDs, block absent: search `.data/requirements/*-FS-*.md`
+  - SRS IDs, block absent: search `.data/requirements/*-SRS-*.md`
   - ADR IDs: search `docs/adr/*.md` by filename
   - Spec slugs: search `.scratch/*/spec.md` (skip when the spec lives in the issue tracker, see above)
   - Ticket files: search `.scratch/*/issues/*.md` and `.scratch/*/draft-issues/*.md`

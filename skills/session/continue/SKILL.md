@@ -36,7 +36,7 @@ Gather all four categories below. The independent discovery probes (git log, git
    - Previous session plans in `~/.claude/plans/` (most recent edits)
    - **Domain model** — `GLOSSARY.md` (domain glossary), `GLOSSARY-MAP.md` (multi-context), `docs/adr/` (ADRs written by `/domain-modeling` or `/grill-with-docs`)
    - **Agent skill setup** — `docs/agents/domain.md`, `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md` (written by `/setup-skills`; indicate whether engineering skills have been configured)
-   - **Requirements pipeline** — `.data/requirements/` holds FS/EARS docs (`*-FS-*.md`), SRS docs (`*-SRS-*.md`), API Definitions (`*-API-Definition-*.md`), and Use Case Diagrams (`*-Use-Case-Diagrams-*.md`) produced by the `/FS-skill`, `/SRS-skill`, and companion skills
+   - **Requirements pipeline** — when `docs/agents/domain.md` has a `## Requirements corpus` block, the corpus is under its `path` key (plus its `legacy-corpus` while that exists); read the block per [Requirements corpus lookup](../../engineering/setup-lineage/SKILL.md#requirements-corpus-lookup). Otherwise `.data/requirements/` holds FS/EARS docs (`*-FS-*.md`), SRS docs (`*-SRS-*.md`), API Definitions (`*-API-Definition-*.md`), and Use Case Diagrams (`*-Use-Case-Diagrams-*.md`) produced by the `/FS-skill`, `/SRS-skill`, and companion skills
    - **Data View** — `.data/output/*-Data-View-*.md` produced by `/data-view-skill` (DynamoDB schema + access patterns)
    - **Issue tracker** — `.scratch/<feature>/issues/*.md` (local markdown issues written by `/to-tickets`)
 
@@ -66,7 +66,7 @@ Map findings to exactly one workflow stage. This is the **triage** step — assi
 
 - **Preflight / discovery** — No artifacts yet; project is new or in planning phase
 - **Setup complete** — `docs/agents/` written (setup-skills ran), `GLOSSARY.md` created; requirements work not yet started
-- **FS in progress / complete** — FS/EARS docs exist in `.data/requirements/`; SRS not yet started
+- **FS in progress / complete** — FS items exist in the requirements corpus (block `path`, else `.data/requirements/`); SRS not yet started
 - **SRS in progress / complete** — SRS doc exists; API Definition and/or Use Case Diagrams may also exist; Data View not yet done
 - **Data View complete** — `.data/output/*-Data-View-*.md` exists; requirements pipeline is fully done; design/implementation not yet started
 - **Design / architecture** — Design docs / ADRs exist; implementation not yet started
@@ -148,6 +148,7 @@ git rev-parse HEAD                       # current SHA
 # File inventory
 find . -name "MASTER_*PLAN*.md" -o -name "*Phase*.md" -o -name "*Checkpoint*.md"
 ls -la research/ design/ .data/requirements/ .data/output/ src/ 2>/dev/null
+rg -A10 '^## Requirements corpus' docs/agents/domain.md 2>/dev/null   # corpus block: path, resolver, legacy-corpus
 stat -f %Sm -t %Y-%m-%d ~/.claude/plans/*.md | sort -rk1 | head -5
 # Domain model & ADRs
 ls GLOSSARY.md GLOSSARY-MAP.md docs/adr/ 2>/dev/null

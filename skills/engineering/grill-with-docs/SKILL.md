@@ -8,7 +8,7 @@ Run a `/grilling` session, using the `/domain-modeling` skill to capture decisio
 
 ## Session start
 
-Before the first grilling question, load all SRS documents from `.data/requirements/*-SRS-*.md` into a lookup table of known SRS IDs. Also load every `.data/requirements/**/*.md` whose frontmatter declares `lineage-rules: companion of SRS`; index each companion's cited source SRS IDs and its `source-srs` parent.
+Before the first grilling question, find the requirements corpus through `engineering/setup-lineage/SKILL.md` → [Requirements corpus lookup](../setup-lineage/SKILL.md#requirements-corpus-lookup): the `## Requirements corpus` block in `docs/agents/domain.md` when present, else `.data/requirements/`. Load its SRS items into a lookup table of known SRS IDs (block absent: `.data/requirements/*-SRS-*.md`). With the block, validate an SRS ID with its `resolver`. Also load every corpus `**/*.md` file whose frontmatter declares `lineage-rules: companion of SRS` (block present: under `legacy-corpus`, while it exists); index each companion's cited source SRS IDs and its `source-srs` parent.
 
 ## SRS anchor pre-flight (ADR-0059)
 
@@ -37,7 +37,7 @@ source-srs: .data/requirements/{Domain}-SRS-{Version}.md
 ---
 ```
 
-See [ADR-FORMAT.md](../domain-modeling/ADR-FORMAT.md) for full details. The ADR title and body are all that's required; optional sections (Status, Considered Options, Consequences, API Contract, Use Case Sequence, Data Realization) should only be included when they add genuine value.
+With a `## Requirements corpus` block, `source-srs` names the corpus file that holds the anchoring SRS item instead. See [ADR-FORMAT.md](../domain-modeling/ADR-FORMAT.md) for full details. The ADR title and body are all that's required; optional sections (Status, Considered Options, Consequences, API Contract, Use Case Sequence, Data Realization) should only be included when they add genuine value.
 
 ## Grilling conclusion
 

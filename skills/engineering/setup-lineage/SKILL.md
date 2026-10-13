@@ -33,10 +33,25 @@ The three layers answer different questions: FS says what the product does for i
 
 **Placement test** — what a user or the business observes goes to FS; what the system must always guarantee, including failure cases, goes to SRS; how it is achieved goes to an ADR.
 
+## Requirements corpus lookup
+
+Every lineage-enabled skill finds and checks FS/SRS requirement IDs this way. This section covers reading only; where a skill writes requirements is unchanged.
+
+1. **Read the block.** Open the project's `docs/agents/domain.md` and find its `## Requirements corpus` section. Each key is one `- <key>: <value>` line; read the keys by name:
+   - `path` — the corpus root.
+   - `id-pattern` — the shape of a corpus ID, including how it marks an FS item versus an SRS item.
+   - `resolver` — a command that takes one ID, new or legacy, and prints where it lives. Exit 0: found. Exit 1: unknown ID. Exit 2: the corpus cannot be loaded.
+   - `fallback` — how to read an item without the resolver.
+   - `legacy-index`, `legacy-ids`, `families` — retired and routed IDs, the frozen legacy-ID universe, the family table.
+   - `legacy-corpus` — the older corpus that still holds unmigrated items, while it exists.
+2. **Block present.** The corpus is every file under `path`, plus `legacy-corpus` while that directory exists. FS and SRS items can share a file; tell them apart by `id-pattern`, and a legacy ID by the legacy file that holds it. Check that an ID exists by running `resolver`. When the resolver cannot run (missing toolchain), use `fallback` for an ID that matches `id-pattern`, and for any other ID search `legacy-index`, then `legacy-corpus`.
+3. **Block absent.** The corpus is `.data/requirements/`: FS documents `*-FS-*.md`, SRS documents `*-SRS-*.md`. An ID exists when one of those files contains it.
+4. **Neither found.** With no block and no `.data/requirements/`, the project has no requirements corpus. A lookup that only reads reports this and continues; a guard that protects requirement IDs refuses.
+
 ## Phase 1 — Auto-Inference (FS→SRS only)
 
-1. Scan all FS documents at `.data/requirements/*-FS-*.md`. For each, extract requirement IDs and one-line summaries.
-2. Scan all SRS documents at `.data/requirements/*-SRS-*.md`. For each, extract requirement IDs and one-line summaries.
+1. Find the FS items through [Requirements corpus lookup](#requirements-corpus-lookup). For each, extract requirement IDs and one-line summaries.
+2. Find the SRS items the same way. For each, extract requirement IDs and one-line summaries.
 3. For each SRS item without an existing `**Source FS**:` field, semantically match it to likely FS source(s).
 4. Classify each match into a confidence tier:
    - **High** (≥85% match): include in batch-approval list (pre-checked; user may uncheck before confirming)

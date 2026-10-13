@@ -28,7 +28,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
-- `.data/requirements/` — formal requirements docs (FS, SRS, API definitions); note if present
+- `.data/requirements/` — formal requirements docs (FS, SRS, API definitions); note if present. Also note an existing `## Requirements corpus` block in `docs/agents/domain.md`: it names a corpus elsewhere, and the regenerated `domain.md` keeps it verbatim
 - `.data/docs/` — external reference documentation (vendor APIs, integrations); note if present
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
@@ -64,7 +64,7 @@ The defaults are the five canonical roles, each label string equal to its name: 
 
 Offer **multi-context** — a root `GLOSSARY-MAP.md` pointing to per-context `GLOSSARY.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
 
-In either case, also note what data folders exist (`.data/requirements/`, `.data/docs/`) and include them in the generated `docs/agents/domain.md` so skills know where to look for requirements and reference docs.
+In either case, also note what data folders exist (`.data/requirements/`, `.data/docs/`) and include them in the generated `docs/agents/domain.md` so skills know where to look for requirements and reference docs. Write the template's "Requirements corpus" section only when the requirements live outside `.data/requirements/`, or when exploration found an existing block (keep it verbatim).
 
 If exploration found a legacy `CONTEXT-MAP.md`, the repo is already multi-context. Keep that layout; don't ask again.
 

@@ -220,10 +220,14 @@ Before deleting or renaming (= deleting + re-creating) any FS requirement ID:
 
 ### 9.1 Scan SRS Documents
 
-Scan all SRS documents matching `.data/requirements/*-SRS-*.md` for references of the form `**Source FS**: <ID>`.
+Locate the corpus through [Requirements corpus lookup](../../engineering/setup-lineage/SKILL.md#requirements-corpus-lookup):
+
+- **Block present** (`## Requirements corpus` in `docs/agents/domain.md`): scan every file under the block's `path`, plus its `legacy-corpus` while that directory exists, for `**Source FS**: <ID>` and for `Traces:` lines that list `<ID>`.
+- **Block absent, `.data/requirements/` present**: scan all SRS documents matching `.data/requirements/*-SRS-*.md` for references of the form `**Source FS**: <ID>`.
+- **Neither found**: **refuse** the deletion. Report "no requirements corpus found (no `## Requirements corpus` block in `docs/agents/domain.md`, no `.data/requirements/`); cannot prove the FS ID is unreferenced", and stop. Zero files searched is never a zero-match result.
 
 Surface the scan scope report before blocking or permitting deletion:
-- Paths searched: `.data/requirements/*-SRS-*.md`
+- Paths searched: the globs or directories actually scanned
 - Files found: `<N>` files
 - Matches found: `<M>` references to `<ID>`
 

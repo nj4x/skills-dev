@@ -32,7 +32,7 @@ Read:
 1. Use `read_file` to load the FS document
 2. Parse structure: identify requirement categories, extract individual requirement IDs, note EARS patterns used
 3. Build an internal model of all requirements
-4. Load all existing FS documents from `.data/requirements/*-FS-*.md` into a lookup table of known FS IDs
+4. Load all existing FS items into a lookup table of known FS IDs. Find them through [Requirements corpus lookup](../../engineering/setup-lineage/SKILL.md#requirements-corpus-lookup): the `## Requirements corpus` block in `docs/agents/domain.md` when present (validate a cited FS ID with its `resolver`), else `.data/requirements/*-FS-*.md`
 
 Extract document metadata: Document ID, version, source references.
 
