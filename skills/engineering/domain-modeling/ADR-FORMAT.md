@@ -19,6 +19,8 @@ source-srs: .data/requirements/{Domain}-SRS-{Version}.md
 {1-3 sentences: what's the context, what did we decide, and why.}
 ```
 
+`source-srs` names the file that holds the anchoring SRS item, found through [Requirements corpus lookup](../setup-lineage/SKILL.md#requirements-corpus-lookup). When `docs/agents/domain.md` has a `## Requirements corpus` block, use the file under its `path` that the `resolver` prints for that ID (for example `docs/requirements/{FAMILY}.md`); otherwise keep the `.data/requirements/` form above.
+
 That's it. An ADR can be a single paragraph. The value is in recording *that* a decision was made and *why* — not in filling out sections.
 
 ## Optional sections
