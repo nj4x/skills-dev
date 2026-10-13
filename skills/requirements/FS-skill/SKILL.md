@@ -93,6 +93,8 @@ Follow [Requirement-Format.md](<skill dir>/docs/Requirement-Format.md) for:
 - Source reference format (including `generate_wiki_link` MCP tool)
 - Local path tracking
 
+**Corpus block present** (`## Requirements corpus` in `docs/agents/domain.md`): [Requirements corpus authoring](../../engineering/setup-lineage/SKILL.md#requirements-corpus-authoring) replaces Requirement-Format.md. Each FS item is a `### <ID> <title>` heading in its family file, with the next free FS ID of its family, and the project's statement rules replace the EARS template.
+
 ### 5.2 Apply EARS Syntax
 
 Generate requirements following EARS syntax from [EARS.md](<skill dir>/docs/EARS.md). Requirements can be rephrased from user inputs for better clarity.
@@ -103,7 +105,7 @@ Once an FS ID (e.g., `GRP-FS-CRUD-001`) is written to file and confirmed by the 
 
 ### 5.4 Parallel Fan-Out (advisory)
 
-**Parallel fan-out (≥3 categories, advisory):** When requirements span ≥3 independent categories, pre-allocate a disjoint requirement-ID range to each category (e.g. 001–049, 050–099) so IDs never collide, then launch one `general-purpose` Agent subagent (`subagent_type: "general-purpose"`) per category **in a single message** (parallel execution). Each subagent receives the source-document pointers, the EARS rules, its category scope, and its ID range; it returns drafted requirements as text and must not write files. After all report back, reconcile: merge drafts, check ID continuity and no duplicates, deduplicate cross-cutting requirements, unify terminology, resolve cross-references — then run the quality check on the merged set. The ≥3 threshold is a floor, not a mandate: fall back to serial main-thread generation when categories share heavy context, fewer than 3 exist, or any subagent fails or returns empty. User checkpoints and file writes always stay in the main conversation.
+**Parallel fan-out (≥3 categories, advisory):** When requirements span ≥3 independent categories, pre-allocate a disjoint requirement-ID range to each category (e.g. 001–049, 050–099; with the corpus block, ranges start at the family's next free ID) so IDs never collide, then launch one `general-purpose` Agent subagent (`subagent_type: "general-purpose"`) per category **in a single message** (parallel execution). Each subagent receives the source-document pointers, the EARS rules, its category scope, and its ID range; it returns drafted requirements as text and must not write files. After all report back, reconcile: merge drafts, check ID continuity and no duplicates, deduplicate cross-cutting requirements, unify terminology, resolve cross-references — then run the quality check on the merged set. The ≥3 threshold is a floor, not a mandate: fall back to serial main-thread generation when categories share heavy context, fewer than 3 exist, or any subagent fails or returns empty. User checkpoints and file writes always stay in the main conversation.
 
 ---
 
@@ -198,7 +200,9 @@ When user requests iterative refinement with individual checkpoints:
 
 ## 8. Write Requirements to File
 
-Follow [Document-Template.md](<skill dir>/docs/Document-Template.md) for:
+**Corpus block present:** write in place per [Requirements corpus authoring](../../engineering/setup-lineage/SKILL.md#requirements-corpus-authoring). Each new FS item goes under `## FS` in `<path>/<FAMILY>.md` as a `### <ID> <title>` heading, with the ID allocated by its step 3. Each changed item is edited in place or replaced under its step 5. Skip Document-Template.md and the frontmatter below; the family file and, for a replaced item, `legacy-index` are the only files written.
+
+**Corpus block absent:** follow [Document-Template.md](<skill dir>/docs/Document-Template.md) for:
 - Required document structure
 - Required sections (Header, Source Documents, Contradictions, Requirements, Appendices)
 - Output location and file naming conventions
@@ -242,3 +246,7 @@ If any SRS items reference the FS ID being deleted:
 ### 9.3 Permit Deletion
 
 Only after the scan confirms zero remaining references to the FS ID may deletion proceed.
+
+### 9.4 Retire in Place (corpus block present)
+
+With the corpus block, a deletion is a retirement. Apply step 6 of [Requirements corpus authoring](../../engineering/setup-lineage/SKILL.md#requirements-corpus-authoring) in the same change as the heading removal: the `retired` row for the FS ID in `legacy-index`, one row per legacy ID in its `Absorbs:` (or a move to the successor's `Absorbs:`), and the re-traced or retired SRS items from 9.2. Show the user the added index rows with the deletion.

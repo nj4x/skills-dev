@@ -35,7 +35,7 @@ The three layers answer different questions: FS says what the product does for i
 
 ## Requirements corpus lookup
 
-Every lineage-enabled skill finds and checks FS/SRS requirement IDs this way. This section covers reading only; where a skill writes requirements is unchanged.
+Every lineage-enabled skill finds and checks FS/SRS requirement IDs this way. This section covers reading; [Requirements corpus authoring](#requirements-corpus-authoring) covers writing.
 
 1. **Read the block.** Open the project's `docs/agents/domain.md` and find its `## Requirements corpus` section. Each key is one `- <key>: <value>` line; read the keys by name:
    - `path` — the corpus root.
@@ -47,6 +47,29 @@ Every lineage-enabled skill finds and checks FS/SRS requirement IDs this way. Th
 2. **Block present.** The corpus is every file under `path`, plus `legacy-corpus` while that directory exists. FS and SRS items can share a file; tell them apart by `id-pattern`, and a legacy ID by the legacy file that holds it. Check that an ID exists by running `resolver`. When the resolver cannot run (missing toolchain), use `fallback` for an ID that matches `id-pattern`, and for any other ID search `legacy-index`, then `legacy-corpus`.
 3. **Block absent.** The corpus is `.data/requirements/`: FS documents `*-FS-*.md`, SRS documents `*-SRS-*.md`. An ID exists when any `.md` file there contains it: IDs added by amendment files (for example `SRS-AMENDMENT-*.md`) live only there.
 4. **Neither found.** With no block and no `.data/requirements/`, the project has no requirements corpus. A lookup that only reads reports this and continues; a guard that protects requirement IDs refuses.
+
+## Requirements corpus authoring
+
+Every lineage-enabled skill that adds, changes, or retires an FS/SRS item writes it this way. Without the `## Requirements corpus` block, the skill's own document rules apply unchanged. With the block, requirements are authored **in place**: each item lives in its family file, and the same change that needs it writes it there.
+
+When `docs/agents/domain.md` has a section on writing requirements (for example `## Writing and changing requirements`), read it and the ADR it cites first. Its statement rules, retirement reasons, and check command apply on top of the steps below.
+
+1. **Family file.** Pick the item's family from the `families` table. Write the item into `<path>/<FAMILY>.md`: an FS item under `## FS`, an SRS item under `## SRS`. When the file does not exist yet, create it with those two sections. When no family row fits, ask the user: a new family needs their approval and a new `families` row. Every new or changed requirement goes into a family file. Amendment files (`SRS-AMENDMENT-*.md` or any other staging file) are never created, and existing ones in `legacy-corpus` are read-only.
+2. **Item shape.** A `### <ID> <short title>` heading, then the fields, then the statement:
+   - `- Status: implemented | not implemented` — `implemented` only when a reachable code path in a shipped mode satisfies it.
+   - `- Absorbs: <legacy IDs>` or `none` — list a legacy ID here when the item replaces or alters that legacy row.
+   - `- Traces: <FS IDs>` — SRS items only: the FS items whose outcome it refines.
+   - The statement: outcome or guarantee in plain present tense, no code symbols, module paths, or flags.
+3. **Next ID.** Build the ID from `id-pattern`: family, layer letter, number. The number is the highest one already taken in that family and layer, plus one, zero-padded. Count both the `### <ID>` headings under `path` and the retired IDs in `legacy-index`, so a retired number is never reused. For the SEC FS layer under `id-pattern` `<FAMILY>-<F|S><NNN>`:
+
+   ```bash
+   rg -o --no-filename '^### SEC-F[0-9]{3}|^\|\s*`?SEC-F[0-9]{3}' <path> <legacy-index> | rg -o 'SEC-F[0-9]{3}' | sort -u | tail -1
+   ```
+
+   No output means the next ID is `SEC-F001`. An ID that another open change also takes stays with the change that merges first; the other renumbers on rebase.
+4. **FS item first.** Write an SRS item only when every ID in its `Traces:` is an FS `### <ID>` heading in the working tree: `rg -n '^### <FS-ID> ' <path>` prints it. A resolver hit on a legacy row does not count. When the FS item is missing, refuse the SRS item, report the missing FS ID, and offer to author the FS item first.
+5. **Edit or new ID.** Keep the ID and edit the item in place when it still states the same nameable outcome or guarantee: a changed parameter, an added failure branch, tighter wording. Take a new ID when the outcome itself changes, retire the old item as `superseded by <new ID>` (step 6), and move its `Absorbs:` IDs to the new item.
+6. **Retire, in the same change.** Delete the item's heading and body. Add a `| <ID> | retired | <reason> |` row to `legacy-index`, with one reason from the project's closed list. Then handle each legacy ID in the item's `Absorbs:`: give it its own `retired` or `routed` row, or move it to the successor's `Absorbs:`. Retire or re-trace every SRS item whose `Traces:` lists the retired ID. A retirement without its index rows is incomplete: do not report it done.
 
 ## Phase 1 — Auto-Inference (FS→SRS only)
 
@@ -87,7 +110,7 @@ Work through each artifact type that has unresolved chain links. Ask the user fo
 | Spec | `**Source ADR**:` | "Which ADR(s) does this spec derive from? Options: existing path(s) under `docs/adr/` / create new ADR / skip" |
 | Ticket | `**Spec**:` and/or `**Source ADR**:` | "Does this ticket trace to a spec slug, an ADR, or both? Options: spec slug / ADR path / both / skip" |
 
-For "create new FS item" responses: draft the requirement in EARS format, get user approval, write to the relevant FS document, then use the new ID as the anchor.
+For "create new FS item" and "create new SRS item" responses: draft the requirement, get user approval, and record it for Phase 3, which writes it before any anchor that cites it. Without the corpus block, draft it in EARS format for the relevant FS or SRS document. With the block, draft it in the item shape of [Requirements corpus authoring](#requirements-corpus-authoring) and allocate its ID there. Then use the new ID as the anchor.
 
 Skip items the user explicitly skips — record them in the lineage report as "user-skipped / unresolved."
 
@@ -98,6 +121,13 @@ Phase 2 is complete when every artifact either has a confirmed anchor or is expl
 ## Phase 3 — Writing
 
 After all approvals and gap-resolution answers are collected, write everything in one pass:
+
+### 3.0 New and anchored requirement items
+
+Write the FS items approved in Phase 2 first, then the SRS items, then the other artifacts, so every anchor resolves when it is written.
+
+- **Block absent:** write each new item to the relevant FS or SRS document under `.data/requirements/`, then apply 3.1 and 3.2.
+- **Block present:** write each new item in place per [Requirements corpus authoring](#requirements-corpus-authoring); step 4 there refuses an SRS item whose FS item is not yet a heading. Corpus items get no frontmatter and no `**Source FS**:` field, so 3.1 and 3.2 skip FS and SRS. An SRS anchor confirmed in Phase 1 or 2 is written as the item's `- Traces:` line. Any item retired or replaced during the retrofit gets its `legacy-index` rows in this same pass.
 
 ### 3.1 Frontmatter
 
@@ -119,7 +149,7 @@ Write `lineage-rules` frontmatter to all artifacts per ADR-0056:
 Write `**Source X**:` fields to each artifact body immediately after the frontmatter block:
 
 - FS: no source field (root)
-- SRS: `**Source FS**: <FS-ID>`
+- SRS: `**Source FS**: <FS-ID>` (block present: the item's `- Traces:` line, 3.0)
 - ADR: `**Source SRS**: <SRS-ID>`
 - Spec: `**Source ADR**: docs/adr/<filename>.md`
 - Ticket (spec-linked): `**Spec**: <feature-slug>` (may also carry `**Source ADR**:` if user supplied both)

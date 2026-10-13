@@ -88,6 +88,8 @@ Follow rules in [Event-Types.md](docs/Event-Types.md). Identify event triggers; 
 
 ## 7. Generate SRS Requirements with FS Attribution
 
+**Corpus block present** (`## Requirements corpus` in `docs/agents/domain.md`): [Requirements corpus authoring](../../engineering/setup-lineage/SKILL.md#requirements-corpus-authoring) replaces 7.1, 7.2, and 7.4 and the group metadata of step 4. Each SRS item is a `### <ID> <title>` heading with `Status`, `Absorbs`, and `Traces` fields, its ID allocated by step 3 there. `- Traces:` replaces `**Source FS**:` in 7.5 and 9.3.
+
 ### 7.1 Format
 
 ```markdown
@@ -137,6 +139,7 @@ For every generated SRS requirement, ensure a `**Source FS**:` field is present 
    c. If no matching FS item exists, offer: "Create a new FS requirement now?"
       - **Yes**: Draft in EARS format, present for user approval, write to the FS document, update lookup table, populate `**Source FS**:`.
       - **No**: Mark as **unanchored** — step 9.3 blocks finalization until all unanchored requirements are resolved.
+3. **Corpus block present** — the lookup table is not enough. Before writing an SRS item, check every `Traces:` ID per step 4 of [Requirements corpus authoring](../../engineering/setup-lineage/SKILL.md#requirements-corpus-authoring): it must be an FS `### <ID>` heading in the working tree. A legacy FS ID found only through the resolver does not count. When the heading is missing, refuse to write the SRS item and report `SRS item <SRS-ID> not written: FS item <FS-ID> has no heading under <path>`. Offer the 2c flow: write the FS item in place first, then the SRS item.
 
 ## 8. Quality Check and Validation
 
@@ -187,7 +190,9 @@ When the user requests iterative refinement with individual checkpoints ("refine
 
 ## 10. Write SRS Document to File
 
-Write to: `<Project Root>/.data/requirements/[Domain]-SRS-[Version].md`
+**Corpus block present:** write in place per [Requirements corpus authoring](../../engineering/setup-lineage/SKILL.md#requirements-corpus-authoring). Each new SRS item goes under `## SRS` in `<path>/<FAMILY>.md`, after the step 7.5 check passes for it. Edit a changed item in place, or replace it under step 5 there. Retiring an item adds its `legacy-index` rows in the same change (step 6 there). Skip the document path, template, and frontmatter below; the family file and `legacy-index` are the only files written.
+
+**Corpus block absent:** write to `<Project Root>/.data/requirements/[Domain]-SRS-[Version].md`
 
 Follow template in [SRS-Structure.md](docs/SRS-Structure.md). Every SRS document must begin with this YAML frontmatter:
 
