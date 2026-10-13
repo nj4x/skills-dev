@@ -147,8 +147,8 @@ For each matched artifact, check for a `lineage-rules` frontmatter key:
 - For each `**Source X**:` field present in the artifact body, extract referenced IDs
 - Use convention-based lookup to verify each ID exists in its source document:
   - FS and SRS IDs, block present: run the block's `resolver` on each ID. Exit 0 resolves; exit 1 is a dangling reference; exit 2 is source document not found. When the resolver cannot run, use the block's `fallback` for IDs matching `id-pattern`, and search `legacy-index`, then `legacy-corpus`, for other IDs. Report which method resolved each ID.
-  - FS IDs, block absent: search `.data/requirements/*-FS-*.md`
-  - SRS IDs, block absent: search `.data/requirements/*-SRS-*.md`
+  - FS IDs, block absent: search `.data/requirements/*-FS-*.md`, then the other `.data/requirements/*.md` files (amendment files such as `SRS-AMENDMENT-*.md` define IDs too)
+  - SRS IDs, block absent: search `.data/requirements/*-SRS-*.md`, then the other `.data/requirements/*.md` files
   - ADR IDs: search `docs/adr/*.md` by filename
   - Spec slugs: search `.scratch/*/spec.md` (skip when the spec lives in the issue tracker, see above)
   - Ticket files: search `.scratch/*/issues/*.md` and `.scratch/*/draft-issues/*.md`

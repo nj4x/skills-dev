@@ -45,7 +45,7 @@ Every lineage-enabled skill finds and checks FS/SRS requirement IDs this way. Th
    - `legacy-index`, `legacy-ids`, `families` — retired and routed IDs, the frozen legacy-ID universe, the family table.
    - `legacy-corpus` — the older corpus that still holds unmigrated items, while it exists.
 2. **Block present.** The corpus is every file under `path`, plus `legacy-corpus` while that directory exists. FS and SRS items can share a file; tell them apart by `id-pattern`, and a legacy ID by the legacy file that holds it. Check that an ID exists by running `resolver`. When the resolver cannot run (missing toolchain), use `fallback` for an ID that matches `id-pattern`, and for any other ID search `legacy-index`, then `legacy-corpus`.
-3. **Block absent.** The corpus is `.data/requirements/`: FS documents `*-FS-*.md`, SRS documents `*-SRS-*.md`. An ID exists when one of those files contains it.
+3. **Block absent.** The corpus is `.data/requirements/`: FS documents `*-FS-*.md`, SRS documents `*-SRS-*.md`. An ID exists when any `.md` file there contains it: IDs added by amendment files (for example `SRS-AMENDMENT-*.md`) live only there.
 4. **Neither found.** With no block and no `.data/requirements/`, the project has no requirements corpus. A lookup that only reads reports this and continues; a guard that protects requirement IDs refuses.
 
 ## Phase 1 — Auto-Inference (FS→SRS only)
