@@ -69,6 +69,7 @@ After activation:
 1. Parse `--effort` and resolve or confirm `--scope`.
 1a. Parse `--mode` (default `review`). If `review`, follow the read-only contract below unchanged. If `autofix` or `review-to-merge`: force `--effort high` semantics, confirm a non-`main` feature branch first, run the standard read-only review through the report, then execute the Autonomous Mutating Phases (workflow-mutating.md Step 14, RTM-1…RTM-7) **after** the report. Scope compatibility: `autofix` runs on either `committed` or `working-tree`/`uncommitted` scope (working-tree commits the reviewed changes plus fixes together at RTM-5); only the `review-to-merge` merge step requires committed-scope semantics. An unrecognized `--mode` value is not guessed — list the three valid values and ask.
 2. Discover requirement and architecture documents: SRS, API Definition, Module View, Use Cases, and Data View.
+2a. **Discover repo standards documents** (workflow.md Step 0.5) at every effort level (`low`, `medium`, `high`), before any finder is dispatched. The result is `REPO_STANDARDS`, a list of files that may be empty: `CODING_STANDARDS.md`, `CONTRIBUTING.md`, the coding sections of `AGENTS.md`/`CLAUDE.md` (headings that name code, coding, or style rules), and `docs/**/standards*`, deduped by resolved path so an `@`-imported file is listed once. Pass the list to Finder C and to the Step 4.9 low-effort subagent. Where a repo document conflicts with a bundled standard, the repo document wins. With an empty list, the bundled standards apply as before.
 3. For `committed` scope: verify git repo and valid `HEAD`, resolve `REVIEW_BASE_REF` from the PR base branch (`baseRefName`, fallback `main`) before fetching, fetch `origin/$REVIEW_BASE_REF` and the current branch, handle branch divergence by asking the user, run PR context intake when `gh` is available, and print the PR Integration State block verbatim (workflow-pr.md Step 1.5.4) before any diff commands.
 4. For `working-tree` scope: verify git repo and valid `HEAD`; skip fetch, branch divergence, PR gates, and committed-branch comparison. Untracked files that belong to the change are in scope; list them alongside `git diff HEAD`.
 4a. **Docs-only mode.** When every file in scope is documentation — Markdown, ADRs, FS/SRS/requirements, specs — announce `REVIEW_MODE = DOCS_ONLY` and adapt the review as follows; every other step runs unchanged:
@@ -155,7 +156,7 @@ Verdict precedence: the table row for the grade; then any confirmed CRITICAL or 
 
 ## Reference Documentation
 
-For detailed guidelines, see the following documents:
+For detailed guidelines, see the following documents. The Kotlin, Python, and Testing standards rows are the fallback defaults: a repo standards document found in step 2a wins where it conflicts with them.
 
 | Topic | Document | Description |
 |-------|----------|-------------|
@@ -165,8 +166,8 @@ For detailed guidelines, see the following documents:
 | Mutating Modes | [workflow-mutating.md](docs/workflow-mutating.md) | Step 4.1-RTM, Step 14, mutating error handling: read for `--mode autofix` or `review-to-merge` |
 | Security Patterns | [security-patterns.md](docs/security-patterns.md) | Hardcoded secrets, injection risks, CORS issues |
 | Architecture Patterns | [architecture-patterns.md](docs/architecture-patterns.md) | Field injection, business logic in controllers, entity exposure |
-| Kotlin Standards | [kotlin-standards.md](docs/kotlin-standards.md) | Vertical slice pattern, three-tier model, validation patterns, Data View alignment |
-| Python Standards | [python-standards.md](docs/python-standards.md) | DRY, pydantic v2, psycopg2 cursor/row/error/batch patterns, type hints, testing |
-| Testing Standards | [testing-standards.md](docs/testing-standards.md) | Kotlin Test Framework, MockK usage, test independence |
+| Kotlin Standards (default) | [kotlin-standards.md](docs/kotlin-standards.md) | Vertical slice pattern, three-tier model, validation patterns, Data View alignment |
+| Python Standards (default) | [python-standards.md](docs/python-standards.md) | DRY, pydantic v2, psycopg2 cursor/row/error/batch patterns, type hints, testing |
+| Testing Standards (default) | [testing-standards.md](docs/testing-standards.md) | Kotlin Test Framework, MockK usage, test independence |
 | Git Commands | [git-commands.md](docs/git-commands.md) | Git command reference and best practices |
 | Maintainability Smells | [smell-baseline.md](docs/smell-baseline.md) | Fowler ch.3 12-smell vocabulary; reported as Notes only (no grade impact) |

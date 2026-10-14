@@ -4,6 +4,8 @@ Disclosed from [workflow.md](workflow.md). Step numbers match the references in 
 
 > ⛔ **These are NOT orchestrator steps.** All effort levels analyze via subagents (Step 4.1 finders, or the Step 4.9 single subagent), never inline. This section is the **detailed compliance reference** those subagents consult. The Finder prompts point here for the parts they cannot carry inline — the framework-validation `BAD_REQUEST` allowance (Step 8.x.1), the Data View severity policy (Step 8.5.1), and the API documentation severity policy (Step 8.y). The compliance reference ends at Step 10; orchestrator steps resume at Step 10.5 (Lineage) under the divider below.
 
+> **Precedence — repo standards first.** The standards in Steps 5–10 are bundled defaults. When the orchestrator's Step 0.5 (workflow.md) found repo standards documents (`REPO_STANDARDS`), a discovered repo standards document wins where it conflicts with the bundled standard. With an empty `REPO_STANDARDS`, Steps 5–10 apply as written.
+
 ## Step 5: Validate Commit Messages
 
 > **Scope gate**: Only applies when `--scope committed`. Skip when `--scope working-tree` (changes are uncommitted, no commit messages to validate).
