@@ -179,7 +179,7 @@ Proceed to Step 0.5.
 
 ## Step 0.5: Discover Repo Standards Documents
 
-Run this step at every effort level (`low`, `medium`, `high`), before any finder or subagent is dispatched. It produces `REPO_STANDARDS`: the list of files in the target repo that document how code should be written. The list may be empty. An empty list is not a question for the user — do not ask for a path. The mutating-mode roster (Step 4.1-RTM, workflow-mutating.md) does not receive the list; that roster keeps the bundled standards.
+Run this step at every effort level (`low`, `medium`, `high`), before any finder or subagent is dispatched. It produces `REPO_STANDARDS`: the list of files in the target repo that document how code should be written. The list may be empty. An empty list is not a question for the user — do not ask for a path. This step is the one definition of what `REPO_STANDARDS` holds; every other step and prompt refers here instead of restating it.
 
 ### 0.5.1 Collect candidates
 
@@ -187,26 +187,28 @@ From the project root:
 
 ```bash
 # Named standards files (hidden dirs such as .github/ included; .git excluded)
-fd -H -E .git -d 5 -t f '^(CODING_STANDARDS|CONTRIBUTING)\.md$'
+fd -H -E .git -d 5 -t f -t l '^(CODING_STANDARDS|CONTRIBUTING)\.md$'
 
-# Standards files under docs/ (docs/**/standards*, including files inside a standards/ directory)
-[ -d docs ] && fd -H -t f -p 'docs/(.*\/)?standards[^/]*$|docs/(.*\/)?standards\/'
+# Standards files under the root docs/ (docs/**/standards*, including files inside a standards/ directory)
+[ -d docs ] && fd -H -t f -t l . docs | rg '^docs/(.*/)?(standards[^/]*$|standards/)'
 
 # Agent instruction files, scanned for coding sections below
-fd -d 1 -t f '^(AGENTS|CLAUDE)\.md$'
+fd -d 1 -t f -t l '^(AGENTS|CLAUDE)\.md$'
 ```
+
+`-t f -t l` keeps symlinked files, so a symlinked `CLAUDE.md` reaches the dedupe in 0.5.2. The `docs/` search does not use `fd -p`: that flag matches the absolute path, so a checkout path such as `~/standards/repo` would match every file under `docs/`. Filtering fd's output, which is relative to the root, anchors the match at the root `docs/` and leaves a nested `vendor/x/docs/` out.
 
 - `CODING_STANDARDS.md` and `CONTRIBUTING.md`: when either exists, it must be on the list.
 - `docs/**/standards*`: every match goes on the list.
 - `AGENTS.md` / `CLAUDE.md`: read each file and follow its `@<path>` imports. Only the coding sections count: sections whose heading names code, coding, or style rules (for example `## Coding standards`, `## Code style`, `## Style`). List each such section as `<path>#<heading>`. A file with no such heading adds nothing.
 
-### 0.5.2 Dedupe by resolved path
+### 0.5.2 Dedupe by resolved path and heading
 
-Resolve every candidate with `realpath` and keep one entry per resolved path. A `CLAUDE.md` that `@`-imports `AGENTS.md`, or a `CLAUDE.md` symlinked to `AGENTS.md`, yields one `AGENTS.md` entry, not two.
+Resolve the path part of every candidate with `realpath`, and keep one entry per (resolved path, heading) pair; a whole-file entry has no heading. A `CLAUDE.md` that `@`-imports `AGENTS.md`, or a `CLAUDE.md` symlinked to `AGENTS.md`, yields one `AGENTS.md#<heading>` entry per coding section, not two. Two different coding sections of the same `AGENTS.md` stay as two entries. A section entry is dropped when the same file is already listed whole.
 
 ### 0.5.3 Precedence
 
-`REPO_STANDARDS` goes to Finder C (Step 4.1) and to the low-effort subagent (Step 4.9). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
+`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
 
 Report the result as one line under the Step 0.4 block:
 
@@ -569,7 +571,7 @@ Prompt:
 
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angles are **Quality** and **Standards**:
-> - Repo standards: read every entry in `REPO_STANDARDS` (the repo's `CODING_STANDARDS.md`, `CONTRIBUTING.md`, coding sections of `AGENTS.md`/`CLAUDE.md`, `docs/**/standards*`) and check the diff against them. Where a repo document conflicts with a bundled standard below, the repo document wins; cite the repo document in the finding. When `REPO_STANDARDS` is empty, the bundled standards below apply as before.
+> - Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief) and check the diff against them. Where a repo document conflicts with a bundled standard below, the repo document wins; cite the repo document in the finding. When `REPO_STANDARDS` is empty, the bundled standards below apply as before.
 > - Kotlin idioms: `data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`, named constants
 > - Simplification: dead code, over-engineering, redundant abstractions, unused variables
 > - Efficiency: unnecessary allocations, repeated computations, missing batching
@@ -678,7 +680,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Commit messages** (committed scope only): check each commit message for Jira ticket reference `[A-Z]+-\d+:` at start — MAJOR if missing.
 >
-> **Repo standards**: read every entry in `REPO_STANDARDS` (the repo's `CODING_STANDARDS.md`, `CONTRIBUTING.md`, coding sections of `AGENTS.md`/`CLAUDE.md`, `docs/**/standards*`) and check the diff against them. Where a repo document conflicts with a bundled standard in this brief (Kotlin/language, Python, testing), the repo document wins; cite the repo document in the finding. When `REPO_STANDARDS` is empty, the bundled standards apply as before.
+> **Repo standards**: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief) and check the diff against them. Where a repo document conflicts with a bundled standard in this brief (Kotlin/language, Python, testing), the repo document wins; cite the repo document in the finding. When `REPO_STANDARDS` is empty, the bundled standards apply as before.
 >
 > **Kotlin/language standards**: vertical-slice pattern (UseCase `@Service` with `operator fun invoke()`, thin controllers, constructor injection only); three-tier model (API models → Resources → Entities, no entity leaking beyond repository); `@JsonIgnoreProperties(ignoreUnknown = true)` on request models but NOT response models; Kotlin idioms (`data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`); custom validators in `validator/` sub-package; centralized `@RestControllerAdvice`.
 >

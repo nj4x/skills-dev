@@ -2,7 +2,7 @@
 lineage-rules: exempt
 ---
 
-# ADR-0078: Upstream Sync d81f3a1..49dd158 (2026-10)
+# ADR-0078: Upstream Sync d81f3a1..c20facd (2026-10)
 
 **Status**: Approved  
 **Date:** 2026-10-13  
@@ -10,7 +10,7 @@ lineage-rules: exempt
 
 ## Context
 
-skills-dev shares no git history with upstream `mattpocock/skills` (`/Users/roman/projects/skills`) and ports its changes by hand. The last sync stopped at upstream `d81f3a1` (skills-dev `0816eb5`, 2026-09-29). Upstream has 37 newer non-merge commits up to `49dd158` (2026-10-09). `docs/research/upstream-skills-assessment.md` classifies each change as port, adapt, or skip. Most changes are one-sentence guardrails or tracker-command fixes. One upstream change, omitting the `Blocked by` ticket section, conflicts with contracts recorded in `docs/agents/skill-dependencies.md`.
+skills-dev shares no git history with upstream `mattpocock/skills` (`/Users/roman/projects/skills`) and ports its changes by hand. The last sync stopped at upstream `d81f3a1` (skills-dev `0816eb5`, 2026-09-29). Upstream has 37 newer non-merge commits up to `49dd158` (2026-10-09), and `c20facd` (2026-10-13) follows with one wizard-template fix. `docs/research/upstream-skills-assessment.md` classifies each change as port, adapt, or skip; it was written against `49dd158`, and `49dd158..c20facd` changes only `skills/engineering/wizard/template.sh` and one changeset file, so this sync covers `d81f3a1..c20facd`. Most changes are one-sentence guardrails or tracker-command fixes. One upstream change, omitting the `Blocked by` ticket section, conflicts with contracts recorded in `docs/agents/skill-dependencies.md`.
 
 ## Decision
 
@@ -21,7 +21,7 @@ skills-dev shares no git history with upstream `mattpocock/skills` (`/Users/roma
    - `wayfinder`: four guardrails from `8295b8e`.
    - `diagnosing-bugs` (`f3fc563`), `tdd` (`3f59913`), `teach` (`ad5400b`): one-line additions.
 2. **Adapt** these upstream ideas to local structure:
-   - `dev/code-review` discovers the target repo's own standards files (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, and similar) and hands them to Finder C and the low-effort pass. The bundled language standards remain the fallback (`3da8c01`).
+   - `dev/code-review` discovers the target repo's own standards files (`CODING_STANDARDS.md`, `CONTRIBUTING.md`, and similar) and hands them to Finder C, the low-effort pass, and, in mutating modes, the Step 4.1-RTM roster and RTM-3 fixes. The bundled language standards remain the fallback (`3da8c01`).
    - `grilling`: each question is worded so "yes" accepts its recommendation; a bare "yes" to a multi-question round accepts every recommendation in it (`95249b0`).
    - `to-tickets`: when the source is an existing issue, each published ticket becomes its sub-issue, using the tracker doc's operation if present, else a `Part of #<parent>` line (`cffab50`).
    - `implement`: when passed a ticket reference, fetch it and state its title before the first edit (`6d6a5b9`).
@@ -44,4 +44,4 @@ skills-dev shares no git history with upstream `mattpocock/skills` (`/Users/roma
 - Repos that run `/setup-skills` after this change get working tracker commands and pre-created triage labels. Repos set up earlier keep the old commands in their own `docs/agents/issue-tracker.md` until they rerun it.
 - Generated wizards write `.env` values as `KEY='VALUE'` with mode 0600. A tool that reads `.env` as another user may lose access. Old unquoted env files still read correctly.
 - code-review applies repo-documented standards, which closes the `retro` → `CODING_STANDARDS.md` → review loop.
-- The next sync baseline is upstream `49dd158`, except the wizard template, which is pinned at `c20facd`.
+- The next sync baseline is upstream `c20facd`. The next assessment starts from `git log --no-merges c20facd..HEAD`.
