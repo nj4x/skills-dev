@@ -48,6 +48,8 @@ Format a round like so:
 ➡️ <your recommended answer>
 ```
 
+Word each question so "yes" accepts its recommended answer. A bare "yes" to a round of several questions accepts every recommendation in that round.
+
 A round ends on its last ➡️. The proceed prompt ("ready to draft?") is its own message, sent once the frontier is empty and the user has answered every question; a recommendation the user has not answered stays open.
 
 Each round the user answers reshapes the tree — settled decisions push the frontier outward and unblock questions that depended on them. Recompute the frontier and ask the next round. A question whose answer depends on another question still open in this round belongs to a _later_ round, not this one.
