@@ -198,9 +198,34 @@ Checked against `docs/agents/skill-dependencies.md`:
 - `engineering/wayfinder`: §3.5 adds a label prohibition. skills-dev's `to-tickets` applies `ready-for-agent`; nothing in wayfinder currently applies triage labels (`rg ready-for skills/engineering/wayfinder` is empty), so the rule is a guardrail, not a behaviour change.
 - `wizard/template.sh` (§3.3) changes `.env` quoting to `KEY='VALUE'`. Wizards generated from the old template and re-run against an env file the old template wrote will still read it (the new `_existing` passes unquoted values through). New files are mode 0600, which can surprise a tool that reads `.env` as another user.
 
+## 8. Sync record (2026-10-13)
+
+This document is the sync note for this window (ADR-0078, Consequences). The sync was applied through spec #100 and its tickets 01–06 (#102–#107).
+
+- **Synced window:** upstream `d81f3a1..c20facd`. The assessment above was written against `49dd158`. During implementation the wizard pin moved one commit later, to `c20facd` (2026-10-13, "wizard: keep apostrophes intact on bash 3.2 when Enter keeps current"). At `49dd158` the template fails the single-quote round-trip on macOS bash 3.2. `49dd158..c20facd` changes only `skills/engineering/wizard/template.sh` and one changeset file. The user approved the new pin on 2026-10-13.
+- **Next sync baseline:** upstream `c20facd`. The next assessment starts from `git log --no-merges c20facd..HEAD`.
+
+Recommendations from the "Short answer" table, as applied:
+
+| # | Item | Class | Result | Applied by |
+|---|---|---|---|---|
+| 1 | Tracker seed-doc command fixes and the "make a sub-issue" operation | Port | Applied | 01 (#102) |
+| 2 | `setup-skills` creates missing triage labels | Port | Applied | 02 (#103) |
+| 3 | `wizard/template.sh` replaced with upstream `c20facd`, plus `tests/wizard/template_test.sh` | Port verbatim | Applied | 03 (#104) |
+| 4 | `code-review` repo standards discovery | Adapt | Applied | 04 (#105) |
+| 5 | `wayfinder` guardrails | Port | Applied | 05 (#106) |
+| 6 | `diagnosing-bugs` forced-mutation diff | Port | Applied | 06 (#107) |
+| 7 | `tdd` catches/misses note per seam | Port | Applied | 06 (#107) |
+| 8 | `grilling` "yes" accepts the recommendation | Adapt | Applied | 06 (#107) |
+| 9 | `to-tickets` sub-issues under the source issue, `Blocked by` kept | Adapt | Applied | 01 (#102) |
+| 10 | `teach` invocation-directory paths and varied answer position | Port | Applied | 06 (#107) |
+| 11 | `implement` states the ticket title before the first edit | Adapt | Applied | 06 (#107) |
+
+Skip and keep items are unchanged by this sync: `chief-of-staff` and the other `in-progress/*` and `misc/*` skills, `ask-matt`, `claude-handoff`, upstream's "call the Skill tool" wording, upstream's `implement` rewrites, the `handoff` temp-dir change, the `resolving-merge-conflicts` removal, governance scaffolding (`SCOPE.md`, `.out-of-scope/`, issue forms, triage workflows), plugin/marketplace/changeset release tooling, the optional `scripts/link-skills.sh`, the optional `/retro` clause in `diagnosing-bugs`, and every divergence listed in §5.
+
 ## Sources
 
-- Upstream repo: `/Users/roman/projects/skills`, HEAD `49dd158` (2026-10-09); window `git log --no-merges d81f3a1..HEAD` and `git diff d81f3a1..HEAD`.
+- Upstream repo: `/Users/roman/projects/skills`, HEAD `49dd158` (2026-10-09) at assessment time; window `git log --no-merges d81f3a1..HEAD` and `git diff d81f3a1..HEAD`. Synced to `c20facd` (§8).
 - skills-dev: `/Users/roman/projects/skills-dev`, HEAD `f0c36fd` (2026-10-12); last sync commit `0816eb5`.
 - Prior sync notes: `docs/research/upstream-skills-sync-2026-08-20.md`, `docs/research/upstream-skills-sync-2026-09-29.md`.
 - Conventions: `AGENTS.md`, `docs/agents/skill-authoring.md`, `docs/agents/skill-dependencies.md`.
