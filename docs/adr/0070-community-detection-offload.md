@@ -4,7 +4,7 @@ lineage-rules: exempt
 
 # ADR-0070: Community Detection Offloaded to Thread
 
-**Status:** Decided  
+**Status**: Approved  
 **Date:** 2026-09-03
 
 ## Context

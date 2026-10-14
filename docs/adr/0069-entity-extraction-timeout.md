@@ -4,7 +4,7 @@ lineage-rules: exempt
 
 # ADR-0069: Entity Extraction Timeout and Failure Isolation
 
-**Status:** Decided  
+**Status**: Approved  
 **Date:** 2026-09-03
 
 ## Context

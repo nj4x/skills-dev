@@ -4,7 +4,7 @@ lineage-rules: exempt
 
 # ADR-0076: implement-spec Delegates Tickets to implement and Runs a Gated Integration Review
 
-**Status:** Decided  
+**Status**: Approved  
 **Date:** 2026-10-09  
 **Source SRS**: none (lineage exempt; requirements corpus does not exist yet — retrofit tracked in ADR-0065)
 
