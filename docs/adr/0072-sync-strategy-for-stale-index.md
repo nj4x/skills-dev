@@ -4,7 +4,7 @@ lineage-rules: exempt
 
 # ADR-0072: Stale Index Detection and Sync Strategy
 
-**Status:** Decided  
+**Status**: Approved  
 **Date:** 2026-09-03  
 **Source SRS**: none (lineage exempt; requirements corpus does not exist yet — retrofit tracked in ADR-0065)
 

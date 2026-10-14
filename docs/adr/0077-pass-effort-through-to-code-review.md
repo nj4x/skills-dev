@@ -4,7 +4,7 @@ lineage-rules: exempt
 
 # ADR-0077: Pass --effort Through to code-review in the Review Brief
 
-**Status:** Decided  
+**Status**: Approved  
 **Date:** 2026-10-09  
 **Source SRS**: none (lineage exempt; requirements corpus does not exist yet — retrofit tracked in ADR-0065)
 
