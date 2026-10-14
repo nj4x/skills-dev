@@ -17,7 +17,7 @@ skills-dev shares no git history with upstream `mattpocock/skills` (`/Users/roma
 1. **Port** these upstream changes, with their substance kept and wording adjusted to local convention:
    - `setup-skills` tracker seed docs: issue read via `gh issue view --json`, external-PR list via the REST pulls endpoint, `glab -O json`, `<child-iid>`, and a new "make a sub-issue" operation (`5b7cade`, `e0efb6e`, `cffab50`).
    - `setup-skills` Section B creates each configured triage label the tracker lacks (`5b7cade`).
-   - `wizard/template.sh` replaced verbatim with upstream (`868c4cf`, `49dd158`).
+   - `wizard/template.sh` replaced verbatim with upstream (`868c4cf`, `49dd158`, `c20facd`; `49dd158` alone fails the single-quote round-trip on bash 3.2).
    - `wayfinder`: four guardrails from `8295b8e`.
    - `diagnosing-bugs` (`f3fc563`), `tdd` (`3f59913`), `teach` (`ad5400b`): one-line additions.
 2. **Adapt** these upstream ideas to local structure:
@@ -44,4 +44,4 @@ skills-dev shares no git history with upstream `mattpocock/skills` (`/Users/roma
 - Repos that run `/setup-skills` after this change get working tracker commands and pre-created triage labels. Repos set up earlier keep the old commands in their own `docs/agents/issue-tracker.md` until they rerun it.
 - Generated wizards write `.env` values as `KEY='VALUE'` with mode 0600. A tool that reads `.env` as another user may lose access. Old unquoted env files still read correctly.
 - code-review applies repo-documented standards, which closes the `retro` → `CODING_STANDARDS.md` → review loop.
-- The next sync baseline is upstream `49dd158`.
+- The next sync baseline is upstream `49dd158`, except the wizard template, which is pinned at `c20facd`.
