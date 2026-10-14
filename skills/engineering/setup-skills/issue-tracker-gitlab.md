@@ -7,7 +7,7 @@ Issues and PRDs for this repo live as GitLab issues. Use the [`glab`](https://gi
 - **Create an issue**: `glab issue create --title "..." --description "..."`. Use a heredoc for multi-line descriptions. Pass `--description -` to open an editor.
 - **Read an issue**: `glab issue view <number> --comments`. Use `-F json` for machine-readable output.
 - **List issues**: `glab issue list -O json` with appropriate `--label` filters.
-- **Attach an issue to a parent issue**: this doc has no sub-issue operation, because GitLab has no sub-issue link between two issues on every tier. Put `Part of #<parent>` at the top of the child's description instead.
+- **Attach an issue to a parent issue**: this doc has no sub-issue operation, because GitLab cannot make an issue the child of another issue on any tier: an issue's only children are tasks, and its only parent is an epic. Put `Part of #<parent>` at the top of the child's description instead.
 - **Comment on an issue**: `glab issue note <number> --message "..."`. GitLab calls comments "notes".
 - **Apply / remove labels**: `glab issue update <number> --label "..."` / `--unlabel "..."`. Multiple labels can be comma-separated or by repeating the flag.
 - **Close**: `glab issue close <number>`. `glab issue close` does not accept a closing comment, so post the explanation first with `glab issue note <number> --message "..."`, then close.
