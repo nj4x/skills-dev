@@ -4,7 +4,7 @@ lineage-rules: exempt
 
 # ADR-0068: Embedding Batch Failure Isolation
 
-**Status:** Decided  
+**Status**: Approved  
 **Date:** 2026-09-03
 
 ## Context

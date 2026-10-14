@@ -8,7 +8,7 @@ Disclosed from [workflow.md](workflow.md). Read when `REVIEW_MODE_AUTONOMOUS = Y
 
 > **Mode gate**: Runs only when `REVIEW_MODE_AUTONOMOUS = YES` (`--mode autofix` or `review-to-merge`). In that case this profile **replaces** the 4 A/B/C/D finders of Step 4.1 — do not run both rosters. Effort is forced to `high`, so Step 4.2 adversarial verification always follows.
 
-Spawn 5 Explore agents **in parallel**, per the Step 4.1 dispatch rule (READ-ONLY for this discovery phase). Pass each agent the same inputs as Step 4.1 (full diff, `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`, the `--scope` value). The five angles isolate **Tests/Regressions** and **Operational risk** as first-class lanes because the mutating path will *write* regression tests and *merge*. Smells run in their own dedicated agent so they never inflate the per-agent context of the functional review lanes.
+Spawn 5 Explore agents **in parallel**, per the Step 4.1 dispatch rule (READ-ONLY for this discovery phase). Pass each agent the same inputs as Step 4.1 (full diff, `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`, `REPO_STANDARDS` from workflow.md Step 0.5, the `--scope` value). Agents 2, 3 and 5 apply `REPO_STANDARDS`, because their angles check the bundled standards or smell baseline it overrides. The five angles isolate **Tests/Regressions** and **Operational risk** as first-class lanes because the mutating path will *write* regression tests and *merge*. Smells run in their own dedicated agent so they never inflate the per-agent context of the functional review lanes.
 
 ### Agent 1 — Correctness & Edge Cases
 
@@ -20,6 +20,7 @@ Prompt:
 
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angle is **Tests & Regressions**: missing coverage for changed paths, regressions introduced by the diff, brittle/flaky tests, test gaps per changed function, framework/standards adherence (Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`; pytest patterns for Python), test independence, event-exhaustiveness checks. For each changed function lacking a regression test, name the test that should exist.
+> Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief; may be empty). Where one conflicts with a bundled standard (Kotlin, Python, Testing), the repo document wins; cite it in the finding.
 > For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix` (or the missing test to add). Omit findings you are not confident about.
 
 ### Agent 3 — Architecture & Maintainability
@@ -39,6 +40,8 @@ Prompt:
 >
 > **Deep-Module Detection:** apply the two scenarios from the shared lens (deep-module-lens.md).
 >
+> Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief; may be empty). Where one conflicts with a bundled standard (Kotlin, Python, Testing), the repo document wins; cite it in the finding.
+>
 > For each finding return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Omit findings you are not confident about.
 
 ### Agent 4 — Security & Operational Risk
@@ -52,6 +55,7 @@ Prompt:
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angle is **Maintainability Smells** from Fowler's _Refactoring_, chapter 3.
 > First read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and its binding rules (repo overrides baseline, skip tooling-enforced smells, Notes-only, judgement-call standard). Apply them exactly.
+> Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief; may be empty). Suppress any smell a repo document endorses; cite it.
 > **De-dup precedence for this roster:** skip a `file:line` if Agents 1, 2, 3, or 4 already reported it at any severity.
 > For each finding return: `severity = NOTE`, `file:line`, `smell name`, `description`, `suggested fix`. Omit findings you are not confident about.
 
@@ -104,7 +108,7 @@ This step inverts the skill's read-only default: it implements fixes, writes tes
 
 **RTM-2 — Consolidate fix plan + 3 critic passes.** From the Step 4.1-RTM / 4.2 verified findings, filter to Major/Critical and build an ordered fix plan (each entry: finding id, `file:line`, root cause, proposed fix, regression test to add, dependencies/order). Quarantine any finding that requires a genuine product decision — these are the only stop-for-user items in the loop. Then run the three fixed critic passes over the plan (reuse the Step 4.2 adversarial style, retargeted at the plan): (1) impossible assumptions, (2) missing dependencies / schema or contract mismatches (cross-check `PROJECT_DATA_VIEW` / `PROJECT_API_DEFINITION` / `PROJECT_SRS`), (3) test-coverage gaps. Drop or rewrite plan items the critics refute.
 
-**RTM-3 — Implement fixes + regression tests + selective suite.** Per accepted finding: implement the fix following the relevant standards docs (kotlin/python/testing/security/architecture), one logical change per fix, traceable to a finding id; add or update a regression test that fails before and passes after (3-attempt cap per finding). After all fixes, run the tests via the `testing` skill's selective runner (`--files <changed files from review scope + fix-touched files>`); the testing skill maps those files to their covering tests and **falls back to the full suite automatically when any changed file has zero coverage**, so the safety net is preserved without code-review implementing its own. Loop: if any test fails → debug → re-run, within the 3-rerun cap. Hard rule: do not proceed to commit while the run is red. The user may request a full-suite run explicitly. This is the autonomous fix flow from `~/.claude/CLAUDE.md` (identify Major/Critical → implement → regression tests → run relevant tests → debug to 100% → structured commit), stopping only for genuine product decisions.
+**RTM-3 — Implement fixes + regression tests + selective suite.** Per accepted finding: implement the fix following `REPO_STANDARDS` first, then the bundled standards docs (kotlin/python/testing/security/architecture) where no repo document conflicts, one logical change per fix, traceable to a finding id; add or update a regression test that fails before and passes after (3-attempt cap per finding). After all fixes, run the tests via the `testing` skill's selective runner (`--files <changed files from review scope + fix-touched files>`); the testing skill maps those files to their covering tests and **falls back to the full suite automatically when any changed file has zero coverage**, so the safety net is preserved without code-review implementing its own. Loop: if any test fails → debug → re-run, within the 3-rerun cap. Hard rule: do not proceed to commit while the run is red. The user may request a full-suite run explicitly. This is the autonomous fix flow from `~/.claude/CLAUDE.md` (identify Major/Critical → implement → regression tests → run relevant tests → debug to 100% → structured commit), stopping only for genuine product decisions.
 
 **RTM-4 — Summarize changes.** Produce a structured summary: each finding → its fix → its regression test → suite result.
 

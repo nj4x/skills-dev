@@ -69,7 +69,7 @@ I will review your committed changes following these steps, keeping you updated 
 
 The review must follow this order exactly:
 
-1. Discover requirement documents
+1. Discover requirement documents, then repo standards documents (Step 0.5)
 2. Verify repository and branch
 3. Resolve `REVIEW_BASE_REF`, then `git fetch origin "$REVIEW_BASE_REF"` AND `git fetch origin <current-branch>`
 3.5. Check divergence via `git status` — MANDATORY HARD GATE: if diverged, ask user whether to pull; do not self-decide, do not skip the question
@@ -171,6 +171,49 @@ After all 5 variables are set, report to the user:
   Module View:    [path or "not found — module boundary validation will be skipped"]
   Use Cases:      [path or "not found — use case validation will be skipped"]
   Data View:      [path or "not found — data model/access pattern validation will be skipped"]
+```
+
+Proceed to Step 0.5.
+
+---
+
+## Step 0.5: Discover Repo Standards Documents
+
+Run this step at every effort level (`low`, `medium`, `high`), before any finder or subagent is dispatched. It produces `REPO_STANDARDS`: the list of files in the target repo that document how code should be written. The list may be empty. An empty list is not a question for the user — do not ask for a path. This step is the one definition of what `REPO_STANDARDS` holds; every other step and prompt refers here instead of restating it.
+
+### 0.5.1 Collect candidates
+
+From the project root:
+
+```bash
+# Named standards files (hidden dirs such as .github/ included; .git excluded)
+fd -H -E .git -d 5 -t f -t l '^(CODING_STANDARDS|CONTRIBUTING)\.md$'
+
+# Standards files under the root docs/ (docs/**/standards*, including files inside a standards/ directory)
+[ -d docs ] && fd -H -t f -t l . docs | rg '^docs/(.*/)?(standards[^/]*$|standards/)'
+
+# Agent instruction files, scanned for coding sections below
+fd -d 1 -t f -t l '^(AGENTS|CLAUDE)\.md$'
+```
+
+`-t f -t l` keeps symlinked files, so a symlinked `CLAUDE.md` reaches the dedupe in 0.5.2. The `docs/` search does not use `fd -p`: that flag matches the absolute path, so a checkout path such as `~/standards/repo` would match every file under `docs/`. Filtering fd's output, which is relative to the root, anchors the match at the root `docs/` and leaves a nested `vendor/x/docs/` out.
+
+- `CODING_STANDARDS.md` and `CONTRIBUTING.md`: when either exists, it must be on the list.
+- `docs/**/standards*`: every match goes on the list.
+- `AGENTS.md` / `CLAUDE.md`: read each file and follow its `@<path>` imports. Only the coding sections count: sections whose heading names code, coding, or style rules (for example `## Coding standards`, `## Code style`, `## Style`). List each such section as `<path>#<heading>`. A file with no such heading adds nothing.
+
+### 0.5.2 Dedupe by resolved path and heading
+
+Resolve the path part of every candidate with `realpath`, and keep one entry per (resolved path, heading) pair; a whole-file entry has no heading. A `CLAUDE.md` that `@`-imports `AGENTS.md`, or a `CLAUDE.md` symlinked to `AGENTS.md`, yields one `AGENTS.md#<heading>` entry per coding section, not two. Two different coding sections of the same `AGENTS.md` stay as two entries. A section entry is dropped when the same file is already listed whole.
+
+### 0.5.3 Precedence
+
+`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
+
+Report the result as one line under the Step 0.4 block:
+
+```
+📏 Repo Standards: [comma-separated paths, or "none found — bundled Kotlin/Python/Testing standards apply"]
 ```
 
 Proceed to Step 1.
@@ -486,6 +529,7 @@ Do not run this block for the default `--baseline merge-base`.
 Spawn 4 Explore agents **in parallel**, per the dispatch rule above. Pass each agent:
 - The full diff text from Step 4
 - All discovered document paths: `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`
+- `REPO_STANDARDS` from Step 0.5 (Finder C applies it; the list may be empty)
 - The `--scope` value (so agents know whether Jira commit-message validation applies)
 - The ticket/spec/ADR text **verbatim** (quoted or linked), not the implementer's summary or framing of it — a finder reasoning from the implementer's own account of what the ticket requires cannot catch a place where the implementer's account is the thing that's wrong
 - Any doubt the implementer holds about their own change, phrased as a candidate finding for the finder to confirm or refute — never resolved by the orchestrator before the finders see it
@@ -527,6 +571,7 @@ Prompt:
 
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angles are **Quality** and **Standards**:
+> - Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief) and check the diff against them. Where a repo document conflicts with a bundled standard below, the repo document wins; cite the repo document in the finding. When `REPO_STANDARDS` is empty, the bundled standards below apply as before.
 > - Kotlin idioms: `data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`, named constants
 > - Simplification: dead code, over-engineering, redundant abstractions, unused variables
 > - Efficiency: unnecessary allocations, repeated computations, missing batching
@@ -621,6 +666,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 **IF `--effort low`**: Spawn a single general-purpose Explore subagent. Pass it:
 - The complete diff text from Step 4
 - All discovered document paths: `PROJECT_SRS`, `PROJECT_API_DEFINITION`, `PROJECT_MODULE_VIEW`, `PROJECT_DATA_VIEW`
+- `REPO_STANDARDS` from Step 0.5 (the list may be empty)
 - The `--scope` value (so it knows whether Jira commit-message validation applies)
 - Pre-read instructions:
   1. Read `~/.claude/skills/improve-codebase-architecture/SKILL.md` — for the deep-module detection lens and deletion test.
@@ -633,6 +679,8 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
 >
 > **Commit messages** (committed scope only): check each commit message for Jira ticket reference `[A-Z]+-\d+:` at start — MAJOR if missing.
+>
+> **Repo standards**: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief) and check the diff against them. Where a repo document conflicts with a bundled standard in this brief (Kotlin/language, Python, testing), the repo document wins; cite the repo document in the finding. When `REPO_STANDARDS` is empty, the bundled standards apply as before.
 >
 > **Kotlin/language standards**: vertical-slice pattern (UseCase `@Service` with `operator fun invoke()`, thin controllers, constructor injection only); three-tier model (API models → Resources → Entities, no entity leaking beyond repository); `@JsonIgnoreProperties(ignoreUnknown = true)` on request models but NOT response models; Kotlin idioms (`data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`); custom validators in `validator/` sub-package; centralized `@RestControllerAdvice`.
 >
