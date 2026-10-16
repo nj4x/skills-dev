@@ -38,12 +38,15 @@ def _matches(nodeid, rid):
 
 
 def _same_name_methods(tests, rid):
-    """Base ids of class methods in `rid`'s file that share a bare `rid`'s test name."""
+    """Base ids of class methods in `rid`'s file that share a bare `rid`'s test name.
+
+    Called only when no evidence id matches `rid`, so `rid` itself is never a base here.
+    """
     file, _, name = rid.partition("::")
     if "::" in name:
         return []
     bases = {n.partition("[")[0] for n in tests}
-    return sorted(b for b in bases if b.startswith(file + "::") and b.endswith("::" + name) and b != rid)
+    return sorted(b for b in bases if b.startswith(file + "::") and b.endswith("::" + name))
 
 
 def call_time_delta(evidence, after_calltime, removed_ids, language="python"):

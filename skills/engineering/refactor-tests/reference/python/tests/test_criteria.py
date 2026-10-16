@@ -13,6 +13,7 @@ from pathlib import Path
 HELPERS = Path(__file__).resolve().parent.parent  # conftest.py puts this on sys.path
 
 from calltime_delta import call_time_delta  # noqa: E402 (after conftest path setup)
+from order_gate import matches  # noqa: E402
 from select_candidates import select_candidates  # noqa: E402
 
 F = "src/pkg/calc.py"
@@ -334,8 +335,6 @@ def test_class_less_id_rule_differs_on_purpose_between_gate_and_call_time():
     """Pinned rule (patterns.md, Demotion): the gate treats a class-less side as matching any
     class, so it errs toward demoting; call time treats a bare id as top-level only, so it errs
     toward charging nothing."""
-    from order_gate import matches
-
     assert matches("tests/t.py::TestK::test_c", "tests/t.py", "test_c")
     assert matches("tests.t::test_c", "tests/t.py", "TestK::test_c")
     ev = _evidence({"tests/t.py::TestK::test_c": (0.1, _cov([1]))})

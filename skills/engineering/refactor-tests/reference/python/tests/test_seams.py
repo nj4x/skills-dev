@@ -427,6 +427,21 @@ def test_reading_all_does_not_make_it_incomplete(tmp_path):
     assert doc["warnings"] == []
 
 
+@pytest.mark.parametrize("src", [
+    "def helper():\n    __all__ = ['x']\n    __all__.append('y')\n    return __all__\n",
+    "class Box:\n    __all__ = ['x']\n",
+    "__all__: list[str]\n",
+], ids=["function-local", "class-level", "bare-annotation"])
+def test_all_outside_module_scope_or_without_value_keeps_public_api(tmp_path, src):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/m.py": src + "\n\ndef pub():\n    return 1\n",
+    })
+    doc = propose(proj, ["src"])
+    assert _names(doc, "src/pkg/m.py")["pub"] == "public-api"
+    assert doc["warnings"] == []
+
+
 def test_add_candidate_reexported_through_two_package_levels_warns(tmp_path):
     proj = _proj_with(tmp_path, {
         "src/pkg/__init__.py": "from .sub import slugify\n",

@@ -137,13 +137,29 @@ def _mutates_all(node):
     )
 
 
+_OWN_SCOPE = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+
+def _module_scope_walk(node):
+    """Like `ast.walk`, but skip function, lambda and class bodies and value-less annotations."""
+    todo = [node]
+    while todo:
+        n = todo.pop()
+        if isinstance(n, _OWN_SCOPE) or (isinstance(n, ast.AnnAssign) and n.value is None):
+            continue
+        yield n
+        todo.extend(ast.iter_child_nodes(n))
+
+
 def _all_names(tree):
     """(names, complete) for the module's top-level `__all__`; (None, True) when it has none.
 
     Top-level assignments, `+=`, and `__all__.extend/append(...)` of literals are evaluated
-    in order. Any other change to `__all__`, at top level or nested in any statement, makes
-    the result incomplete (and means an `__all__` exists): the literal names found so far
-    are kept.
+    in order. Any other change to `__all__` at module scope (a top-level statement, or one
+    nested in a module-level if/try/for/while/with) makes the result incomplete (and means an
+    `__all__` exists): the literal names found so far are kept. Function, lambda and class
+    bodies have their own scope and are not read; a value-less `__all__: list[str]` binds
+    nothing and is ignored.
     """
     names, complete = None, True
     for node in tree.body:
@@ -168,9 +184,9 @@ def _all_names(tree):
             arg = node.value.args[0]
             value = ast.List(elts=[arg], ctx=ast.Load()) if node.value.func.attr == "append" else arg
         else:
-            # Any other change (remove, insert, del, slice assignment, or one nested in
-            # if/try/a function) cannot be evaluated: never pass it silently.
-            if any(_mutates_all(n) for n in ast.walk(node)):
+            # Any other change (remove, insert, del, slice assignment, or one nested in a
+            # module-level if/try) cannot be evaluated: never pass it silently.
+            if any(_mutates_all(n) for n in _module_scope_walk(node)):
                 names, complete = names or [], False
             continue
         if names is None:
