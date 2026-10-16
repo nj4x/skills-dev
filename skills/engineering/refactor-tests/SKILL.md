@@ -137,6 +137,8 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 | **Exact duplicate** | Remove one — byte/AST-identical body AND identical fixtures, mocks, decorators (ignoring only name and docstring) |
 | **Dead test** | Review only, never removed — no assertion statement in body (per-language vocabulary in `reference/patterns.md`) |
 | **Trivially true** | Remove — only `assert True`, `assertEqual(x, x)`, `expect(1).toBe(1)` |
+| **Coverage subset** | Review only, never removed — every line and branch arc the test covers is also covered by other passing tests (evidence-based; fixture identity not required; see Step 8) |
+| **Cost** | Review only, never removed — a coverage-subset candidate in the top decile by `call_s`, at or above 0.5 s (evidence-based; see Step 8) |
 | **Parametrize cluster** | Consolidate — N ≥ 3 tests call the same function with distinct args of the same structural type, identical fixtures+mocks, identical assertion pattern |
 | **Parametrize pair** | Consolidate — N = 2 tests meeting cluster criteria where names differ only by trailing integer or single-letter suffix |
 
@@ -204,11 +206,21 @@ Set ledger `phase: simplifying`.
 
 Parse every test file (post-layout) using the language's AST parser. For each test function extract: name, body AST, fixture parameters, mock/stub configurations, decorator list, primary source function called, call arguments, assertion list.
 
-Apply criteria in order: exact duplicate → dead → trivially true → parametrize cluster → parametrize pair.
+Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → parametrize cluster → parametrize pair.
 
 For each **removal** candidate (exact duplicate, trivially true): emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion).
 
 For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to the `review_candidates` array only, never to `removals`. The user decides whether to remove it.
+
+**Coverage-subset and cost candidates** (evidence-based, review only). Run only when the evidence status of the language is `ok`; otherwise the degrade rules of Step 7 drop them. Read `test-evidence.json`:
+
+```sh
+python3 $SKILL_DIR/reference/python/select_candidates.py --evidence .scratch/refactor-tests/test-evidence.json
+```
+
+The script prints the entries as a JSON list. Append them to `review_candidates`, never to `removals`. It applies these rules per language:
+- **Coverage subset**: test T is a candidate when every line and arc in its `covered` map is in the union of the other passing tests' `|run` coverage. A test with an empty `covered` map is never a candidate. Process tests in descending `call_s` and remove each flagged test from the union, so of two tests that cover each other only the slower is flagged. Entry: `criterion: "coverage-subset"`, with `call_s` and `time_saved_s` (the test's own `call_s`).
+- **Cost**: rank the coverage-subset candidates by `call_s`, descending. Take the top decile (ceiling of 10% of the candidates, minimum 1). Flag each one whose `call_s` is at least 0.5 s. Entry: `criterion: "cost"`, with `call_s` and `time_saved_s`. A test flagged by both criteria gets one entry per criterion. A slow test with unique coverage is never a cost candidate.
 
 For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
@@ -226,9 +238,18 @@ Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`, with top
 
 Set ledger `phase: simplify-validating`.
 
-Re-run the full suite with the recorded runner command (fixed order, see Step 3). Regression check: compare against post-layout baseline. Exclude test ids in `simplification.removals` and replaced ids in `simplification.parametrizations` from the required-passing set. Verify each consolidated parametrized test id appears and passes.
+Re-run the full suite with the recorded runner command (fixed order, see Step 3). For Python with Step 7 `evidence.python.status` of `ok`, load the `calltime` hook in the first validation run only, and make it match the Step 7 timing run (serial, untraced): build it as in Step 7 (make `pytest-cov` importable, so `--no-cov` is a known flag), prefix `PYTHONPATH=$SKILL_DIR/reference/python${PYTHONPATH:+:$PYTHONPATH} CALLTIME_FILE=.scratch/refactor-tests/calltime-after-python.json`, append `--no-cov -p calltime`, and append `-n0` when project `addopts` carry `-n`/`--numprocesses`. The flake retry below uses the plain recorded command. With any other evidence status, load no hook. Regression check: compare against post-layout baseline. Exclude test ids in `simplification.removals` and replaced ids in `simplification.parametrizations` from the required-passing set. Verify each consolidated parametrized test id appears and passes.
 
 If any regressed id is found, **re-run the full suite once** with the recorded runner command to confirm (flake detection; Phase B is post-consolidation so a failure under load is distinct from isolation). If all pass on retry, resume as healthy. If any still fail, record as regressed.
+
+**Serial call time.** After the first validation run (the one that loaded the hook), compare per-test call time before and after. Pass one `--removed <file>::<test_name>` per ledger `simplification.removals` entry:
+
+```sh
+python3 $SKILL_DIR/reference/python/calltime_delta.py --evidence .scratch/refactor-tests/test-evidence.json \
+  --calltime .scratch/refactor-tests/calltime-after-python.json --removed '<file>::<test_name>' …
+```
+
+Before is the total `call_s` of the evidence pass timing run (tests with an evidence entry); after is the total call duration of the passed rows in the validation run, minus ids listed under evidence `excluded` so both totals cover the same population. A missing `--calltime` file omits the figures with a warning; pass `--removed` the full node id (`<file>::<Class>::<test>`) or the bare `<file>::<test>`. The script prints `before_s`, `after_s`, `delta_s`, and `call_s` per removed test id, labelled "serial call time, not wall time". Record its output in ledger `simplification.call_time`. When the evidence status is not `ok` or the calltime file is missing, the script returns null figures and a `warning`: omit both totals from the report and surface the warning. Delete `calltime-after-python.json` on every path.
 
 - **Healthy**: advance to Phase C when ledger `spring_boot` is `true` and `--phases` includes Phase C, otherwise set `phase: done`.
 - **Regressed**: record regressed ids, set `phase: failed-simplify`, stop at Phase B.
@@ -272,11 +293,12 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 **Phase B — Simplification:**
 - Evidence: status per language (`ok`/`skipped`/`failed` plus reason), tests recorded, tests excluded (listed with outcome: did not pass, `no-coverage`, or `no-timing`), and a warning for each evidence-based item dropped
 - Tests removed: count by criterion (exact-duplicate, trivially-true)
-- Tests flagged for review (dead-test): count with listing; user decides whether to remove
-- Seams: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended); pinning notes (`covered through the interface` / `move the assertion to the interface`) per candidate, never removed; an **add candidates** section (confirmed seams no interface test reaches), or the warning that evidence was not `ok` and it was omitted
 - Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
 - Parametrizations skipped (AST editor failures): list with reasons
+- Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost), count and listing per group; for coverage-subset and cost, each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"; user decides whether to remove
+- Seams: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended); pinning notes (`covered through the interface` / `move the assertion to the interface`) per candidate, never removed; an **add candidates** section (confirmed seams no interface test reaches), or the warning that evidence was not `ok` and it was omitted
 - Unanalyzable files (skipped by AST parser): list with reasons
+- Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed test; when evidence was not `ok`, omit the totals and print the warning
 - Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; per-context switches applied; clusters skipped with reasons; wall time before → after (informational, not gated).
