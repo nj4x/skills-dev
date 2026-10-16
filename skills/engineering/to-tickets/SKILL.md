@@ -6,7 +6,9 @@ description: Use when the user wants to create issues, tickets, or vertical slic
 ## Process
 
 ### 1. Gather context
-Work from whatever is in the conversation. Fetch referenced specs or issue numbers in full. Find the requirements corpus through `engineering/setup-lineage/SKILL.md` → [Requirements corpus lookup](../setup-lineage/SKILL.md#requirements-corpus-lookup) (the `## Requirements corpus` block in `docs/agents/domain.md`, else `.data/requirements/`); when a corpus exists, read relevant FS/SRS contracts (look an ID up with the block's `resolver`) and `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary). Track which requirement IDs each ticket will satisfy — inline `(ID)` tags in the source spec map straight onto the ticket's `Requirements:` field. Put invocation and realization work under the source ADR, not a new FS/SRS obligation.
+Work from whatever is in the conversation. Fetch referenced specs or issue numbers in full, **including every comment** (per `docs/agents/issue-tracker.md`). Comments carry amendments: a correction edits the affected slice, an added task becomes a slice or part of one, an ID remap replaces stale IDs. Name each comment-derived change in the step 4 list (headless: in the affected ticket's `## What to build`).
+
+Find the requirements corpus through `engineering/setup-lineage/SKILL.md` → [Requirements corpus lookup](../setup-lineage/SKILL.md#requirements-corpus-lookup) (the `## Requirements corpus` block in `docs/agents/domain.md`, else `.data/requirements/`); when a corpus exists, read relevant FS/SRS contracts (look an ID up with the block's `resolver`) and `engineering/setup-lineage/SKILL.md` → [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary). Track which requirement IDs each ticket will satisfy — inline `(ID)` tags in the source spec map straight onto the ticket's `Requirements:` field. Put invocation and realization work under the source ADR, not a new FS/SRS obligation.
 
 ### 2. Explore the codebase (optional)
 If not already done, explore to understand current state. Read `docs/agents/domain.md` for the domain doc layout. Use domain glossary vocabulary, respect ADRs. Look for prefactor opportunities. Search source code conceptually and cross-file; search docs and requirements as a document corpus; for architecture-level questions start with a global search before reading individual files.
@@ -29,7 +31,7 @@ Present as numbered list (title, blocked-by, what it delivers). Iterate on granu
 
 **Resolve ticket lineage subtype (ADR-0067).** Before staging, confirm one of:
 
-- **Spec-linked (default):** `.scratch/<feature-slug>/spec.md` exists. If missing, block staging and surface the gap.
+- **Spec-linked (default):** `.scratch/<feature-slug>/spec.md` exists. If missing, block staging and surface the gap. When the spec came from an issue and the local file differs from the issue body, refresh the file from the issue.
 - **ADR-direct:** Propose when the user's request references an ADR directly with no spec in context. **User must confirm.** At least one `**Source ADR**:` path under `docs/adr/` must be provided; verify each file exists. If any path is missing, block staging and surface the gap.
 
 Done when the subtype is confirmed and all required files are verified.

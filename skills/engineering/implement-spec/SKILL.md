@@ -31,13 +31,13 @@ A `draft-issues/` or `draft-spec.md` staging directory with no matching `issues/
 
 ## Steps
 
-1. Read the spec and tickets to understand the task graph.
+1. Read the spec and tickets, including every comment (per `docs/agents/issue-tracker.md`), to understand the task graph.
 
 2. (optional) Use an **exploration subagent** to conduct any exploration required by the tickets - relevant codebase files or external documentation. Ensure the exploration subagent can save files - it should save its markdown notes in a directory outside the repo, accessible by all future subagents. This lets **implementer subagents** focus on implementation rather than exploration.
 
 3. Create the integration branch. If the issue tracker closes work through PRs, or the user asks for one, open a draft PR after the first merge in step 5 (a branch with no commits ahead of main can't open one), marked as closing the spec and tickets.
 
-4. Read the spec and each ticket, and list the test seams of each ticket. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Each implementer subagent:
+4. Read the spec and each ticket, including every comment, and list the test seams of each ticket. Use **implementer subagents** to implement each ticket, each in its own worktree on its own branch. Each implementer subagent:
    - confirms its worktree is based on the integration branch before starting, and resets onto it if not;
    - calls the Skill tool with `implement` to build the ticket. The brief says **commit-only**: the Test, Review and Checklist steps run as written, then it commits on the worktree branch with no push and no PR. The brief carries the ticket's `Test seams:` list. `implement` ticks the ticket's checklist and sets its `## Status` to `done` after its review gates hold; it skips the checklist step that sets the spec's inline `Status`, which only you set;
    - merges the integration branch tip into its own branch before reporting done;
