@@ -13,7 +13,7 @@ Create a new issue using `gh issue create` with the provided title and body.
 
 ## When a skill says "fetch the relevant ticket"
 
-Read the issue via `gh issue view <number>` or the GitHub web UI. The user will normally pass the issue number directly.
+Read the issue with its comments via `gh issue view <number> --json title,body,comments` or the GitHub web UI. The user will normally pass the issue number directly.
 
 ## PRs as a request surface
 

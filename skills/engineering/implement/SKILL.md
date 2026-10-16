@@ -3,7 +3,7 @@ name: implement
 description: "Implement a piece of work based on a spec or set of tickets. Use when the user says 'implement this', 'build this', agrees to a fix or change the agent proposed (after research or diagnosis, a bare 'yes' counts), or wants a ticket or spec worked through to a tested, reviewed state."
 ---
 
-If passed a ticket reference, fetch it from the issue tracker and state its title before the first edit. If the reference is ambiguous or the fetch fails, ask.
+If passed a ticket reference, fetch it from the issue tracker, including every comment, and state its title before the first edit. If the reference is ambiguous or the fetch fails, ask.
 
 Fixed order, no step skipped or reordered: implement → test → review → checklist → commit. Reaching "ready to commit" without having run the checklist step is a process error, not a shortcut — go back and run it.
 
