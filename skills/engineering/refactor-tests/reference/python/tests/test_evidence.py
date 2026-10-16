@@ -109,7 +109,7 @@ def runs(tmp_path_factory):
         "CALLTIME_FILE": str(out / "calltime.json"),
     }
     timing = subprocess.run(
-        base + ["-p", "calltime"], cwd=proj, env=timing_env, capture_output=True, check=False,
+        base + ["--no-cov", "-p", "calltime"], cwd=proj, env=timing_env, capture_output=True, check=False,
     )
     assert timing.returncode == 1, timing.stdout + timing.stderr
     return proj, out
@@ -143,6 +143,15 @@ def test_extract_arcs_emits_per_test_lines_and_arcs(runs):
     d1 = arcs["tests/test_calc.py::test_div[4-2-2]"]["pkg/calc.py"]
     d2 = arcs["tests/test_calc.py::test_div[9-3-3]"]["pkg/calc.py"]
     assert d1 == d2 and d1["lines"] == [6, 8]
+
+
+def test_extract_arcs_resolves_a_symlinked_root(runs, tmp_path):
+    # macOS /tmp is a symlink to /private/tmp; coverage stores real paths.
+    proj, out = runs
+    link = tmp_path / "proj-link"
+    link.symlink_to(proj, target_is_directory=True)
+    arcs = extract_arcs(str(out / ".coverage"), root=str(link))
+    assert arcs["tests/test_calc.py::test_add"]["pkg/calc.py"]["lines"] == [2]
 
 
 def test_extract_arcs_keeps_only_run_contexts(runs):
@@ -263,4 +272,3 @@ def test_assemble_cli_writes_out_and_merges_existing(runs, tmp_path):
         "tests": {}, "excluded": [],
     }
     assert not (tmp_path / "test-evidence.json.tmp").exists()
-

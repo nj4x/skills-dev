@@ -21,7 +21,8 @@ RUN_SUFFIX = "|run"
 
 def _rel(path, root):
     if root:
-        rel = os.path.relpath(path, root)
+        # coverage stores real paths; resolve a symlinked root (macOS /tmp) to match.
+        rel = os.path.relpath(path, os.path.realpath(root))
         if not rel.startswith(".."):
             return rel
     return path

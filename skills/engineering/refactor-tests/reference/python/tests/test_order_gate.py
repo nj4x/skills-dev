@@ -7,9 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-HELPERS = Path(__file__).resolve().parent.parent  # conftest.py puts this on sys.path
+from order_gate import choose_plugin, classify, demote, normalize_id, read_junit  # conftest.py puts HELPERS on sys.path
 
-from order_gate import choose_plugin, classify, demote, normalize_id, read_junit  # after conftest path setup
+HELPERS = Path(__file__).resolve().parent.parent
 
 A = "tests.pkg.test_a::test_one"
 B = "tests.pkg.test_a::test_two"
@@ -53,8 +53,14 @@ def test_plugin_choice_never_enables_two_shufflers():
         for rl in (True, False):
             p = choose_plugin(random_order_present=ro, randomly_present=rl, seed=1)
             random_order_on = any(a.startswith("--random-order") for a in p["args"])
-            randomly_on = p["plugin"] == "pytest-randomly"
+            randomly_installed = rl or "pytest-randomly" in p["with"]
+            args = p["args"]
+            randomly_disabled = any(
+                args[i] == "-p" and args[i + 1] == "no:randomly" for i in range(len(args) - 1)
+            )
+            randomly_on = randomly_installed and not randomly_disabled
             assert random_order_on != randomly_on
+            assert random_order_on == ro
 
 
 # --- gate classification -------------------------------------------------------
