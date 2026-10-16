@@ -30,7 +30,7 @@ Every step relies on these preconditions:
 - Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
 - Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
 - Update the ledger after every durable side effect so a mid-run compaction is recoverable.
-- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`.
+- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`. The random-order gate (Step 8b) also runs before the exit; it too writes only under `.scratch/refactor-tests/`.
 - `rm -f` any temp file on every exit path, including hard-abort paths.
 - Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
 
@@ -208,7 +208,7 @@ Parse every test file (post-layout) using the language's AST parser. For each te
 
 Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → parametrize cluster → parametrize pair.
 
-For each **removal** candidate (exact duplicate, trivially true): emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion).
+For each **removal** candidate (exact duplicate, trivially true): emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion). An exact-duplicate removal also carries `duplicate_of`: the name of the test that stays, plus `duplicate_of_file` when that test is in another file.
 
 For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to the `review_candidates` array only, never to `removals`. The user decides whether to remove it.
 
@@ -227,6 +227,32 @@ For each **parametrize** candidate:
 - Emit `{ file, tests: [...], consolidated_name, consolidated_body, required_imports, criterion, evidence }` where `consolidated_body` is a concrete parametrized test body with the actual parameter tuples derived from the originals.
 
 Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`, with top-level `evidence: { file: ".scratch/refactor-tests/test-evidence.json", status }`. `status` is `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
+
+### Step 8b — Random-order gate
+
+Set ledger `phase: order-gate`. Runs after Step 8 has written `simplification-plan.json` and before Step 9 changes any file. It runs under `--dry-run` and `--phases=B` too, so a dry-run plan already holds its demotions. It never stops the run: a failure degrades (see Degrade rules). Helper: `$SKILL_DIR/reference/python/order_gate.py` (`plugin`, `classify`, `demote`). Schema: `reference/patterns.md` → Random-order gate.
+
+**Ledger resume.** Ledger `order_gate.status` of `ok`, `skipped`, or `failed` is final: reuse it and do not run the suite again. With `ok`, run step 6 again on `.scratch/refactor-tests/order-gate.json` (`demote` is idempotent), so a plan rewritten after the gate still holds the demotions.
+
+The gate is Python-only for now. A project with no Python runner gets `status: skipped` with reason `no random-order gate for <lang>`.
+
+1. **Plugin.** Probe both plugins with the runner's own launcher, as Step 3 probes pytest-randomly: `import random_order` (pytest-random-order) and `import pytest_randomly`; exit 0 means present. Then run `python3 $SKILL_DIR/reference/python/order_gate.py plugin --random-order-present yes|no --randomly-present yes|no`. It draws the seed and prints `{ plugin, with, args, seed }`. A project that already has pytest-random-order keeps it with `--random-order-bucket=global`, and `-p no:randomly` blocks pytest-randomly when both are installed. Otherwise pytest-randomly runs, installed only for this run when `with` names it (`uv run --with pytest-randomly`, or `pip install --target` into `.scratch/refactor-tests/` plus `PYTHONPATH`, as in Step 7). Never run two shufflers, and edit no project config. Record `plugin` and `seed` in ledger `order_gate` before the run. On a resume that finds a recorded `seed` but no final `status`, pass it back with `plugin --seed <recorded>` so the re-run keeps the same seed.
+2. **Gate run.** One seeded full-suite run on the post-layout suite. Build it from the recorded runner command of Step 3: drop `-p no:randomly` when the plugin is pytest-randomly, add the `with` installs and the `args`, and write JUnit XML:
+
+   ```sh
+   uv run --with pytest-randomly pytest --randomly-seed=<seed> --junitxml=.scratch/refactor-tests/order-gate.xml
+   ```
+
+3. **Baseline.** Use the ledger `simplification.post_layout_baseline.python` from Step 6. When it is absent (`--phases=B` skips Phase A, or a `--dry-run` moved nothing so Step 6 recorded none), use the Step 3 baseline instead: ledger `baseline.python` with `passed` set to the passing ids in `baseline-ids.json`. Write it to a temp file as `{ "passed": <ids or count>, "failed": [ids] }`. Ids may be node ids (`tests/a/test_x.py::Cls::test`) or JUnit ids (`tests.a.test_x.Cls::test`): `classify` converts both to JUnit form before it compares. Tests not passing there are excluded from the gate and stay listed as baseline failures.
+4. **Classify.** `python3 $SKILL_DIR/reference/python/order_gate.py classify --baseline <temp file> --gate .scratch/refactor-tests/order-gate.xml --seed <seed>`. When the output has `rerun_required: true`, a baseline-passing test failed in the gate run. Re-run the full suite once with the same command and seed (the order broke it, so never only the failing ids), with `--junitxml=.scratch/refactor-tests/order-gate-rerun.xml`. Then classify again with `--rerun .scratch/refactor-tests/order-gate-rerun.xml`. A test still failing is `order-dependent`; a test passing on the re-run is `flaky`. Write the final output to `.scratch/refactor-tests/order-gate.json`.
+5. **Ledger.** Record `order_gate: { status: ok, reason: null, plugin, seed, order_dependent, flaky }`.
+6. **Demote.** `python3 $SKILL_DIR/reference/python/order_gate.py demote --plan .scratch/refactor-tests/simplification-plan.json --gate-result .scratch/refactor-tests/order-gate.json`. Every planned removal, parametrize merge, or kept duplicate that involves an `order-dependent` or `flaky` test moves to `review_candidates` with `criterion: "order-dependent"` or `"flaky"`, `seed`, and `failing_ids`. A kept duplicate is the test an exact-duplicate removal keeps: Step 8 writes it as `duplicate_of` (and `duplicate_of_file` when it lives in another file). The run continues.
+7. `rm -f` the temp baseline file and both XML files on every path, success or degraded. Keep `order-gate.json`: the report and resume read it.
+
+**Degrade rules.** The gate never stops the run.
+- The plugin will not install, a run crashes (exit 127 or signal), the XML file is missing, or the helper exits non-zero: set `order_gate.status: failed` with a one-line reason. No Python runner: `status: skipped`. `seed`, `order_dependent`, and `flaky` are then `null`, `[]`, `[]` when the gate never ran.
+- Exit 1 from either run is data: failing tests are what the gate reads. Exit 2–5 (interrupted, internal error, usage error, no tests collected) means the run broke: `status: failed` with the exit code as reason.
+- With status other than `ok`, the plan stays as Step 8 wrote it: the static changes proceed and Step 10 still validates them. The report carries a warning with the reason.
 
 ### Step 9 — Execute simplification
 
@@ -297,6 +323,7 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 - Parametrizations skipped (AST editor failures): list with reasons
 - Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost), count and listing per group; for coverage-subset and cost, each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"; user decides whether to remove
 - Seams: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended); pinning notes (`covered through the interface` / `move the assertion to the interface`) per candidate, never removed; an **add candidates** section (confirmed seams no interface test reaches), or the warning that evidence was not `ok` and it was omitted
+- Order gate: status (`ok`/`skipped`/`failed` plus reason) with plugin and seed; every `order-dependent` and `flaky` test, whether a planned change touches it or not; the changes moved to review because of them; baseline failures excluded from the gate. A status other than `ok` also adds a warning that static changes proceeded without the gate
 - Unanalyzable files (skipped by AST parser): list with reasons
 - Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed test; when evidence was not `ok`, omit the totals and print the warning
 - Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
