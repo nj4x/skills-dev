@@ -132,7 +132,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 ```json
 {
-  "phase": "discovery|baseline|moving|rewriting|validating|evidence|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
+  "phase": "discovery|baseline|moving|rewriting|validating|evidence|seams|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
   "dry_run": false,
   "phases_requested": ["A", "B", "C"],
   "project_path": "/abs/path",
@@ -150,6 +150,10 @@ This preserves the package (compilation works) and allows filtering: `go test ./
   "evidence": {
     "file": ".scratch/refactor-tests/test-evidence.json",
     "python": { "status": "ok", "reason": null, "tests": 410 }
+  },
+  "seams": {
+    "status": "confirmed",
+    "modules": { "src/protrading/adapters/instruments.py": { "seams": [ { "name": "parse_instrument", "signal": "__all__", "status": "confirmed" } ] } }
   },
   "simplification": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
@@ -260,6 +264,53 @@ A test that meets several criteria gets one entry per criterion, not one merged 
 `reference/python/select_candidates.py` builds the coverage-subset and cost entries from `test-evidence.json`; `time_saved_s` equals the test's own `call_s` (serial time, not wall time). `test_name` in these entries is the id remainder after the file path (`Class::test[param]` for methods and parametrized ids), not a bare function name. `reference/python/calltime_delta.py` builds ledger `simplification.call_time`: total `call_s` before (evidence pass) and after (simplify validation run), `delta_s = after_s - before_s`, and `call_s` per removed test id (`null` when the id has no evidence entry; ids are node ids, and a bare `<file>::<test>` also matches the `<file>::<Class>::<test>` method and its parametrized ids). A missing validation-run calltime file also gives null figures and a warning. With evidence status other than `ok`, every figure is `null` and `warning` names the reason.
 
 `evidence.<lang>.status` is `ok`, `skipped`, or `failed`; `reason` is a one-line string when not `ok`; `tests` is the number of entries written. Resume reuses a recorded status rather than re-running. The top-level `evidence` object in `simplification-plan.json` is `{ "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok|skipped|failed" }`: `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
+
+## Seam classification (Python)
+
+Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
+
+**Seam signals**, per source module, strongest first. A name takes the first signal that proposes it, and the proposal records that signal.
+
+| Signal | Value | Proposes |
+|---|---|---|
+| (a) `__all__` | `__all__` | each public name listed in the module's `__all__` |
+| (b) cross-package import | `cross-package-import` | a public function or class that a source file in another package of the project imports from this module (`from <module> import <name>`, relative imports resolved) |
+| (c) public surface | `public-api` | only when the module has no `__all__`: public top-level functions and classes, and the public methods of those classes as `Class.method` |
+
+Names with a leading underscore are never proposed. Test files and `conftest.py` are not source modules.
+
+**Static classification**, per test and per source module, from the test's AST only. The test's references to that module are the names it imports and uses, attribute access on imported modules and classes, and `patch("pkg.mod.name")` (as a call or as a decorator on the test or its class), `patch.object(mod, "name")`, `monkeypatch.setattr("pkg.mod.name", ...)` targets. A reference is a seam when its name is a confirmed seam, or its first segment is a seam class and the remaining segments are public. A method call on an instance is not resolved.
+
+- **Interface test**: at least one reference, and every reference is a seam.
+- **Pinning candidate**: at least one reference is not a seam (`internals` lists them, e.g. `_tokenize`, or a mock patched at an internal path).
+- One test can be an interface test for one module and a pinning candidate for another.
+
+**Coverage against the interface** (needs evidence status `ok`). A seam's body lines are the lines of its body statements (decorators and the `def`/`class` header excluded: the header runs at import, outside any `|run` context). A seam is **reached** when an interface test's `covered` lines for the module intersect its body lines; parametrized ids merge by their base id. A confirmed seam no interface test reaches is an **add candidate**; pinning tests never count. A seam whose name has no function or class body in its module (a re-export or a constant in `__all__`) is never an add candidate; the report warns. A pinning candidate has `covered_through_interface: true` when some interface test of the same module covers a superset of its lines in that module (a pinning test with no coverage in the evidence gets `false`, with a warning); the note is then "covered through the interface", otherwise "move the assertion to the interface". With evidence status other than `ok`, `add_candidates` and `covered_through_interface` are omitted (keys absent) and the note is "move the assertion to the interface".
+
+**`seams` object** in `simplification-plan.json` (only confirmed seams are listed; under `--dry-run` or unattended runs seams stay `proposed` in the ledger and the plan carries no `pinning_candidates`):
+
+```json
+"seams": {
+  "modules": {
+    "src/protrading/adapters/instruments.py": {
+      "seams": [ { "name": "parse_instrument", "signal": "__all__", "status": "confirmed" } ]
+    }
+  },
+  "add_candidates": [ { "module": "src/protrading/adapters/instruments.py", "seam": "parse_instrument" } ],
+  "pinning_candidates": [
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_tokenize_directly",
+      "module": "src/protrading/adapters/instruments.py",
+      "internals": ["_tokenize"],
+      "covered_through_interface": true,
+      "note": "covered through the interface"
+    }
+  ]
+}
+```
+
+Each pinning candidate also goes to `review_candidates` as `{ file, test_name, criterion: "pinning", evidence, note }`.
 
 ## Test evidence schema (`.scratch/refactor-tests/test-evidence.json`)
 

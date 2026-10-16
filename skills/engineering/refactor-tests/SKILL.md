@@ -180,6 +180,26 @@ The pass is Python-only for now; other languages get `status: skipped` with reas
 
 ---
 
+### Step 7b — Seam classification
+
+Set ledger `phase: seams`. Runs after the evidence pass and before Step 8 writes the plan. Python only: other languages get no seams and no pinning classification. Read `codebase-design` for the terms module, interface, seam, and adapter. This skill uses the seam definition from `skills/engineering/tdd/SKILL.md:20` word for word:
+
+> A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
+
+Keep that quote and `tdd/SKILL.md:20` in step; `docs/agents/skill-dependencies.md` lists the dependency. Rules, schema, and signal definitions: `reference/patterns.md` → Seam classification. Helper: `$SKILL_DIR/reference/python/classify_seams.py`.
+
+**Ledger resume.** Ledger `seams.status: confirmed` is final: reuse `seams.modules`, never ask again, and skip to step 3. A `proposed` record is re-proposed.
+
+1. **Propose.** `python3 $SKILL_DIR/reference/python/classify_seams.py propose --root $PROJECT_PATH --source-root <root> …` (one `--source-root` per ledger `source_roots` entry). Each seam carries the signal that produced it: `__all__`, `cross-package-import`, or `public-api` (no `__all__`). Underscore names are never proposed. Store the result in ledger `seams: { status: proposed, modules }`.
+2. **Confirm: one round per run.** Show one list per source module (seam and signal). The user accepts, adds names, or removes names for each module. Mark accepted seams `confirmed`, set `seams.status: confirmed`, and write the ledger before step 3. Under `--dry-run`, or when no user can answer (an unattended run), hold no round: seams stay `proposed`, skip step 3, and the report says "seams proposed, not confirmed; no pinning classification".
+3. **Classify.** Write `{ "modules": <confirmed modules> }` to a temp seams file, then run `python3 $SKILL_DIR/reference/python/classify_seams.py classify --root $PROJECT_PATH --source-root <root> … --seams <file> --tests <test dirs> --evidence .scratch/refactor-tests/test-evidence.json`; `rm -f` the temp file on every path. Output: `seams` (`modules`, `add_candidates`, `pinning_candidates`) and `interface_tests`. Static test AST decides interface test vs pinning candidate; coverage plays no part in that split.
+4. **Evidence not `ok`** (or no evidence file): the static interface/pinning split still runs. `add_candidates` and `covered_through_interface` are omitted, and the report carries the helper's warning.
+5. **Route.** Add each `pinning_candidates` entry to `review_candidates` as `{ file, test_name, criterion: "pinning", evidence, note }` (`evidence` names the internals, `note` as the helper set it). Pinning candidates are never removals. Put the `seams` object in `simplification-plan.json` when Step 8 writes it. The skill writes no new tests: `add_candidates` are reported only.
+
+The helper resolves names statically: imports, calls, attribute access on imported modules and classes, and `patch(...)`, `patch.object(...)`, `monkeypatch.setattr(...)` string targets. A call on an instance (`obj._private()`) is invisible to it: do not guess, leave it unflagged.
+
+---
+
 ### Step 8 — Scan and build simplification plan
 
 Set ledger `phase: simplifying`.
@@ -276,6 +296,7 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 - Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
 - Parametrizations skipped (AST editor failures): list with reasons
 - Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost), count and listing per group; for coverage-subset and cost, each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"; user decides whether to remove
+- Seams: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended); pinning notes (`covered through the interface` / `move the assertion to the interface`) per candidate, never removed; an **add candidates** section (confirmed seams no interface test reaches), or the warning that evidence was not `ok` and it was omitted
 - Unanalyzable files (skipped by AST parser): list with reasons
 - Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed test; when evidence was not `ok`, omit the totals and print the warning
 - Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
