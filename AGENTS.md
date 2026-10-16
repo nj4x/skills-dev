@@ -29,6 +29,10 @@ See `docs/agents/hooks.md`.
 
 Issues are tracked in GitHub Issues; skills use `gh issue create` to publish. See `docs/agents/issue-tracker.md`.
 
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
 ### Domain docs
 
 Single-context repo with root `GLOSSARY.md`, `docs/adr/`, and `.data/requirements/`. See `docs/agents/domain.md`.
