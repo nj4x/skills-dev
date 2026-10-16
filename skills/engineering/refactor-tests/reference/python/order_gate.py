@@ -23,7 +23,10 @@ candidate that does not pass in the re-run is `order-dependent`, one that passes
 `demote` moves every planned removal, parametrize merge, or kept duplicate
 (`duplicate_of`, with `duplicate_of_file` when elsewhere, on an exact-duplicate removal) that involves an `order-dependent` or
 `flaky` test to `review_candidates`, one entry per involved test and criterion, with
-`seed` and `failing_ids`. The plan is rewritten atomically (to --out, default --plan).
+`seed` and `failing_ids`. A test matches a plan entry by file and base name (parameters
+dropped); when both the id and the entry name a class, the class must agree too. The
+plan is rewritten atomically (to --out, default --plan). A gate result with
+`rerun_required: true` is refused: exit 2, plan untouched.
 """
 import argparse
 import copy
@@ -138,14 +141,24 @@ def normalize_id(test_id):
 
 
 def matches(test_id, file, test_name):
-    head, name = _split(test_id)
-    want = _strip_params(test_name.split("::")[-1].split(".")[-1])[0]
-    if name != want:
+    """True when flagged `test_id` (node or JUnit id) is the plan's `file` + `test_name`.
+
+    Parameters are ignored on both sides. When both carry a class segment, it must agree.
+    """
+    head, name = _split(normalize_id(test_id))
+    segs = _strip_params(test_name)[0].split("::")
+    segs = segs[:-1] + segs[-1].split(".")
+    if name != segs[-1]:
         return False
-    if head.endswith(".py"):
-        return head == file
     mod = _module(file)
-    return head == mod or head.startswith(mod + ".")
+    if head == mod:
+        id_cls = None
+    elif head.startswith(mod + "."):
+        id_cls = head.rsplit(".", 1)[-1]
+    else:
+        return False
+    plan_cls = segs[-2] if len(segs) > 1 else None
+    return id_cls is None or plan_cls is None or id_cls == plan_cls
 
 
 def _involved(entry, kind):
@@ -159,6 +172,16 @@ def _involved(entry, kind):
 
 
 def demote(plan, gate_result):
+    """Plan with flagged changes moved to `review_candidates`.
+
+    Raises ValueError on a gate result with `rerun_required: true`: its candidates are
+    not yet labelled, so demoting nothing would pass them silently.
+    """
+    if gate_result.get("rerun_required"):
+        raise ValueError(
+            "gate result has rerun_required: true; re-run the suite with the same seed "
+            "and classify again with --rerun before demote"
+        )
     out = copy.deepcopy(plan)
     seed = gate_result.get("seed")
     flagged = {
@@ -236,7 +259,12 @@ def main(argv=None):
     else:
         plan = json.loads(Path(a.plan).read_text())
         gate = json.loads(Path(a.gate_result).read_text())
-        _write_atomic(a.out or a.plan, demote(plan, gate))
+        try:
+            demoted = demote(plan, gate)
+        except ValueError as e:
+            sys.stderr.write(f"order_gate demote: {e}\n")
+            return 2
+        _write_atomic(a.out or a.plan, demoted)
         return 0
     json.dump(doc, sys.stdout, indent=2)
     sys.stdout.write("\n")

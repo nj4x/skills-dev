@@ -12,8 +12,8 @@ test-evidence.json). After: total call duration of passed rows in the
 under the evidence block's `excluded` (so both totals cover one population). Each --removed
 id is `<file>::<test_name>`; it matches the evidence id exactly or any of its
 parametrized ids (`<id>[...]`). A removed id with no evidence entry gets
-`call_s: null`; a bare `<file>::<test>` also matches `<file>::<Class>::<test>`
-and its parametrized ids. A missing --calltime file (None) omits all figures
+`call_s: null`; a bare `<file>::<test>` with no exact match falls back to
+`<file>::<Class>::<test>` and its parametrized ids. A missing --calltime file (None) omits all figures
 with a warning, never `after_s` 0; `{}` is valid (every test removed). When the language's evidence status is not `ok`, every figure
 is null and `warning` says why.
 """
@@ -28,13 +28,17 @@ def _r(x):
     return round(x, 6)
 
 
-def _matches(nodeid, rid):
-    """True when evidence id `nodeid` is the removed test `rid` or a parametrized id of it."""
+def _matches(nodeid, rid, class_fallback=False):
+    """True when evidence id `nodeid` is the removed test `rid` or a parametrized id of it.
+
+    With `class_fallback`, a bare `<file>::<test>` also names a method `<file>::<Class>::<test>`.
+    """
     base = nodeid.partition("[")[0]
     if base == rid:
         return True
+    if not class_fallback:
+        return False
     file, _, name = rid.partition("::")
-    # A bare `<file>::<test>` also names a method: `<file>::<Class>::<test>`.
     return base.startswith(file + "::") and base.endswith("::" + name) and "::" not in name
 
 
@@ -67,7 +71,10 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
     )
     removed = []
     for rid in removed_ids:
-        hits = sorted(n for n in tests if _matches(n, rid))
+        # Class fallback only when no top-level id matches: never charge a sibling method.
+        hits = sorted(n for n in tests if _matches(n, rid)) or sorted(
+            n for n in tests if _matches(n, rid, class_fallback=True)
+        )
         if not hits:
             removed.append({"id": rid, "call_s": None})
         removed.extend({"id": n, "call_s": tests[n]["call_s"]} for n in hits)

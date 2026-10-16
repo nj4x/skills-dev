@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from order_gate import choose_plugin, classify, demote, normalize_id, read_junit  # conftest.py puts HELPERS on sys.path
 
 HELPERS = Path(__file__).resolve().parent.parent
@@ -319,3 +321,29 @@ def test_cli_plugin_draws_a_seed_when_none_given():
     r = _run("plugin", "--random-order-present", "no", "--randomly-present", "no")
     seed = json.loads(r.stdout)["seed"]
     assert isinstance(seed, int) and seed > 0
+
+
+def test_plan_test_name_with_dotted_param_still_matches():
+    plan = {"removals": [{"file": "tests/pkg/test_a.py", "test_name": "test_p[1.5]", "criterion": "trivially-true", "evidence": "e"}]}
+    out = demote(plan, {"seed": 1, "order_dependent": ["tests.pkg.test_a::test_p[1.5]"], "flaky": []})
+    assert out["removals"] == []
+
+
+def test_flagged_method_of_one_class_does_not_demote_same_name_in_another_class():
+    plan = {"removals": [{"file": "tests/pkg/test_b.py", "test_name": "TestB::test_x", "criterion": "trivially-true", "evidence": "e"}]}
+    for flagged in ("tests.pkg.test_b.TestA::test_x", "tests/pkg/test_b.py::TestA::test_x"):
+        assert demote(plan, {"seed": 1, "order_dependent": [flagged], "flaky": []}) == plan
+    for flagged in ("tests.pkg.test_b.TestB::test_x", "tests/pkg/test_b.py::TestB::test_x[2]"):
+        assert demote(plan, {"seed": 1, "order_dependent": [flagged], "flaky": []})["removals"] == []
+
+
+def test_demote_refuses_a_gate_result_that_still_needs_a_rerun(tmp_path):
+    gate = {"seed": 9, "order_dependent": [], "flaky": [], "candidates": [A], "rerun_required": True}
+    with pytest.raises(ValueError, match="rerun_required"):
+        demote(_plan(), gate)
+    (tmp_path / "plan.json").write_text(json.dumps(_plan()))
+    (tmp_path / "result.json").write_text(json.dumps(gate))
+    r = _run("demote", "--plan", str(tmp_path / "plan.json"), "--gate-result", str(tmp_path / "result.json"))
+    assert r.returncode != 0
+    assert "rerun_required" in r.stderr
+    assert json.loads((tmp_path / "plan.json").read_text()) == _plan()

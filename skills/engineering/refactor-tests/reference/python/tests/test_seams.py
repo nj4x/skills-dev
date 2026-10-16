@@ -334,3 +334,64 @@ def test_only_confirmed_seams_count_when_statuses_mix(proj):
     assert set(out["seams"]["modules"]) == {"src/pkg/text.py"}
     assert [s["name"] for s in out["seams"]["modules"]["src/pkg/text.py"]["seams"]] == ["slugify"]
     assert out["seams"]["add_candidates"] == []
+
+
+def test_relative_import_beyond_the_top_package_resolves_to_nothing(tmp_path):
+    proj = _proj_with(tmp_path, {
+        "src/a/__init__.py": "",
+        "src/a/b.py": "from ..x import y\n",
+        "src/x.py": "def y():\n    return 1\n",
+    })
+    assert _names(propose(proj, ["src"]), "src/x.py") == {"y": "public-api"}
+
+
+def test_object_form_monkeypatch_setattr_of_an_internal_makes_a_pinning_candidate(tmp_path):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/text.py": TEXT,
+        "tests/test_mp.py": (
+            "import pkg.text\nfrom pkg.text import slugify\n\n\n"
+            "def test_mp(monkeypatch):\n"
+            "    monkeypatch.setattr(pkg.text, '_tokenize', lambda s: ['x'])\n"
+            "    assert slugify('q') == 'x'\n"
+        ),
+    })
+    out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_mp.py"])
+    assert [(r["test_name"], r["internals"]) for r in out["seams"]["pinning_candidates"]] == [("test_mp", ["_tokenize"])]
+    assert out["interface_tests"] == []
+
+
+def test_add_candidate_reexported_by_an_imported_package_init_warns(tmp_path):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "from .text import slugify\n",
+        "src/pkg/text.py": TEXT,
+        "tests/test_re.py": "from pkg import slugify\n\n\ndef test_re():\n    assert slugify('A')\n",
+    })
+    ev = {"status": "ok", "tests": {"tests/test_re.py::test_re": {"covered": {"src/pkg/text.py": {"lines": [5]}}}}}
+    out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_re.py"], ev)
+    assert {"module": "src/pkg/text.py", "seam": "slugify"} in out["seams"]["add_candidates"]
+    assert any("slugify" in w and "re-exported by src/pkg/__init__.py" in w for w in out["warnings"])
+
+
+@pytest.mark.parametrize("src", [
+    "import other\n__all__ = ['pub'] + other.__all__\n",
+    "__all__ = ['pub']\n__all__ += _extra()\n",
+])
+def test_computed_all_is_not_read_as_no_all(tmp_path, src):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/m.py": src + "\n\ndef pub():\n    return 1\n\n\ndef other_pub():\n    return 2\n",
+    })
+    doc = propose(proj, ["src"])
+    assert _names(doc, "src/pkg/m.py") == {"pub": "__all__"}
+    assert any("src/pkg/m.py" in w and "__all__" in w for w in doc["warnings"])
+
+
+def test_all_built_from_literal_concatenation_and_augmented_assignment_is_evaluated(tmp_path):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/m.py": "__all__ = ['a'] + ['b']\n__all__ += ('c',)\n\n\ndef a():\n    return 1\n\n\ndef d():\n    return 2\n",
+    })
+    doc = propose(proj, ["src"])
+    assert _names(doc, "src/pkg/m.py") == {"a": "__all__", "b": "__all__", "c": "__all__"}
+    assert doc["warnings"] == []
