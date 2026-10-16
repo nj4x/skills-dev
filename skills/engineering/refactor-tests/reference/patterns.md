@@ -155,7 +155,8 @@ This preserves the package (compilation works) and allows filtering: `go test ./
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
     "review_candidates": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_always_passes", "criterion": "dead-test" } ],
-    "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ]
+    "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ],
+    "call_time": { "label": "serial call time, not wall time", "before_s": 41.2, "after_s": 37.9, "delta_s": -3.3, "removed": [ { "id": "tests/protrading/adapters/test_instruments.py::test_parse_duplicate", "call_s": 0.012 } ], "warning": null }
   },
   "spring": {
     "baseline": { "context_count": 5, "wall_time_seconds": 42.5 },
@@ -205,6 +206,22 @@ This preserves the package (compilation works) and allows filtering: `go test ./
       "test_name": "test_always_passes",
       "criterion": "dead-test",
       "evidence": "no assertion statement in body; executes code but no verify call"
+    },
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_parse_slow_roundtrip",
+      "criterion": "coverage-subset",
+      "evidence": "all 14 lines and 11 arcs also covered by other passing tests",
+      "call_s": 1.84,
+      "time_saved_s": 1.84
+    },
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_parse_slow_roundtrip",
+      "criterion": "cost",
+      "evidence": "call_s 1.84 s, top decile of 12 coverage-subset candidates, at least 0.5 s",
+      "call_s": 1.84,
+      "time_saved_s": 1.84
     }
   ],
   "parametrizations": [
@@ -239,6 +256,8 @@ Every `review_candidates` entry has the base fields `{ file, test_name, criterio
 | `failing_ids` | array of test ids | order-dependent, flaky |
 
 A test that meets several criteria gets one entry per criterion, not one merged entry.
+
+`reference/python/select_candidates.py` builds the coverage-subset and cost entries from `test-evidence.json`; `time_saved_s` equals the test's own `call_s` (serial time, not wall time). `test_name` in these entries is the id remainder after the file path (`Class::test[param]` for methods and parametrized ids), not a bare function name. `reference/python/calltime_delta.py` builds ledger `simplification.call_time`: total `call_s` before (evidence pass) and after (simplify validation run), `delta_s = after_s - before_s`, and `call_s` per removed test id (`null` when the id has no evidence entry; ids are node ids, and a bare `<file>::<test>` also matches the `<file>::<Class>::<test>` method and its parametrized ids). A missing validation-run calltime file also gives null figures and a warning. With evidence status other than `ok`, every figure is `null` and `warning` names the reason.
 
 `evidence.<lang>.status` is `ok`, `skipped`, or `failed`; `reason` is a one-line string when not `ok`; `tests` is the number of entries written. Resume reuses a recorded status rather than re-running. The top-level `evidence` object in `simplification-plan.json` is `{ "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok|skipped|failed" }`: `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
 
