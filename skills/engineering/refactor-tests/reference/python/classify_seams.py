@@ -13,6 +13,9 @@ functions and classes, and the public methods of those classes, as `Class.method
 Underscore names are never proposed. `__all__` built from literal lists with `+`, `+=`,
 `.extend` or `.append` is evaluated; a computed part (`+ other.__all__`) keeps the
 literal names, still counts as an `__all__` (no `public-api`), and adds a warning.
+Any other change to `__all__` (`.remove`, `.insert` and other list mutators, `del
+__all__[...]`, `__all__[:] = ...`, or an assignment or mutation nested in `if`/`try`/
+a function) is treated the same way.
 
 `classify` reads a seams file (the `propose` shape, edited by the user) and uses the
 seams whose status is `confirmed`. It prints {"seams": {modules, add_candidates,
@@ -27,8 +30,9 @@ Coverage plays no part in that split.
 With --evidence at status `ok`, add_candidates (confirmed seams with no interface test
 whose `covered` lines reach the seam's body) and `covered_through_interface` are
 computed. Otherwise both are omitted and a warning says so. When a package `__init__`
-re-exports an add candidate (`from .mod import name`) and a test references it through
-that package, the test is linked to the `__init__`, not to the source module: a
+re-exports an add candidate (`from .mod import name`, followed through every package
+level, e.g. `pkg/sub/__init__.py` re-exported again by `pkg/__init__.py`) and a test
+references it through that package, the test is linked to the `__init__`, not to the source module: a
 warning names the candidate so it is checked by hand.
 """
 import argparse
@@ -113,11 +117,33 @@ def _is_all(target):
     return isinstance(target, ast.Name) and target.id == "__all__"
 
 
+_LIST_MUTATORS = {
+    "append", "extend", "insert", "remove", "pop", "clear", "sort", "reverse",
+    "__setitem__", "__delitem__", "__iadd__", "__imul__",
+}
+
+
+def _mutates_all(node):
+    """True when `node` binds, deletes, or changes `__all__` in place."""
+    if isinstance(node, ast.Name) and node.id == "__all__":
+        return isinstance(node.ctx, (ast.Store, ast.Del))
+    if isinstance(node, ast.Subscript) and _is_all(node.value):
+        return isinstance(node.ctx, (ast.Store, ast.Del))
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and _is_all(node.func.value)
+        and node.func.attr in _LIST_MUTATORS
+    )
+
+
 def _all_names(tree):
     """(names, complete) for the module's top-level `__all__`; (None, True) when it has none.
 
-    Assignments, `+=`, and `__all__.extend/append(...)` of literals are evaluated in order.
-    Any other part makes the result incomplete: the literal names found so far are kept.
+    Top-level assignments, `+=`, and `__all__.extend/append(...)` of literals are evaluated
+    in order. Any other change to `__all__`, at top level or nested in any statement, makes
+    the result incomplete (and means an `__all__` exists): the literal names found so far
+    are kept.
     """
     names, complete = None, True
     for node in tree.body:
@@ -128,7 +154,7 @@ def _all_names(tree):
             names, value = [], node.value
         elif isinstance(node, ast.AugAssign) and _is_all(node.target):
             if not isinstance(node.op, ast.Add):
-                complete = False
+                names, complete = names or [], False
                 continue
             value = node.value
         elif (
@@ -142,6 +168,10 @@ def _all_names(tree):
             arg = node.value.args[0]
             value = ast.List(elts=[arg], ctx=ast.Load()) if node.value.func.attr == "append" else arg
         else:
+            # Any other change (remove, insert, del, slice assignment, or one nested in
+            # if/try/a function) cannot be evaluated: never pass it silently.
+            if any(_mutates_all(n) for n in ast.walk(node)):
+                names, complete = names or [], False
             continue
         if names is None:
             names = []
@@ -224,7 +254,7 @@ def propose(root, source_roots):
         declared, complete = _all_names(tree)
         if not complete:
             warnings.append(
-                f"{rel}: __all__ is computed, not a literal list; only its literal names are "
+                f"{rel}: __all__ is computed or mutated, not a literal list; only its literal names are "
                 "proposed under __all__ and public-api is not used"
             )
         for n in declared or []:
@@ -385,8 +415,13 @@ def _body_lines(tree, seam_name):
 
 
 def _package_reexports(root, files):
-    """(source module, name) -> {(package, exported name)} for `from ... import` in package `__init__`s."""
-    found = {}
+    """(source module, name) -> {(package, exported name)} for `from ... import` in package `__init__`s.
+
+    Chains are followed through every package level: when `pkg/sub/__init__.py` re-exports
+    `name` from `.mod` and `pkg/__init__.py` re-exports it from `.sub`, `(pkg.sub.mod, name)`
+    maps to both `(pkg.sub, name)` and `(pkg, name)`.
+    """
+    direct = {}
     for pkg, (rel, is_pkg) in files.items():
         if not is_pkg:
             continue
@@ -401,7 +436,17 @@ def _package_reexports(root, files):
                 continue
             for a in node.names:
                 if a.name != "*":
-                    found.setdefault((target, a.name), set()).add((pkg, a.asname or a.name))
+                    direct.setdefault((target, a.name), set()).add((pkg, a.asname or a.name))
+    found = {}
+    for key, first in direct.items():
+        seen, todo = set(), list(first)
+        while todo:
+            hop = todo.pop()
+            if hop in seen:
+                continue  # a cycle of re-exports ends here
+            seen.add(hop)
+            todo.extend(direct.get(hop, ()))
+        found[key] = seen
     return found
 
 

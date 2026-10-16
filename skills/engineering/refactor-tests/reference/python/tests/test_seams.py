@@ -395,3 +395,46 @@ def test_all_built_from_literal_concatenation_and_augmented_assignment_is_evalua
     doc = propose(proj, ["src"])
     assert _names(doc, "src/pkg/m.py") == {"a": "__all__", "b": "__all__", "c": "__all__"}
     assert doc["warnings"] == []
+
+
+@pytest.mark.parametrize("src", [
+    "__all__ = ['pub', 'other_pub']\n__all__.remove('other_pub')\n",
+    "__all__ = ['pub', 'other_pub']\ndel __all__[1]\n",
+    "__all__ = ['pub']\n__all__[:] = ['other_pub']\n",
+    "__all__ = ['pub']\n__all__.insert(0, 'other_pub')\n",
+    "__all__ = ['pub']\nif True:\n    __all__.append('other_pub')\n",
+    "__all__ = ['pub']\ntry:\n    __all__ += ['other_pub']\nexcept Exception:\n    pass\n",
+    "try:\n    __all__ = ['pub']\nexcept Exception:\n    __all__ = []\n",
+], ids=["remove", "del-item", "slice-assign", "insert", "nested-if", "nested-try", "assign-in-try"])
+def test_mutated_or_nested_all_is_incomplete_and_never_falls_back_to_public_api(tmp_path, src):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/m.py": src + "\n\ndef pub():\n    return 1\n\n\ndef other_pub():\n    return 2\n",
+    })
+    doc = propose(proj, ["src"])
+    seams = doc["modules"].get("src/pkg/m.py", {"seams": []})["seams"]
+    assert "public-api" not in {s["signal"] for s in seams}
+    assert any("src/pkg/m.py" in w and "__all__" in w for w in doc["warnings"])
+
+
+def test_reading_all_does_not_make_it_incomplete(tmp_path):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/m.py": "__all__ = ['a']\nNAMES = list(__all__)\nfor _n in __all__:\n    pass\n\n\ndef a():\n    return 1\n",
+    })
+    doc = propose(proj, ["src"])
+    assert _names(doc, "src/pkg/m.py") == {"a": "__all__"}
+    assert doc["warnings"] == []
+
+
+def test_add_candidate_reexported_through_two_package_levels_warns(tmp_path):
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "from .sub import slugify\n",
+        "src/pkg/sub/__init__.py": "from .text import slugify\n",
+        "src/pkg/sub/text.py": TEXT,
+        "tests/test_re.py": "from pkg import slugify\n\n\ndef test_re():\n    assert slugify('A')\n",
+    })
+    ev = {"status": "ok", "tests": {"tests/test_re.py::test_re": {"covered": {"src/pkg/sub/text.py": {"lines": [5]}}}}}
+    out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_re.py"], ev)
+    assert {"module": "src/pkg/sub/text.py", "seam": "slugify"} in out["seams"]["add_candidates"]
+    assert any("slugify" in w and "re-exported by src/pkg/__init__.py" in w for w in out["warnings"])

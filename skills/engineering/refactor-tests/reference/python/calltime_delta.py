@@ -12,8 +12,9 @@ test-evidence.json). After: total call duration of passed rows in the
 under the evidence block's `excluded` (so both totals cover one population). Each --removed
 id is `<file>::<test_name>`; it matches the evidence id exactly or any of its
 parametrized ids (`<id>[...]`). A removed id with no evidence entry gets
-`call_s: null`; a bare `<file>::<test>` with no exact match falls back to
-`<file>::<Class>::<test>` and its parametrized ids. A missing --calltime file (None) omits all figures
+`call_s: null`. A bare `<file>::<test>` names a top-level test only: it is never
+charged a `<file>::<Class>::<test>` method's `call_s` (one such method or several);
+when same-name methods exist, `warning` names them. A missing --calltime file (None) omits all figures
 with a warning, never `after_s` 0; `{}` is valid (every test removed). When the language's evidence status is not `ok`, every figure
 is null and `warning` says why.
 """
@@ -28,18 +29,21 @@ def _r(x):
     return round(x, 6)
 
 
-def _matches(nodeid, rid, class_fallback=False):
+def _matches(nodeid, rid):
     """True when evidence id `nodeid` is the removed test `rid` or a parametrized id of it.
 
-    With `class_fallback`, a bare `<file>::<test>` also names a method `<file>::<Class>::<test>`.
+    A bare `<file>::<test>` names the top-level test only, never `<file>::<Class>::<test>`.
     """
-    base = nodeid.partition("[")[0]
-    if base == rid:
-        return True
-    if not class_fallback:
-        return False
+    return nodeid.partition("[")[0] == rid
+
+
+def _same_name_methods(tests, rid):
+    """Base ids of class methods in `rid`'s file that share a bare `rid`'s test name."""
     file, _, name = rid.partition("::")
-    return base.startswith(file + "::") and base.endswith("::" + name) and "::" not in name
+    if "::" in name:
+        return []
+    bases = {n.partition("[")[0] for n in tests}
+    return sorted(b for b in bases if b.startswith(file + "::") and b.endswith("::" + name) and b != rid)
 
 
 def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
@@ -70,13 +74,18 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
         and nodeid not in excluded
     )
     removed = []
+    warnings = []
     for rid in removed_ids:
-        # Class fallback only when no top-level id matches: never charge a sibling method.
-        hits = sorted(n for n in tests if _matches(n, rid)) or sorted(
-            n for n in tests if _matches(n, rid, class_fallback=True)
-        )
+        hits = sorted(n for n in tests if _matches(n, rid))
         if not hits:
+            # No exact match: charge nothing, even when one class method has the name.
             removed.append({"id": rid, "call_s": None})
+            methods = _same_name_methods(tests, rid)
+            if methods:
+                warnings.append(
+                    f"{rid}: no top-level test with this id; not charged to same-name "
+                    f"class method(s) {', '.join(methods)}; pass the full node id"
+                )
         removed.extend({"id": n, "call_s": tests[n]["call_s"]} for n in hits)
     return {
         "label": LABEL,
@@ -84,7 +93,7 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
         "after_s": _r(after),
         "delta_s": _r(after - before),
         "removed": removed,
-        "warning": None,
+        "warning": "; ".join(warnings) or None,
     }
 
 

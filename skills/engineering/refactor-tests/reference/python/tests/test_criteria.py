@@ -299,10 +299,46 @@ def test_removed_bare_id_prefers_exact_match_over_class_method_and_skips_prefix_
     assert ids == ["tests/t.py::test_b", "tests/t.py::test_b[2]"]
 
 
-def test_removed_bare_id_falls_back_to_class_method_only_without_exact_match():
+def test_removed_bare_id_absent_from_evidence_never_takes_a_class_methods_call_s():
     ev = _evidence({
         "tests/t.py::TestK::test_c[1]": (0.1, _cov([1])),
         "tests/t.py::test_c2": (0.2, _cov([1])),
     })
-    ids = [r["id"] for r in call_time_delta(ev, {}, ["tests/t.py::test_c"])["removed"]]
-    assert ids == ["tests/t.py::TestK::test_c[1]"]
+    result = call_time_delta(ev, {}, ["tests/t.py::test_c"])
+    assert result["removed"] == [{"id": "tests/t.py::test_c", "call_s": None}]
+    assert "tests/t.py::TestK::test_c" in result["warning"]
+
+
+def test_removed_bare_id_is_not_charged_two_same_name_class_methods():
+    ev = _evidence({
+        "tests/t.py::TestA::test_c": (0.1, _cov([1])),
+        "tests/t.py::TestB::test_c": (0.2, _cov([1])),
+    })
+    result = call_time_delta(ev, {}, ["tests/t.py::test_c"])
+    assert result["removed"] == [{"id": "tests/t.py::test_c", "call_s": None}]
+    assert "tests/t.py::TestA::test_c" in result["warning"]
+    assert "tests/t.py::TestB::test_c" in result["warning"]
+
+
+def test_removed_full_method_id_is_charged_only_its_own_class():
+    ev = _evidence({
+        "tests/t.py::TestA::test_c": (0.1, _cov([1])),
+        "tests/t.py::TestB::test_c": (0.2, _cov([1])),
+    })
+    result = call_time_delta(ev, {}, ["tests/t.py::TestB::test_c"])
+    assert result["removed"] == [{"id": "tests/t.py::TestB::test_c", "call_s": 0.2}]
+    assert result["warning"] is None
+
+
+def test_class_less_id_rule_differs_on_purpose_between_gate_and_call_time():
+    """Pinned rule (patterns.md, Demotion): the gate treats a class-less side as matching any
+    class, so it errs toward demoting; call time treats a bare id as top-level only, so it errs
+    toward charging nothing."""
+    from order_gate import matches
+
+    assert matches("tests/t.py::TestK::test_c", "tests/t.py", "test_c")
+    assert matches("tests.t::test_c", "tests/t.py", "TestK::test_c")
+    ev = _evidence({"tests/t.py::TestK::test_c": (0.1, _cov([1]))})
+    assert call_time_delta(ev, {}, ["tests/t.py::test_c"])["removed"] == [
+        {"id": "tests/t.py::test_c", "call_s": None}
+    ]

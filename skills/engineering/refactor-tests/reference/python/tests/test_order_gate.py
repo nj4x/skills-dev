@@ -344,6 +344,6 @@ def test_demote_refuses_a_gate_result_that_still_needs_a_rerun(tmp_path):
     (tmp_path / "plan.json").write_text(json.dumps(_plan()))
     (tmp_path / "result.json").write_text(json.dumps(gate))
     r = _run("demote", "--plan", str(tmp_path / "plan.json"), "--gate-result", str(tmp_path / "result.json"))
-    assert r.returncode != 0
+    assert r.returncode == 2
     assert "rerun_required" in r.stderr
     assert json.loads((tmp_path / "plan.json").read_text()) == _plan()
