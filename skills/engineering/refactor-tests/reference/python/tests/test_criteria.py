@@ -288,11 +288,21 @@ def test_call_time_delta_empty_calltime_is_valid_after_zero():
     assert call_time_delta(ev, {}, ["tests/t.py::test_a"])["after_s"] == 0.0
 
 
-def test_removed_matches_class_method_and_params_but_not_prefix_siblings():
+def test_removed_bare_id_prefers_exact_match_over_class_method_and_skips_prefix_siblings():
     ev = _evidence({
         "tests/t.py::TestK::test_b[1]": (0.1, _cov([1])),
         "tests/t.py::test_b2": (0.2, _cov([1])),
         "tests/t.py::test_b": (0.3, _cov([1])),
+        "tests/t.py::test_b[2]": (0.4, _cov([1])),
     })
     ids = [r["id"] for r in call_time_delta(ev, {}, ["tests/t.py::test_b"])["removed"]]
-    assert ids == ["tests/t.py::TestK::test_b[1]", "tests/t.py::test_b"]
+    assert ids == ["tests/t.py::test_b", "tests/t.py::test_b[2]"]
+
+
+def test_removed_bare_id_falls_back_to_class_method_only_without_exact_match():
+    ev = _evidence({
+        "tests/t.py::TestK::test_c[1]": (0.1, _cov([1])),
+        "tests/t.py::test_c2": (0.2, _cov([1])),
+    })
+    ids = [r["id"] for r in call_time_delta(ev, {}, ["tests/t.py::test_c"])["removed"]]
+    assert ids == ["tests/t.py::TestK::test_c[1]"]

@@ -5,12 +5,14 @@ Usage:
   python classify_seams.py classify --root PROJECT --source-root src \
       --seams seams.json --tests tests [--tests ...] [--evidence test-evidence.json]
 
-`propose` prints {"modules": {<source file>: {"seams": [{name, signal, status}]}}}
-with status `proposed`. Signals, strongest first: `__all__`; `cross-package-import`
-(a public name imported by a file in another package of the project); `public-api`
-(only when the module has no `__all__`: public top-level functions and classes, and
-the public methods of those classes, as `Class.method`). Underscore names are never
-proposed.
+`propose` prints {"modules": {<source file>: {"seams": [{name, signal, status}]}},
+"warnings": [...]} with status `proposed`. Signals, strongest first: `__all__`;
+`cross-package-import` (a public name imported by a file in another package of the
+project); `public-api` (only when the module has no `__all__`: public top-level
+functions and classes, and the public methods of those classes, as `Class.method`).
+Underscore names are never proposed. `__all__` built from literal lists with `+`, `+=`,
+`.extend` or `.append` is evaluated; a computed part (`+ other.__all__`) keeps the
+literal names, still counts as an `__all__` (no `public-api`), and adds a warning.
 
 `classify` reads a seams file (the `propose` shape, edited by the user) and uses the
 seams whose status is `confirmed`. It prints {"seams": {modules, add_candidates,
@@ -18,12 +20,16 @@ pinning_candidates}, "interface_tests": [...], "warnings": [...]}. Per test and 
 source module: the test is an interface test when every name it references from that
 module is a seam, and a pinning candidate when it references at least one non-seam
 name. Referenced names come from imports, calls, attribute access on imported modules
-and classes, and `patch(...)` / `patch.object(...)` / `monkeypatch.setattr(...)`
-string targets. Coverage plays no part in that split.
+and classes, `patch(...)` and `monkeypatch.setattr(...)` string targets, and the
+object forms `patch.object(mod, "name")` and `monkeypatch.setattr(mod, "name", value)`.
+Coverage plays no part in that split.
 
 With --evidence at status `ok`, add_candidates (confirmed seams with no interface test
 whose `covered` lines reach the seam's body) and `covered_through_interface` are
-computed. Otherwise both are omitted and a warning says so.
+computed. Otherwise both are omitted and a warning says so. When a package `__init__`
+re-exports an add candidate (`from .mod import name`) and a test references it through
+that package, the test is linked to the `__init__`, not to the source module: a
+warning names the candidate so it is checked by hand.
 """
 import argparse
 import ast
@@ -88,15 +94,61 @@ def _parse(path):
         return None
 
 
+def _literal_names(node):
+    """(names, complete) for a list/tuple literal or a `+` chain of them.
+
+    `complete` is False when some part is not a literal of strings (e.g. `x.__all__`).
+    """
+    if isinstance(node, (ast.List, ast.Tuple)):
+        names = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        return names, len(names) == len(node.elts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, lok = _literal_names(node.left)
+        right, rok = _literal_names(node.right)
+        return left + right, lok and rok
+    return [], False
+
+
+def _is_all(target):
+    return isinstance(target, ast.Name) and target.id == "__all__"
+
+
 def _all_names(tree):
+    """(names, complete) for the module's top-level `__all__`; (None, True) when it has none.
+
+    Assignments, `+=`, and `__all__.extend/append(...)` of literals are evaluated in order.
+    Any other part makes the result incomplete: the literal names found so far are kept.
+    """
+    names, complete = None, True
     for node in tree.body:
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if any(isinstance(t, ast.Name) and t.id == "__all__" for t in targets) and isinstance(
-                node.value, (ast.List, ast.Tuple)
-            ):
-                return [e.value for e in node.value.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
-    return None
+        value = None
+        if isinstance(node, ast.Assign) and any(_is_all(t) for t in node.targets):
+            names, value = [], node.value
+        elif isinstance(node, ast.AnnAssign) and _is_all(node.target) and node.value is not None:
+            names, value = [], node.value
+        elif isinstance(node, ast.AugAssign) and _is_all(node.target):
+            if not isinstance(node.op, ast.Add):
+                complete = False
+                continue
+            value = node.value
+        elif (
+            isinstance(node, ast.Expr)
+            and isinstance(node.value, ast.Call)
+            and isinstance(node.value.func, ast.Attribute)
+            and _is_all(node.value.func.value)
+            and node.value.func.attr in ("extend", "append")
+            and len(node.value.args) == 1
+        ):
+            arg = node.value.args[0]
+            value = ast.List(elts=[arg], ctx=ast.Load()) if node.value.func.attr == "append" else arg
+        else:
+            continue
+        if names is None:
+            names = []
+        more, ok = _literal_names(value)
+        names += more
+        complete = complete and ok
+    return names, complete
 
 
 def _public_api(tree):
@@ -125,7 +177,7 @@ def _resolve_from(importer, importer_is_pkg, level, module):
     if level == 0:
         return module
     pkg = importer.split(".") if importer_is_pkg else importer.split(".")[:-1]
-    if level - 1 > len(pkg):
+    if level - 1 >= len(pkg):  # climbs past the top-level package: not a project module
         return None
     pkg = pkg[: len(pkg) - (level - 1)]
     return ".".join(pkg + ([module] if module else []))
@@ -165,10 +217,16 @@ def propose(root, source_roots):
             trees[name] = tree
     imported = cross_package_imports(trees, files)
     modules = {}
+    warnings = []
     for name, tree in sorted(trees.items()):
         rel = files[name][0]
         proposals = {}
-        declared = _all_names(tree)
+        declared, complete = _all_names(tree)
+        if not complete:
+            warnings.append(
+                f"{rel}: __all__ is computed, not a literal list; only its literal names are "
+                "proposed under __all__ and public-api is not used"
+            )
         for n in declared or []:
             if _public(n):
                 proposals.setdefault(n, "__all__")
@@ -183,7 +241,7 @@ def propose(root, source_roots):
             modules[rel] = {
                 "seams": [{"name": n, "signal": s, "status": "proposed"} for n, s in proposals.items()]
             }
-    return {"modules": modules}
+    return {"modules": modules, "warnings": warnings}
 
 
 def _seam_ok(rest, seam_names):
@@ -256,6 +314,16 @@ class _TestRefs(ast.NodeVisitor):
         elif _is_patch(func) or (isinstance(func, ast.Attribute) and func.attr == "setattr"):
             if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                 target = node.args[0].value
+            elif (
+                not _is_patch(func)
+                and len(node.args) >= 2
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                # object form: monkeypatch.setattr(mod, "name", value)
+                base = self._expr_dotted(node.args[0])
+                if base:
+                    target = f"{base}.{node.args[1].value}"
         if target:
             self._add(target)
         self.generic_visit(node)
@@ -316,6 +384,27 @@ def _body_lines(tree, seam_name):
     return set()
 
 
+def _package_reexports(root, files):
+    """(source module, name) -> {(package, exported name)} for `from ... import` in package `__init__`s."""
+    found = {}
+    for pkg, (rel, is_pkg) in files.items():
+        if not is_pkg:
+            continue
+        tree = _parse(root / rel)
+        if tree is None:
+            continue
+        for node in tree.body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            target = _resolve_from(pkg, True, node.level, node.module)
+            if target not in files or target == pkg:
+                continue
+            for a in node.names:
+                if a.name != "*":
+                    found.setdefault((target, a.name), set()).add((pkg, a.asname or a.name))
+    return found
+
+
 def _evidence_lines(evidence, file_id, rel_src):
     """Covered line set of `rel_src` over all evidence ids of one test (parametrized ids merged)."""
     lines = set()
@@ -343,6 +432,7 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
         )
 
     interface, pinning_raw = [], []
+    all_refs = set()
     for tpath in sorted(test_paths):
         tree = _parse(root / tpath)
         if tree is None:
@@ -356,6 +446,7 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
             visitor = _TestRefs(module_aliases, files)
             for stmt in [*decorators, *fn.body]:
                 visitor.visit(stmt)
+            all_refs |= visitor.refs
             by_module = {}
             for mod, rest in visitor.refs:
                 by_module.setdefault(mod, set()).add(rest)
@@ -398,6 +489,16 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
                 reached = any(lines & _evidence_lines(evidence, test_id(r), rel) for r in tests_here)
                 if not reached:
                     add.append({"module": rel, "seam": seam["name"]})
+        reexports = _package_reexports(root, files)
+        for cand in add:
+            head = cand["seam"].partition(".")[0]
+            for pkg, exported in sorted(reexports.get((rel_to_mod[cand["module"]], head), ())):
+                if any(m == pkg and r.partition(".")[0] == exported for m, r in all_refs):
+                    warnings.append(
+                        f"{cand['module']}: add candidate {cand['seam']} is re-exported by {files[pkg][0]} "
+                        f"as {exported}, and tests import it from there; those tests are not linked to "
+                        f"{cand['module']}, so check the candidate by hand"
+                    )
         out["add_candidates"] = add
     pinning = []
     for rec in pinning_raw:
