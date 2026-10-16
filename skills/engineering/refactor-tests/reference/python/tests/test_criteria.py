@@ -3,7 +3,7 @@
 select_candidates.py: coverage-subset (greedy, slowest first) and cost (top decile).
 calltime_delta.py: serial call time before -> after, per removed test.
 
-Run: uv run --with pytest pytest reference/python/tests
+Run: uv run --with pytest --with pytest-cov --with coverage pytest reference/python/tests
 """
 import json
 import subprocess

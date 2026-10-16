@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-HELPERS = Path(__file__).resolve().parent.parent  # conftest.py puts this on sys.path
+from classify_seams import classify, propose  # conftest.py puts HELPERS on sys.path
 
-from classify_seams import classify, propose  # after conftest path setup
+HELPERS = Path(__file__).resolve().parent.parent
 
 TEXT = '''__all__ = ["slugify"]
 
@@ -251,8 +251,10 @@ def test_unconfirmed_seams_classify_nothing(proj):
 
 
 def test_cli_propose_and_classify_round_trip(proj, tmp_path):
-    run = lambda *a: subprocess.run([sys.executable, str(HELPERS / "classify_seams.py"), *a],
-                                    capture_output=True, text=True, check=False)
+    def run(*a):
+        return subprocess.run([sys.executable, str(HELPERS / "classify_seams.py"), *a],
+                              capture_output=True, text=True, check=False)
+
     proposed = run("propose", "--root", str(proj), "--source-root", "src")
     assert proposed.returncode == 0, proposed.stderr
     seams_file = tmp_path / "seams.json"
@@ -299,9 +301,9 @@ def test_reexported_seam_is_not_an_add_candidate_and_warns(tmp_path):
     })
     ev = {"status": "ok", "tests": {"tests/test_re.py::test_re": {"covered": {}}}}
     out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_re.py"], ev)
-    assert out["seams"]["add_candidates"] == [] or all(
-        c["module"] != "src/pkg/__init__.py" for c in out["seams"]["add_candidates"]
-    )
+    assert ("src/pkg/__init__.py", "slugify") not in {
+        (c["module"], c["seam"]) for c in out["seams"]["add_candidates"]
+    }
     assert any("re-export or constant" in w for w in out["warnings"])
 
 
