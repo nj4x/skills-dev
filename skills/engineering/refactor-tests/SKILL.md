@@ -77,6 +77,8 @@ Write `$PROJECT_PATH/.scratch/refactor-tests/plan.json` with the full move list,
 
 Set ledger `phase: baseline`.
 
+**Fixed order.** For Python, when pytest-randomly is importable in the runner's environment (probe with the runner's own launcher, e.g. `uv run python -c 'import pytest_randomly'` or `.venv/bin/python -c ...`; exit 0 means present), append `-p no:randomly` to the resolved runner command and record the command with the flag in ledger `runners`. Every baseline and validation run, flake retries included, uses that recorded command, so test order stays fixed between runs.
+
 Run the full test suite using the detected runner command. Per language, capture test ids using runner output specified in `reference/patterns.md` → Per-runner output formats. Record into ledger `baseline`:
 - pass count
 - failing count
@@ -113,9 +115,9 @@ For each moved file with a rewrite entry in `plan.json`:
 
 Set ledger `phase: validating`.
 
-Re-run the full suite. Regression check: for each test id that passed in `baseline`, map it to its new id via `id_map` (or keep original id if unmoved), verify the mapped id still passes.
+Re-run the full suite with the recorded runner command (fixed order, see Step 3). Regression check: for each test id that passed in `baseline`, map it to its new id via `id_map` (or keep original id if unmoved), verify the mapped id still passes.
 
-If any regressed id is found, **re-run just those ids once** to confirm the failure (flake detection). If they all pass on retry, resume as healthy. If any still fail, record as regressed.
+If any regressed id is found, **re-run just those ids once** with the recorded runner command to confirm the failure (flake detection). If they all pass on retry, resume as healthy. If any still fail, record as regressed.
 
 - **Healthy**: record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B or stop if `--phases` excludes Phase B.
 - **Regressed**: print the regressed test ids (confirmed after retry), set `phase: failed-layout`, emit `say_skill_done`, stop at Phase A.
@@ -133,9 +135,8 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 | Criterion | Action |
 |-----------|--------|
 | **Exact duplicate** | Remove one — byte/AST-identical body AND identical fixtures, mocks, decorators (ignoring only name and docstring) |
-| **Dead test** | Flag for review — no assertion statement in body (per-language vocabulary in `reference/patterns.md`) |
+| **Dead test** | Review only, never removed — no assertion statement in body (per-language vocabulary in `reference/patterns.md`) |
 | **Trivially true** | Remove — only `assert True`, `assertEqual(x, x)`, `expect(1).toBe(1)` |
-| **Subset assertions** | Remove weaker — same function, same args, same fixtures+mocks; A's assertion list is a strict subset of B's |
 | **Parametrize cluster** | Consolidate — N ≥ 3 tests call the same function with distinct args of the same structural type, identical fixtures+mocks, identical assertion pattern |
 | **Parametrize pair** | Consolidate — N = 2 tests meeting cluster criteria where names differ only by trailing integer or single-letter suffix |
 
@@ -147,17 +148,15 @@ Set ledger `phase: simplifying`.
 
 Parse every test file (post-layout) using the language's AST parser. For each test function extract: name, body AST, fixture parameters, mock/stub configurations, decorator list, primary source function called, call arguments, assertion list.
 
-Apply criteria in order: exact duplicate → dead → trivially true → subset → parametrize cluster → parametrize pair.
+Apply criteria in order: exact duplicate → dead → trivially true → parametrize cluster → parametrize pair.
 
-For each **removal** candidate: emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion).
+For each **removal** candidate (exact duplicate, trivially true): emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion).
 
-For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to `review_candidates` array (not `removals`).
+For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", evidence }` to the `review_candidates` array only, never to `removals`. The user decides whether to remove it.
 
 For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
 - Emit `{ file, tests: [...], consolidated_name, consolidated_body, required_imports, criterion, evidence }` where `consolidated_body` is a concrete parametrized test body with the actual parameter tuples derived from the originals.
-
-Ordering guard: if test A is a subset of B and B is itself a removal candidate, plan to remove B first.
 
 Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`.
 
@@ -171,9 +170,9 @@ Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`.
 
 Set ledger `phase: simplify-validating`.
 
-Re-run the full suite. Regression check: compare against post-layout baseline. Exclude test ids in `simplification.removals` and replaced ids in `simplification.parametrizations` from the required-passing set. Verify each consolidated parametrized test id appears and passes.
+Re-run the full suite with the recorded runner command (fixed order, see Step 3). Regression check: compare against post-layout baseline. Exclude test ids in `simplification.removals` and replaced ids in `simplification.parametrizations` from the required-passing set. Verify each consolidated parametrized test id appears and passes.
 
-If any regressed id is found, **re-run the full suite once** to confirm (flake detection; Phase B is post-consolidation so a failure under load is distinct from isolation). If all pass on retry, resume as healthy. If any still fail, record as regressed.
+If any regressed id is found, **re-run the full suite once** with the recorded runner command to confirm (flake detection; Phase B is post-consolidation so a failure under load is distinct from isolation). If all pass on retry, resume as healthy. If any still fail, record as regressed.
 
 - **Healthy**: advance to Phase C when ledger `spring_boot` is `true` and `--phases` includes Phase C, otherwise set `phase: done`.
 - **Regressed**: record regressed ids, set `phase: failed-simplify`, stop at Phase B.
@@ -215,7 +214,7 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 - Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase B — Simplification:**
-- Tests removed: count by criterion (exact-duplicate, trivially-true, subset)
+- Tests removed: count by criterion (exact-duplicate, trivially-true)
 - Tests flagged for review (dead-test): count with listing; user decides whether to remove
 - Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
 - Parametrizations skipped (AST editor failures): list with reasons

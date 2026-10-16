@@ -68,7 +68,7 @@ Capture test ids using runner output specified here:
 
 | Language | Command | Output file | Parse notes |
 |---|---|---|---|
-| Python | `pytest --junitxml=<file> [paths...]` | JUnit XML | Parse `<testcase classname="..." name="...">` elements; id = `classname::name` |
+| Python | `pytest --junitxml=<file> [paths...]` (add `-p no:randomly` when pytest-randomly is importable in the runner's environment, to pin fixed order) | JUnit XML | Parse `<testcase classname="..." name="...">` elements; id = `classname::name` |
 | TS/JS | `npm test -- --json --outputFile=<file>` | JSON via Jest | Extract `testResults[].assertionResults[].fullName`; id = `<file>::<fullName>` |
 | Go | `go test -json ./... > <file>` | JSON | Parse `{"Test":"..."}` events; id = package + `::` + test name |
 | Java (Maven) | `mvn test -Dorg.slf4j.simpleLogger.defaultLogLevel=info` (output to file) | Surefire XML in `target/surefire-reports/TEST-*.xml` | Parse `<testcase classname="..." name="...">` elements; id = `classname::name` |
@@ -185,6 +185,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 ```json
 {
+  "schema_version": 2,
   "removals": [
     {
       "file": "tests/protrading/adapters/test_instruments.py",
@@ -219,6 +220,20 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 ```
 
 `simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch.
+
+The top-level `schema_version` is `2`.
+
+Every `review_candidates` entry has the base fields `{ file, test_name, criterion, evidence }`. Some criteria add optional fields:
+
+| Field | Type | Criteria that set it |
+|---|---|---|
+| `call_s` | number, seconds | coverage-subset, cost |
+| `time_saved_s` | number, seconds | coverage-subset, cost |
+| `note` | string | pinning |
+| `seed` | integer | order-dependent, flaky |
+| `failing_ids` | array of test ids | order-dependent, flaky |
+
+A test that meets several criteria gets one entry per criterion, not one merged entry.
 
 ## AST editor guidance (per language)
 
