@@ -1,6 +1,6 @@
 ---
 name: refactor-tests
-description: Reorganize a flat test suite to mirror source packages, prune redundant/dead tests, and cut Spring Boot context startup cost.
+description: Reorganize a flat test suite to mirror source packages, prune redundant tests using per-test coverage and timing evidence, flag pinning tests and seam gaps, and cut Spring Boot context startup cost.
 argument-hint: "[project-path]"
 ---
 
@@ -316,17 +316,22 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 - Baseline: `<N> passed, <M> failed`
 - Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
-**Phase B — Simplification:**
-- Evidence: status per language (`ok`/`skipped`/`failed` plus reason), tests recorded, tests excluded (listed with outcome: did not pass, `no-coverage`, or `no-timing`), and a warning for each evidence-based item dropped
-- Tests removed: count by criterion (exact-duplicate, trivially-true)
-- Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
-- Parametrizations skipped (AST editor failures): list with reasons
-- Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost), count and listing per group; for coverage-subset and cost, each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"; user decides whether to remove
-- Seams: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended); pinning notes (`covered through the interface` / `move the assertion to the interface`) per candidate, never removed; an **add candidates** section (confirmed seams no interface test reaches), or the warning that evidence was not `ok` and it was omitted
-- Order gate: status (`ok`/`skipped`/`failed` plus reason) with plugin and seed; every `order-dependent` and `flaky` test, whether a planned change touches it or not; the changes moved to review because of them; baseline failures excluded from the gate. A status other than `ok` also adds a warning that static changes proceeded without the gate
-- Unanalyzable files (skipped by AST parser): list with reasons
-- Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed test; when evidence was not `ok`, omit the totals and print the warning
-- Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
+**Phase B — Simplification** (report in this order):
+1. Evidence and order-gate status:
+   - Evidence: status per language (`ok`/`skipped`/`failed` plus reason), tests recorded, tests excluded (listed with outcome: did not pass, `no-coverage`, or `no-timing`), and a warning for each evidence-based item dropped
+   - Order gate: status (`ok`/`skipped`/`failed` plus reason) with plugin and seed; baseline failures excluded from the gate. A status other than `ok` also adds a warning that static changes proceeded without the gate
+2. Tests removed: count by criterion (exact-duplicate, trivially-true)
+3. Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
+   - Parametrizations skipped (AST editor failures): list with reasons
+   - Unanalyzable files (skipped by AST parser): list with reasons
+4. Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost, pinning, order-dependent, flaky), count and listing per group; user decides whether to remove
+   - coverage-subset and cost: each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"
+   - pinning: the note per candidate (`covered through the interface` / `move the assertion to the interface`); pinning tests are never removed
+   - order-dependent and flaky: the changes moved to review because of them, with `seed` and `failing_ids`
+5. Add candidates: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended), then the confirmed seams no interface test reaches; or the warning that evidence was not `ok` and this section was omitted
+6. Order-dependent and flaky tests: every `order-dependent` and `flaky` test the gate found, whether a planned change touches it or not
+7. Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed test; when evidence was not `ok`, omit the totals and print the warning
+8. Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; per-context switches applied; clusters skipped with reasons; wall time before → after (informational, not gated).
 
