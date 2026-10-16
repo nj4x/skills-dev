@@ -10,7 +10,7 @@ You are refactoring a project's test suite along three axes, each behind its own
 
 End state — every source file accounted for, every applicable axis reached:
 - **Phase A · Layout**: every test file at the location its language convention dictates for the source it exercises, imports rewritten to stay valid, suite passes with zero regressions.
-- **Phase B · Simplification**: redundant unit tests removed; clusters of tests that call the same function with varying inputs under the same assertion pattern consolidated into parametrized test cases.
+- **Phase B · Simplification** (opens with a per-test evidence pass): redundant unit tests removed; clusters of tests that call the same function with varying inputs under the same assertion pattern consolidated into parametrized test cases.
 - **Phase C · Context cost** (Spring Boot only): distinct Spring application contexts reduced, per-context background work switched off, suite wall time lower, assertions unchanged.
 
 A gate is **healthy** when zero tests that passed at that phase's baseline now fail. A **regressed** gate stops the run at that phase — the later phases never start.
@@ -30,7 +30,7 @@ Every step relies on these preconditions:
 - Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
 - Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
 - Update the ledger after every durable side effect so a mid-run compaction is recoverable.
-- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations.
+- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`.
 - `rm -f` any temp file on every exit path, including hard-abort paths.
 - Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
 
@@ -48,7 +48,7 @@ Every step relies on these preconditions:
 
 1. `PROJECT_PATH` defaults to `$PWD`. Resolve to absolute path; hard-stop if not a directory.
 2. **Parse command-line arguments**: `--dry-run` (skip file mutations, stop after plan), `--phases=A,B` (run only specified phases, default all available).
-3. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`/`failed-*`, print the recorded phase and resume from it. On resume from `failed-*`, archive the old ledger to `ledger.YYYY-MM-DDTHH-MM-SS.json` and reuse the stored `baseline`. When `phase` is `done`, a fresh run is starting over an already-completed one: archive `ledger.json`, `plan.json`, and (if present) `simplification-plan.json` to their own `<name>.YYYY-MM-DDTHH-MM-SS.json` before writing new ones — the prior run's record would otherwise be silently overwritten with no trace. Otherwise (no ledger present) initialize a fresh ledger with `phase: discovery`.
+3. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`/`failed-*`, print the recorded phase and resume from it. On resume from `failed-*`, archive the old ledger to `ledger.YYYY-MM-DDTHH-MM-SS.json` and reuse the stored `baseline`. When `phase` is `done`, a fresh run is starting over an already-completed one: archive `ledger.json`, `plan.json`, and (if present) `simplification-plan.json` and `test-evidence.json` to their own `<name>.YYYY-MM-DDTHH-MM-SS.json` before writing new ones — the prior run's record would otherwise be silently overwritten with no trace. Otherwise (no ledger present) initialize a fresh ledger with `phase: discovery`.
 4. **Detect languages** by extension scan (respect `.gitignore`; skip `vendor/`, `node_modules/`, `.venv/`, `build/`, `.reference-projects/`, `.scratch/`).
 5. **Detect runner(s)** per language via convention markers in `reference/patterns.md`. Record the resolved command exactly.
 6. **Spring Boot check** (JVM projects only): set ledger `spring_boot: true` when a Spring Boot dependency and ≥2 context-loading test classes are both present — this enables Phase C. Detection commands are in `reference/springboot.md` Step C0.
@@ -142,7 +142,43 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 
 **Do NOT flag** as redundant: tests covering different scenarios, different input types, different fixture state, different mock return values, different decorators/markers, or any test the AST parser cannot fully analyze.
 
-### Step 7 — Scan and build simplification plan
+### Step 7 — Evidence pass
+
+Set ledger `phase: evidence`. This step runs first in Phase B, on post-layout test ids: after a healthy Step 6, or after Step 3 when `--phases` excludes Phase A (ids are then the current ids). It runs under `--dry-run` and `--phases=B` too. It never gates the run: a failure degrades to less evidence (see Degrade rules).
+
+**Ledger resume.** Ledger `evidence.<lang>.status` of `ok`, `skipped`, or `failed` is final: reuse it and skip that language. Run only languages with no status.
+
+The pass is Python-only for now; other languages get `status: skipped` with reason `no evidence tooling for <lang>`. Helper scripts live in `reference/python/` beside this SKILL.md; call it `$SKILL_DIR` (the directory holding this SKILL.md). Write all outputs under `$PROJECT_PATH/.scratch/refactor-tests/`. Edit no project config; install tools ephemerally (`uv run --with …`, or `pip install --target` into `.scratch/refactor-tests/` plus `PYTHONPATH`, when the runner is not uv). Build both commands from the recorded runner command of Step 3: keep its launcher and add the tool flags. Examples below use a uv launcher; for another launcher, make `pytest-cov` and `coverage` importable first, then run plain `pytest`.
+
+1. **Coverage run** (traced, fixed order). Replace `<source roots>` with the ledger `source_roots`, one `--cov=` each:
+
+   ```sh
+   COVERAGE_CORE=ctrace COVERAGE_FILE=.scratch/refactor-tests/.coverage-python \
+     uv run --with pytest-cov --with coverage pytest -p no:randomly --cov=<source roots> --cov-branch --cov-context=test
+   ```
+
+   `COVERAGE_CORE=ctrace` is required on every Python version: on 3.14+ the default `sysmon` core silently drops contexts that pytest-cov sets. Record the command and tool versions (`coverage`, `pytest-cov`, `pytest`) for the evidence file.
+2. **Timing run** (serial, untraced: tracing inflates durations unevenly). No `--cov`, no `-n`:
+
+   ```sh
+   PYTHONPATH=$SKILL_DIR/reference/python${PYTHONPATH:+:$PYTHONPATH} CALLTIME_FILE=.scratch/refactor-tests/calltime-python.json \
+     uv run --with pytest-cov pytest --no-cov -p no:randomly -p calltime
+   ```
+
+   Project `addopts` stay in force, so collection matches the coverage run. `--no-cov` cancels any `--cov` in them. When they carry `-n`/`--numprocesses`, xdist is already installed: append `-n0` to keep the run serial. `calltime.py` writes one `{duration, outcome}` row per test, keyed by node id. Passed and failed tests get the call-phase duration. A test whose setup skipped or failed gets its outcome and `duration: null`. A failed teardown turns the outcome to `failed` and keeps the call duration.
+3. **Extract per-test arcs**: `python $SKILL_DIR/reference/python/extract_arcs.py .scratch/refactor-tests/.coverage-python --root $PROJECT_PATH > .scratch/refactor-tests/arcs-python.json` (exits non-zero when the data file is missing or has no `|run` context: treat as a failed run) (needs `coverage` importable: prefix with `uv run --with coverage`). The script reads only `|run` contexts via `CoverageData.set_query_contexts`, one per test, then `lines()` and `arcs()`. Setup and teardown contexts are fixture-owned coverage and are ignored.
+4. **Assemble** (schema in `reference/patterns.md`): `python3 $SKILL_DIR/reference/python/assemble_evidence.py --arcs .scratch/refactor-tests/arcs-python.json --calltime .scratch/refactor-tests/calltime-python.json --tool name=version … --command coverage='…' --command timing='…' --existing .scratch/refactor-tests/test-evidence.json --out .scratch/refactor-tests/test-evidence.json`. Always pass `--existing`: it merges with a block another language wrote earlier in this run, and a missing file counts as empty. `--out` is written atomically. Tests whose call `outcome` is not `passed` get no entry; the script lists them under `excluded`, a passed test with no coverage context is listed as `no-coverage`, and a covered id with no timing row as `no-timing`. A `--status skipped|failed` call needs `--reason`.
+5. Record in ledger `evidence`: `{ file, python: { status: ok, reason: null, tests: <entry count> } }`. Delete the intermediate `.coverage-python`, `calltime-python.json`, and `arcs-python.json` files on every path, success or degraded.
+
+**Degrade rules.** Evidence never stops the run.
+- A tool will not install, a run crashes (exit 127 or signal), the coverage data file is missing, or the helper script exits non-zero: write the language block with `--status failed --reason <one line>`. A language with no tooling or no runner: `--status skipped`. Mirror status and reason in ledger `evidence.<lang>`; `tests` is 0.
+- Exit 1 from either pytest run is data, not a failure: failing tests simply get no entry. Exit 2–5 (interrupted, internal error, usage error, no tests collected), or a timing file with zero `passed` rows, means the run itself broke: set `--status failed` with the exit code as reason.
+- With status other than `ok`, drop every evidence-based item from the simplification plan (items that read coverage or `call_s`), and add a warning naming each dropped item kind. Evidence-free criteria still run.
+- Non-`passed` tests: list them in the report; never invent entries for them.
+
+---
+
+### Step 8 — Scan and build simplification plan
 
 Set ledger `phase: simplifying`.
 
@@ -158,15 +194,15 @@ For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
 - Emit `{ file, tests: [...], consolidated_name, consolidated_body, required_imports, criterion, evidence }` where `consolidated_body` is a concrete parametrized test body with the actual parameter tuples derived from the originals.
 
-Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`.
+Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json`, with top-level `evidence: { file: ".scratch/refactor-tests/test-evidence.json", status }`. `status` is `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
 
-### Step 8 — Execute simplification
+### Step 9 — Execute simplification
 
 **Removals**: delete each named test function from its file using the language's AST editor. Record each in ledger `simplification.removals` after the write. If removing the last test function in a file, delete the file with `git rm`.
 
 **Parametrizations** (atomic per entry): in a **single file write** — delete all N original test functions, insert the consolidated parametrized function, add any `required_imports` not already present. Record in ledger `simplification.parametrizations` in the same durable step. If the AST editor cannot perform the composite edit, record as `skipped` in the ledger with the error, leave the file unchanged, surface in the report.
 
-### Step 9 — Validate simplification
+### Step 10 — Validate simplification
 
 Set ledger `phase: simplify-validating`.
 
@@ -214,6 +250,7 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 - Post-layout: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase B — Simplification:**
+- Evidence: status per language (`ok`/`skipped`/`failed` plus reason), tests recorded, tests excluded (listed with outcome: did not pass, `no-coverage`, or `no-timing`), and a warning for each evidence-based item dropped
 - Tests removed: count by criterion (exact-duplicate, trivially-true)
 - Tests flagged for review (dead-test): count with listing; user decides whether to remove
 - Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)

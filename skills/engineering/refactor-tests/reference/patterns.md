@@ -132,7 +132,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 ```json
 {
-  "phase": "discovery|baseline|moving|rewriting|validating|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
+  "phase": "discovery|baseline|moving|rewriting|validating|evidence|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
   "dry_run": false,
   "phases_requested": ["A", "B", "C"],
   "project_path": "/abs/path",
@@ -147,6 +147,10 @@ This preserves the package (compilation works) and allows filtering: `go test ./
     { "from": "tests/test_end_to_end.py", "to": "tests/integration/test_end_to_end.py", "language": "python", "source_file": null, "cross_cutting": true }
   ],
   "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ],
+  "evidence": {
+    "file": ".scratch/refactor-tests/test-evidence.json",
+    "python": { "status": "ok", "reason": null, "tests": 410 }
+  },
   "simplification": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
@@ -186,6 +190,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 ```json
 {
   "schema_version": 2,
+  "evidence": { "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok" },
   "removals": [
     {
       "file": "tests/protrading/adapters/test_instruments.py",
@@ -234,6 +239,47 @@ Every `review_candidates` entry has the base fields `{ file, test_name, criterio
 | `failing_ids` | array of test ids | order-dependent, flaky |
 
 A test that meets several criteria gets one entry per criterion, not one merged entry.
+
+`evidence.<lang>.status` is `ok`, `skipped`, or `failed`; `reason` is a one-line string when not `ok`; `tests` is the number of entries written. Resume reuses a recorded status rather than re-running. The top-level `evidence` object in `simplification-plan.json` is `{ "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok|skipped|failed" }`: `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
+
+## Test evidence schema (`.scratch/refactor-tests/test-evidence.json`)
+
+Written by the evidence pass (Phase B, first step) on post-layout test ids. Schema version 1. Python helpers: `reference/python/calltime.py` (timing hook), `extract_arcs.py` (per-test lines and arcs), `assemble_evidence.py` (this file).
+
+```json
+{
+  "schema_version": 1,
+  "id_basis": "post-layout",
+  "languages": {
+    "python": {
+      "status": "ok",
+      "tools": { "coverage": "7.16.2", "pytest-cov": "7.1.0", "pytest": "9.1.1" },
+      "commands": {
+        "coverage": "COVERAGE_CORE=ctrace ... pytest -p no:randomly --cov=src --cov-branch --cov-context=test",
+        "timing": "... pytest -p no:randomly -p calltime"
+      },
+      "tests": {
+        "tests/protrading/adapters/test_instruments.py::test_parse[AAPL]": {
+          "outcome": "passed",
+          "call_s": 0.000089,
+          "covered": {
+            "src/protrading/adapters/instruments.py": {
+              "lines": [9, 11],
+              "arcs": [[-8, 9], [9, 11], [11, -8]]
+            }
+          }
+        }
+      },
+      "excluded": [ { "id": "tests/protrading/test_flaky.py::test_x", "outcome": "failed" } ]
+    }
+  }
+}
+```
+
+- `tests` is keyed by test id (node id). Only tests whose call-phase `outcome` is `passed` get an entry; every other test is listed under `excluded` with its outcome: `failed`, `skipped`, `no-coverage` (a passed test with no `|run` context in the coverage data), or `no-timing` (a covered id with no row from the timing run).
+- `call_s` is the call-phase duration in seconds from the serial, untraced timing run. `covered` comes from the traced run, `|run` contexts only. Negative arc endpoints are function entry and exit.
+- A language block with `status` `skipped` or `failed` carries a `reason` and empty `tests`.
+- `kill_set` is a reserved top-level key for a later mutation-based check. v1 does not write it.
 
 ## AST editor guidance (per language)
 
