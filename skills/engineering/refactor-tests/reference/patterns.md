@@ -132,7 +132,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 ```json
 {
-  "phase": "discovery|baseline|moving|rewriting|validating|simplifying|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
+  "phase": "discovery|baseline|moving|rewriting|validating|evidence|seams|simplifying|order-gate|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
   "dry_run": false,
   "phases_requested": ["A", "B", "C"],
   "project_path": "/abs/path",
@@ -147,11 +147,30 @@ This preserves the package (compilation works) and allows filtering: `go test ./
     { "from": "tests/test_end_to_end.py", "to": "tests/integration/test_end_to_end.py", "language": "python", "source_file": null, "cross_cutting": true }
   ],
   "rewrites": [ { "file": "tests/protrading/adapters/test_instruments.py", "count": 2 } ],
+  "evidence": {
+    "file": ".scratch/refactor-tests/test-evidence.json",
+    "python": { "status": "ok", "reason": null, "tests": 410 }
+  },
+  "seams": {
+    "status": "confirmed",
+    "modules": { "src/protrading/adapters/instruments.py": { "seams": [ { "name": "parse_instrument", "signal": "__all__", "status": "confirmed" } ] } },
+    "propose_warnings": [ "src/protrading/adapters/__init__.py: __all__ is computed or mutated, not a literal list; only its literal names are proposed under __all__ and public-api is not used" ],
+    "warnings": [ "src/protrading/adapters/__init__.py: __all__ is computed or mutated, not a literal list; only its literal names are proposed under __all__ and public-api is not used" ]
+  },
+  "order_gate": {
+    "status": "ok",
+    "reason": null,
+    "plugin": "pytest-randomly",
+    "seed": 1234567,
+    "order_dependent": ["tests.protrading.adapters.test_instruments::test_parse_cached"],
+    "flaky": []
+  },
   "simplification": {
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
     "review_candidates": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_always_passes", "criterion": "dead-test" } ],
-    "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ]
+    "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ],
+    "call_time": { "label": "serial call time, not wall time", "before_s": 41.2, "after_s": 37.9, "delta_s": -3.3, "removed": [ { "id": "tests/protrading/adapters/test_instruments.py::test_parse_duplicate", "call_s": 0.012 } ], "warning": null }
   },
   "spring": {
     "baseline": { "context_count": 5, "wall_time_seconds": 42.5 },
@@ -186,12 +205,14 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 ```json
 {
   "schema_version": 2,
+  "evidence": { "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok" },
   "removals": [
     {
       "file": "tests/protrading/adapters/test_instruments.py",
       "test_name": "test_parse_instrument_copy",
       "criterion": "exact-duplicate",
-      "evidence": "body identical to test_parse_instrument (lines 42-51 vs 55-64)"
+      "evidence": "body identical to test_parse_instrument (lines 42-51 vs 55-64)",
+      "duplicate_of": "test_parse_instrument"
     }
   ],
   "review_candidates": [
@@ -200,6 +221,22 @@ This preserves the package (compilation works) and allows filtering: `go test ./
       "test_name": "test_always_passes",
       "criterion": "dead-test",
       "evidence": "no assertion statement in body; executes code but no verify call"
+    },
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_parse_slow_roundtrip",
+      "criterion": "coverage-subset",
+      "evidence": "all 14 lines and 11 arcs also covered by other passing tests",
+      "call_s": 1.84,
+      "time_saved_s": 1.84
+    },
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_parse_slow_roundtrip",
+      "criterion": "cost",
+      "evidence": "call_s 1.84 s, top decile of 12 coverage-subset candidates, at least 0.5 s",
+      "call_s": 1.84,
+      "time_saved_s": 1.84
     }
   ],
   "parametrizations": [
@@ -234,6 +271,132 @@ Every `review_candidates` entry has the base fields `{ file, test_name, criterio
 | `failing_ids` | array of test ids | order-dependent, flaky |
 
 A test that meets several criteria gets one entry per criterion, not one merged entry.
+
+`reference/python/select_candidates.py` builds the coverage-subset and cost entries from `test-evidence.json`; `time_saved_s` equals the test's own `call_s` (serial time, not wall time). `test_name` in these entries is the id remainder after the file path (`Class::test[param]` for methods and parametrized ids), not a bare function name. `reference/python/calltime_delta.py` builds ledger `simplification.call_time`: total `call_s` before (evidence pass) and after (simplify validation run), `delta_s = after_s - before_s`, and `call_s` per removed test id (ids are node ids; an id matches its evidence entry exactly or through its parametrized ids `<id>[...]`). A bare `<file>::<test>` names a top-level test only. With no exact match it gets `call_s: null` and is never charged a class method's `call_s`, even when only one `<file>::<Class>::<test>` has that name; when same-name class methods exist, `warning` names them so the caller can pass the full node id. A missing validation-run calltime file also gives null figures and a warning. With evidence status other than `ok`, every figure is `null` and `warning` names the reason.
+
+An `exact-duplicate` removal also carries `duplicate_of`: the name of the test that stays, and `duplicate_of_file` when that test is in another file (default: the removal's `file`). Step 8b reads both to treat that kept test as involved in the change.
+
+`evidence.<lang>.status` is `ok`, `skipped`, or `failed`; `reason` is a one-line string when not `ok`; `tests` is the number of entries written. Resume reuses a recorded status rather than re-running. The top-level `evidence` object in `simplification-plan.json` is `{ "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok|skipped|failed" }`: `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
+
+## Seam classification (Python)
+
+Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
+
+**Seam signals**, per source module, strongest first. A name takes the first signal that proposes it, and the proposal records that signal.
+
+| Signal | Value | Proposes |
+|---|---|---|
+| (a) `__all__` | `__all__` | each public name listed in the module's `__all__` |
+| (b) cross-package import | `cross-package-import` | a public function or class that a source file in another package of the project imports from this module (`from <module> import <name>`, relative imports resolved) |
+| (c) public surface | `public-api` | only when the module has no `__all__`: public top-level functions and classes, and the public methods of those classes as `Class.method` |
+
+Names with a leading underscore are never proposed. Test files and `conftest.py` are not source modules. `__all__` built from literal lists with `+`, `+=`, `.extend`, or `.append` is evaluated. A computed part (`[...] + other.__all__`) still means the module has an `__all__`: its literal names are proposed, signal (c) does not apply, and `propose` adds a `warnings` entry for the module. Any other change to `__all__` counts as computed the same way: `__all__.remove(...)`, `.insert(...)`, `.pop(...)` and the other list mutators, `del __all__[...]`, `__all__[:] = ...`, `-=`, and any assignment or mutation of `__all__` nested in a module-level `if`, `try`, `for`, `while`, or `with`. Only module scope is read: an `__all__` assigned or changed inside a function, lambda, or class body, and a value-less annotation `__all__: list[str]`, are ignored, so signal (c) still applies when the module has no other `__all__`. The ledger keeps these `propose` warnings in `seams.propose_warnings`. `seams.warnings` holds them followed by the `classify` warnings of the latest `classify` run: each run, a resume included, rebuilds it from `propose_warnings`, so `classify` warnings are never appended twice. The Final report lists `seams.warnings` whether or not a confirm round ran.
+
+**Static classification**, per test and per source module, from the test's AST only. The test's references to that module are the names it imports and uses, attribute access on imported modules and classes, and `patch("pkg.mod.name")` (as a call or as a decorator on the test or its class), `patch.object(mod, "name")`, `monkeypatch.setattr("pkg.mod.name", ...)`, and `monkeypatch.setattr(mod, "name", ...)` targets. A reference is a seam when its name is a confirmed seam, or its first segment is a seam class and the remaining segments are public. A method call on an instance is not resolved.
+
+- **Interface test**: at least one reference, and every reference is a seam.
+- **Pinning candidate**: at least one reference is not a seam (`internals` lists them, e.g. `_tokenize`, or a mock patched at an internal path).
+- One test can be an interface test for one module and a pinning candidate for another.
+
+**Coverage against the interface** (needs evidence status `ok`). A seam's body lines are the lines of its body statements (decorators and the `def`/`class` header excluded: the header runs at import, outside any `|run` context). A seam is **reached** when an interface test's `covered` lines for the module intersect its body lines; parametrized ids merge by their base id. A confirmed seam no interface test reaches is an **add candidate**; pinning tests never count. A seam whose name has no function or class body in its module (a re-export or a constant in `__all__`) is never an add candidate; the report warns. A test that imports a name through a package `__init__` re-export (`from pkg import run`, where `pkg/__init__.py` has `from .mod import run`) is linked to the `__init__`, not to `mod.py`, so it is not an interface test of `mod.py` and its coverage does not count toward reaching `mod.py`'s seam. When such a seam is an add candidate, the helper adds a warning that the candidate needs a check by hand. Re-exports are followed through every package level: when `pkg/sub/__init__.py` re-exports `run` from `.mod` and `pkg/__init__.py` re-exports it from `.sub`, a test importing `from pkg import run` is linked to `pkg/__init__.py` the same way: it does not reach the seam in `pkg/sub/mod.py`, and that add candidate gets the warning. A pinning candidate has `covered_through_interface: true` when some interface test of the same module covers a superset of its lines in that module (a pinning test with no coverage in the evidence gets `false`, with a warning); the note is then "covered through the interface", otherwise "move the assertion to the interface". With evidence status other than `ok`, `add_candidates` and `covered_through_interface` are omitted (keys absent) and the note is "move the assertion to the interface".
+
+**`seams` object** in `simplification-plan.json` (only confirmed seams are listed; under `--dry-run` or unattended runs seams stay `proposed` in the ledger and the plan carries no `pinning_candidates`):
+
+```json
+"seams": {
+  "modules": {
+    "src/protrading/adapters/instruments.py": {
+      "seams": [ { "name": "parse_instrument", "signal": "__all__", "status": "confirmed" } ]
+    }
+  },
+  "add_candidates": [ { "module": "src/protrading/adapters/instruments.py", "seam": "parse_instrument" } ],
+  "pinning_candidates": [
+    {
+      "file": "tests/protrading/adapters/test_instruments.py",
+      "test_name": "test_tokenize_directly",
+      "module": "src/protrading/adapters/instruments.py",
+      "internals": ["_tokenize"],
+      "covered_through_interface": true,
+      "note": "covered through the interface"
+    }
+  ]
+}
+```
+
+Each pinning candidate also goes to `review_candidates` as `{ file, test_name, criterion: "pinning", evidence, note }`.
+
+## Random-order gate
+
+Step 8b of `SKILL.md`. Helper: `reference/python/order_gate.py` (`plugin`, `classify`, `demote`). The gate compares JUnit ids (`classname::name`, as in Per-runner output formats); `classify` converts node-id baselines (`path.py::Class::name`, the ledger and `baseline-ids.json` form) to that form first.
+
+**Plugin choice.** pytest-random-order already importable in the runner's environment: use it with `--random-order-bucket=global --random-order-seed=<seed>`, plus `-p no:randomly` when pytest-randomly is importable too. Otherwise: pytest-randomly with `--randomly-seed=<seed>`, installed only for the gate run when it is not already present, and with the recorded `-p no:randomly` dropped. One shuffler per run, never two. Every other run of the skill stays in fixed order (Step 3).
+
+**Classification**, against the gate baseline (ledger `simplification.post_layout_baseline`, or the Step 3 baseline when it is absent: `--phases=B`, or a `--dry-run` that moved nothing):
+
+| Baseline | Gate run | Same-seed re-run | Result |
+|---|---|---|---|
+| not passing | any | — | excluded, listed as a baseline failure |
+| passing | passed or skipped | — | no label |
+| passing | failed or error | failed, error, skipped, or absent | `order-dependent` |
+| passing | failed or error | passed | `flaky` |
+
+The baseline is `simplification.post_layout_baseline`, or the Step 3 baseline when that is absent. A baseline that gives a pass count instead of passing ids (the ledger shape) counts every id not in its `failed` list as passing. A baseline that lists passing ids marks any other id `not-in-baseline` and excludes it.
+
+**`order-gate.json`** (`classify` output, kept in `.scratch/refactor-tests/`):
+
+```json
+{
+  "seed": 1234567,
+  "order_dependent": ["tests.protrading.adapters.test_instruments::test_parse_cached"],
+  "flaky": [],
+  "excluded": [ { "id": "tests.protrading.test_slow::test_x", "baseline": "failed" } ],
+  "candidates": ["tests.protrading.adapters.test_instruments::test_parse_cached"],
+  "rerun_required": false
+}
+```
+
+**Ledger `order_gate`**: `{ status: ok|skipped|failed, reason, plugin, seed, order_dependent: [ids], flaky: [ids] }`. `reason` is `null` with `ok`, else one line. `status: ok` is written only after `demote` exits 0. `demote` exit 2 with stderr starting `order_gate demote:` (`rerun_required` refusal) is not a helper failure; any other exit 2 is: no status is written until the same-seed re-run is classified and `demote` exits 0; a re-run that cannot complete gives `failed` with reason `rerun_required: <why>`. Any other non-zero `demote` exit gives `failed`. Resume reuses a recorded status and never runs the suite again.
+
+**Demotion.** A planned change involves a flagged test when the test's file and base name (parameter suffix dropped on both sides) match an id; when both the id and the plan entry name a class, the class must agree. A class-less side matches any class: a plan `test_name` of `test_x` matches a flagged `Cls::test_x`, and a flagged top-level `test_x` matches a plan `Cls::test_x`. This differs on purpose from `calltime_delta.py`, where a bare id names a top-level test only. The two errors cost different things. A missed demotion lets Step 9 delete or merge an order-dependent test, while a needless demotion only adds a `review_candidates` entry, so the gate errs toward demoting. A wrong `call_s` charge misstates the reported saving, so call time errs toward charging nothing. `demote` refuses a gate result with `rerun_required: true` (exit 2, plan unchanged): its candidates carry no label until the same-seed re-run is classified. The tests a change involves: a removal's `test_name`; for an exact-duplicate removal also its kept test in `duplicate_of`; every name in a parametrization's `tests`. A change that involves an `order-dependent` or `flaky` test leaves `removals` or `parametrizations` whole. It goes to `review_candidates` as one entry per involved test and per criterion: `{ file, test_name, criterion: "order-dependent"|"flaky", evidence, seed, failing_ids }`, where `failing_ids` holds the flagged ids that this change involves.
+
+## Test evidence schema (`.scratch/refactor-tests/test-evidence.json`)
+
+Written by the evidence pass (Phase B, first step) on post-layout test ids. Schema version 1. Python helpers: `reference/python/calltime.py` (timing hook), `extract_arcs.py` (per-test lines and arcs), `assemble_evidence.py` (this file).
+
+```json
+{
+  "schema_version": 1,
+  "id_basis": "post-layout",
+  "languages": {
+    "python": {
+      "status": "ok",
+      "tools": { "coverage": "7.16.2", "pytest-cov": "7.1.0", "pytest": "9.1.1" },
+      "commands": {
+        "coverage": "COVERAGE_CORE=ctrace ... pytest -p no:randomly --cov=src --cov-branch --cov-context=test",
+        "timing": "... pytest -p no:randomly -p calltime"
+      },
+      "tests": {
+        "tests/protrading/adapters/test_instruments.py::test_parse[AAPL]": {
+          "outcome": "passed",
+          "call_s": 0.000089,
+          "covered": {
+            "src/protrading/adapters/instruments.py": {
+              "lines": [9, 11],
+              "arcs": [[-8, 9], [9, 11], [11, -8]]
+            }
+          }
+        }
+      },
+      "excluded": [ { "id": "tests/protrading/test_flaky.py::test_x", "outcome": "failed" } ]
+    }
+  }
+}
+```
+
+- `tests` is keyed by test id (node id). Only tests whose call-phase `outcome` is `passed` get an entry; every other test is listed under `excluded` with its outcome: `failed`, `skipped`, `no-coverage` (a passed test with no `|run` context in the coverage data), or `no-timing` (a covered id with no row from the timing run).
+- `call_s` is the call-phase duration in seconds from the serial, untraced timing run. `covered` comes from the traced run, `|run` contexts only. Negative arc endpoints are function entry and exit.
+- A language block with `status` `skipped` or `failed` carries a `reason` and empty `tests`.
+- `kill_set` is a reserved top-level key for a later mutation-based check. v1 does not write it.
 
 ## AST editor guidance (per language)
 
