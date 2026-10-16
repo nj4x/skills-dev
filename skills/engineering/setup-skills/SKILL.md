@@ -87,7 +87,7 @@ If the user declines the migration, record in `docs/agents/domain.md` that this 
 Show the user a draft of:
 
 - The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
-- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
+- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed); for a file that already exists, the diff against it (see **Sync a docs file that already exists** in step 4)
 - The legacy glossary migration plan, when Section D ran: each file rename as `old path → new path`, and each file whose references will be rewritten
 
 Let them edit before writing.
@@ -129,7 +129,17 @@ Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.
 
 When Section B ran on GitHub or GitLab, create each configured label the tracker lacks (`gh label create` / `glab label create`), using a case-insensitive comparison of configured names to existing labels; if a `label create` call fails (lack of permission or any other error), report the labels still missing and continue, without aborting Section B.
 
-Then write the docs files using the seed templates in this skill folder as a starting point:
+**Sync a docs file that already exists.** For each of `docs/agents/issue-tracker.md`, `domain.md`, and `triage-labels.md` already present, compare it with its seed template and merge, instead of regenerating it:
+
+- **Same tracker only.** The `# Issue tracker: <name>` heading names the tracker. When it differs from the Section A choice, or the file is a freeform "Other" one, redo the Section A write for it.
+- **Compare per operation or section:** present locally, missing, or differing from the template.
+- **Local wins on settings and customizations:** the PR flag value, label names, added operations, the `## Requirements corpus` block. The template wins on operations the local file lacks or holds in an older form. Put each real conflict to the user.
+- **Compose the merged text with `Skill("writing-for-agents")`.** Each meaning appears once: a section the template replaced is removed, not kept beside its successor. When that skill is absent, merge section by section.
+- **Sync the `## Agent skills` block** by the same rules.
+
+Step 3 shows the diff against the current file; write only after the user confirms. A file that already matches needs no write — say so.
+
+Then write the docs files that do not exist yet, using the seed templates in this skill folder as a starting point:
 
 - [issue-tracker-github.md](./issue-tracker-github.md) — GitHub issue tracker
 - [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) — GitLab issue tracker
@@ -141,4 +151,4 @@ For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch us
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these files. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-run this skill to sync those files with the current templates, switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
