@@ -4,6 +4,8 @@ Run: uv run --with pytest pytest reference/python/tests
 """
 import json
 
+import pytest
+
 from render_review_queue import main, slugify  # conftest.py puts HELPERS on sys.path
 
 STARTED = "2026-10-16T19-26-00"
@@ -359,6 +361,15 @@ def test_fix_ticket_reproduce_line_for_random_order_plugin_needs_no_install(tmp_
 def test_reproduce_line_replaces_recorded_no_randomly_flag_and_does_not_nest_uv(tmp_path, capsys):
     _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
            {"runners": {"python": "uv run pytest -p no:randomly"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
+    assert "no:randomly" not in _draft(tmp_path, ticket)
+
+
+@pytest.mark.parametrize("flag", ["-pno:randomly", "-p=no:randomly"])
+def test_reproduce_line_drops_joined_no_randomly_forms(tmp_path, capsys, flag):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
+           {"runners": {"python": f"uv run pytest {flag}"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
     (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
     assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
     assert "no:randomly" not in _draft(tmp_path, ticket)

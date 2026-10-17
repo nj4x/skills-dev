@@ -281,7 +281,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 }
 ```
 
-`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch. Every parametrization carries `class` (the test class; `null` for top-level tests), and its `tests` and `consolidated_name` take the `Class::test` form. `reference/python/scan_static.py` builds the `removals`, the dead-test `review_candidates`, and the `parametrizations` for Python; `reference/python/apply_param.py` applies the parametrizations (SKILL.md Step 9).
+`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch. Every parametrization carries `class` (the test class; `null` for top-level tests), and its `tests` and `consolidated_name` take the `Class::test` form. An `unanalyzable` entry holds `{ file, reason }`; one for a cluster the helper skipped also carries that cluster's `tests`. `reference/python/scan_static.py` builds the `removals`, the dead-test `review_candidates`, and the `parametrizations` for Python; `reference/python/apply_param.py` applies the parametrizations (SKILL.md Step 9).
 
 The top-level `schema_version` is `2`.
 

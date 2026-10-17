@@ -301,7 +301,7 @@ def reproduce_line(ledger, item):
     else:
         # the recorded `-p no:randomly` would block the plugin; the gate installed it for its run
         tokens = [t for i, t in enumerate(tokens)
-                  if t != "no:randomly" and not (t == "-p" and tokens[i + 1:i + 2] == ["no:randomly"])]
+                  if t not in ("no:randomly", "-pno:randomly", "-p=no:randomly") and not (t == "-p" and tokens[i + 1:i + 2] == ["no:randomly"])]
         args = ["-p", "randomly", f"--randomly-seed={seed}"]
         if tokens[:2] == ["uv", "run"]:
             tokens[2:2] = ["--with", "pytest-randomly"]

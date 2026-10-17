@@ -18,17 +18,20 @@ entry runs, in plan order. Prints one JSON object per entry, as a list:
 - `already-applied`: not in the ledger, but the file holds `consolidated_name` and none
   of `tests`: the write happened before the run stopped. The entry is recorded with
   `replaced` set to `tests`, and nothing is edited.
-- `skipped`: the file does not parse, an original is missing, or the edited text does
-  not parse or lacks the consolidated test. The file is left unchanged, and the ledger
+- `skipped`: the file does not parse, an original is missing, `consolidated_name` is
+  already defined in the scope, or the edited text does not parse or lacks the
+  consolidated test. The file is left unchanged, and the ledger
   records `{ file, tests, consolidated_name, skipped: "<error>" }`.
 
 Test names follow the plan: `Class::test` for a method, the bare name for a top-level
-test. The ledger is rewritten atomically after every entry.
+test. The ledger is rewritten atomically after every entry. An edited file keeps its
+line ends (LF or CRLF) and permission bits.
 """
 import argparse
 import ast
 import json
 import os
+import shutil
 import sys
 import textwrap
 from pathlib import Path
@@ -101,6 +104,10 @@ def edit(text, entry):
     except SyntaxError as exc:
         raise EditError(f"file does not parse: {exc}") from exc
     lines = text.splitlines(keepends=True)
+    cls, name = _split(entry["consolidated_name"])
+    if name in _functions(_scope(tree, cls)) and name not in {
+            _split(t)[1] for t in entry["tests"] if _split(t)[0] == cls}:
+        raise EditError(f"{entry['consolidated_name']} is already defined; the edit would shadow it")
     ranges = []
     for t in entry["tests"]:
         cls, name = _split(t)
@@ -119,7 +126,6 @@ def edit(text, entry):
     indent = " " * ranges[0][2]
     body = textwrap.dedent(entry["consolidated_body"]).strip("\n")
     body = textwrap.indent(body, indent) + "\n"
-    cls, _ = _split(entry["consolidated_name"])
     gap = "\n" if cls else "\n\n"
     out, i = [], 0
     for n, (start, end, _) in enumerate(ranges):
@@ -144,10 +150,19 @@ def edit(text, entry):
     return new_text
 
 
-def _write_text(path, text):
+def _read_text(path):
+    """(text with LF line ends, original line end)."""
+    with open(path, encoding="utf-8", newline="") as f:
+        raw = f.read()
+    return raw.replace("\r\n", "\n"), "\r\n" if "\r\n" in raw else "\n"
+
+
+def _write_text(path, text, newline="\n"):
+    """Atomic write that keeps the file's line ends and permission bits."""
     tmp = f"{path}.rt-tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(text.replace("\n", newline) if newline != "\n" else text)
+    shutil.copymode(path, tmp)
     os.replace(tmp, path)
 
 
@@ -160,8 +175,8 @@ def apply_entry(root, entry, ledger):
     path = root / entry["file"]
     record = {"file": entry["file"], "consolidated_name": entry["consolidated_name"]}
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
+        text, newline = _read_text(path)
+    except (OSError, UnicodeDecodeError) as exc:
         done.append({**record, "tests": entry["tests"], "skipped": f"cannot read file: {exc}"})
         return "skipped", done[-1]["skipped"]
     state = _state(text, entry)
@@ -173,7 +188,7 @@ def apply_entry(root, entry, ledger):
     except EditError as exc:
         done.append({**record, "tests": entry["tests"], "skipped": str(exc)})
         return "skipped", str(exc)
-    _write_text(path, new_text)
+    _write_text(path, new_text, newline)
     done.append({**record, "replaced": entry["tests"]})
     return "applied", None
 

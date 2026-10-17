@@ -77,9 +77,12 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
     )
     removed = []
     warnings = []
+    charged = set()
     for rid in dict.fromkeys(removed_ids):  # a repeated id is charged once
-        hits = sorted(n for n in tests if is_variant(n, rid))
-        if not hits:
+        matched = sorted(n for n in tests if is_variant(n, rid))
+        hits = [n for n in matched if n not in charged]  # so is a test two ids match
+        charged.update(hits)
+        if not matched:
             # No exact match: charge nothing, even when one class method has the name.
             removed.append({"id": rid, "call_s": None})
             methods = _same_name_methods(tests, rid)

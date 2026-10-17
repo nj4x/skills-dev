@@ -214,3 +214,38 @@ def test_aliased_pytest_import_does_not_satisfy_required_import(tmp_path):
     assert result["status"] == "applied"
     assert "\nimport pytest\n" in (root / "tests" / "test_cls.py").read_text()
     assert "4 passed" in pytest_run(root, "tests/test_cls.py").stdout
+
+
+def test_consolidated_name_already_defined_is_skipped_not_shadowed(tmp_path):
+    root = project(tmp_path, {"test_cl.py": TEST_FILE})
+    p = plan(root)
+    p["parametrizations"][0]["consolidated_name"] = "test_keep"
+    p["parametrizations"][0]["consolidated_body"] = p["parametrizations"][0]["consolidated_body"].replace(
+        "def test_clamp(", "def test_keep(")
+    (root / ".scratch" / "refactor-tests" / "simplification-plan.json").write_text(json.dumps(p))
+    [result] = apply(root)
+    assert result["status"] == "skipped"
+    assert result["reason"] == "test_keep is already defined; the edit would shadow it"
+    assert (root / "tests" / "test_cl.py").read_text() == TEST_FILE
+
+
+def test_apply_keeps_crlf_line_ends_and_file_mode(tmp_path):
+    root = project(tmp_path, {"test_cl.py": TEST_FILE})
+    path = root / "tests" / "test_cl.py"
+    path.write_bytes(TEST_FILE.replace("\n", "\r\n").encode())
+    path.chmod(0o640)
+    [result] = apply(root)
+    assert result["status"] == "applied"
+    raw = path.read_bytes()
+    assert raw.count(b"\n") == raw.count(b"\r\n") > 0
+    assert path.stat().st_mode & 0o777 == 0o640
+    assert "5 passed" in pytest_run(root, "tests/test_cl.py").stdout
+
+
+def test_unreadable_file_is_skipped(tmp_path):
+    root = project(tmp_path, {"test_cl.py": TEST_FILE})
+    (root / "tests" / "test_cl.py").unlink()
+    [result] = apply(root)
+    assert result["status"] == "skipped"
+    assert result["reason"].startswith("cannot read file")
+    assert ledger(root)["simplification"]["parametrizations"][0]["skipped"] == result["reason"]
