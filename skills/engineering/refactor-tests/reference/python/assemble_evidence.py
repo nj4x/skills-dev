@@ -2,6 +2,7 @@
 
 Usage:
   python assemble_evidence.py --arcs arcs.json --calltime calltime.json \
+      --id-basis post-layout|pre-layout \
       --tool coverage=7.16.2 --command coverage='<cmd>' --command timing='<cmd>' \
       [--status ok|skipped|failed --reason TEXT] [--existing FILE] --out FILE
 
@@ -11,13 +12,19 @@ a passed test with no `|run` context in --arcs gets outcome `no-coverage`, and
 an id in --arcs with no timing row gets `no-timing`. With --status
 skipped|failed, `tests` stays empty and --reason is required. --existing merges
 into an evidence file already holding another language; a missing --existing
-file counts as empty. --out is written atomically (temp file, then rename).
+file counts as empty. --id-basis is required: `post-layout` when ledger
+`simplification.post_layout_baseline` is set (Phase A moved the tests),
+`pre-layout` when it is not (`--dry-run` or `--phases=B`: no file moved).
+Read the ledger, not the flags. An --existing file with another id_basis is
+refused. --out is written atomically (temp file, then rename).
 `kill_set` is reserved for a later version and not written in v1.
 """
 import argparse
 import json
 import os
 import sys
+
+ID_BASES = ("post-layout", "pre-layout")
 
 
 def _language_block(arcs, calltime, tools, commands, status, reason):
@@ -43,13 +50,19 @@ def _language_block(arcs, calltime, tools, commands, status, reason):
     return block
 
 
-def assemble(arcs, calltime, *, tools, commands, status="ok", reason=None,
+def assemble(arcs, calltime, *, tools, commands, id_basis, status="ok", reason=None,
              language="python", existing=None):
+    if id_basis not in ID_BASES:
+        raise ValueError(f"id_basis {id_basis!r} is not one of {ID_BASES}")
     if status != "ok" and not reason:
         raise ValueError(f"status {status!r} requires a reason")
+    if existing and existing.get("id_basis") != id_basis:
+        raise ValueError(
+            f"existing id_basis {existing.get('id_basis')!r} differs from {id_basis!r}"
+        )
     doc = existing or {
         "schema_version": 1,
-        "id_basis": "post-layout",
+        "id_basis": id_basis,
         "languages": {},
     }
     doc["languages"][language] = _language_block(
@@ -82,6 +95,7 @@ if __name__ == "__main__":
     ap.add_argument("--arcs")
     ap.add_argument("--calltime")
     ap.add_argument("--language", default="python")
+    ap.add_argument("--id-basis", required=True, choices=ID_BASES)
     ap.add_argument("--tool", action="append")
     ap.add_argument("--command", action="append")
     ap.add_argument("--status", default="ok", choices=["ok", "skipped", "failed"])
@@ -90,11 +104,14 @@ if __name__ == "__main__":
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     existing = _load(a.existing) or None
-    doc = assemble(
-        _load(a.arcs), _load(a.calltime),
-        tools=_pairs(a.tool), commands=_pairs(a.command),
-        status=a.status, reason=a.reason, language=a.language,
-        existing=existing,
-    )
+    try:
+        doc = assemble(
+            _load(a.arcs), _load(a.calltime),
+            tools=_pairs(a.tool), commands=_pairs(a.command),
+            id_basis=a.id_basis, status=a.status, reason=a.reason,
+            language=a.language, existing=existing,
+        )
+    except ValueError as e:
+        sys.exit(f"assemble_evidence: {e}")
     _write_atomic(a.out, doc)
     sys.stderr.write(f"wrote {a.out}\n")

@@ -361,7 +361,7 @@ The baseline is `simplification.post_layout_baseline`, or the Step 3 baseline wh
 
 ## Test evidence schema (`.scratch/refactor-tests/test-evidence.json`)
 
-Written by the evidence pass (Phase B, first step) on post-layout test ids. Schema version 1. Python helpers: `reference/python/calltime.py` (timing hook), `extract_arcs.py` (per-test lines and arcs), `assemble_evidence.py` (this file).
+Written by the evidence pass (Phase B, first step). Schema version 1. Python helpers: `reference/python/calltime.py` (timing hook), `extract_arcs.py` (per-test lines and arcs), `assemble_evidence.py` (this file).
 
 ```json
 {
@@ -393,6 +393,7 @@ Written by the evidence pass (Phase B, first step) on post-layout test ids. Sche
 }
 ```
 
+- `id_basis` names the tree the test ids come from. `post-layout`: Phase A moved the tests and Step 6 found the layout healthy (ledger `simplification.post_layout_baseline` is set). `pre-layout`: the ids are those of Step 3, because Phase A moved no file: `--dry-run` (with or without Phase A in `--phases`) or `--phases=B`. Under `pre-layout`, a test that `plan.json` moves keeps its old path in its id. The caller passes the value with `--id-basis`; `assemble_evidence.py` refuses an `--existing` file with another value.
 - `tests` is keyed by test id (node id). Only tests whose call-phase `outcome` is `passed` get an entry; every other test is listed under `excluded` with its outcome: `failed`, `skipped`, `no-coverage` (a passed test with no `|run` context in the coverage data), or `no-timing` (a covered id with no row from the timing run).
 - `call_s` is the call-phase duration in seconds from the serial, untraced timing run. `covered` comes from the traced run, `|run` contexts only. Negative arc endpoints are function entry and exit.
 - A language block with `status` `skipped` or `failed` carries a `reason` and empty `tests`.
