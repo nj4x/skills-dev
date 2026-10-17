@@ -10,7 +10,7 @@ You are refactoring a project's test suite along three axes, each behind its own
 
 End state — every source file accounted for, every applicable axis reached:
 - **Phase A · Layout**: every test file at the location its language convention dictates for the source it exercises, imports rewritten to stay valid, suite passes with zero regressions.
-- **Phase B · Simplification** (opens with a per-test evidence pass): redundant unit tests removed; clusters of tests that call the same function with varying inputs under the same assertion pattern consolidated into parametrized test cases.
+- **Phase B · Simplification** (opens with a per-test evidence pass): exact-duplicate and trivially-true tests removed; evidence-based candidates queued for gated review; clusters of tests that call the same function with varying inputs under the same assertion pattern consolidated into parametrized test cases.
 - **Phase C · Context cost** (Spring Boot only): distinct Spring application contexts reduced, per-context background work switched off, suite wall time lower, assertions unchanged.
 
 A gate is **healthy** when zero tests that passed at that phase's baseline now fail. A **regressed** gate stops the run at that phase — the later phases never start.
@@ -138,8 +138,8 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 | **Exact duplicate** | Remove one — byte/AST-identical body AND identical fixtures, mocks, decorators (ignoring only name and docstring) |
 | **Dead test** | Review only, never removed — no assertion statement in body (per-language vocabulary in `reference/patterns.md`) |
 | **Trivially true** | Remove — only `assert True`, `assertEqual(x, x)`, `expect(1).toBe(1)` |
-| **Coverage subset** | Review only, never removed — every line and branch arc the test covers is also covered by other passing tests (evidence-based; fixture identity not required; see Step 8) |
-| **Cost** | Review only, never removed — a coverage-subset candidate in the top decile by `call_s`, at or above 0.5 s (evidence-based; see Step 8) |
+| **Coverage subset** | Review only, never removed on this evidence alone: see `reference/patterns.md` → What each criterion proves — every line and branch arc the test covers is also covered by other passing tests (evidence-based; fixture identity not required; see Step 8) |
+| **Cost** | Review only, never removed on this evidence alone: see `reference/patterns.md` → What each criterion proves — a coverage-subset candidate in the top decile by `call_s`, at or above 0.5 s (evidence-based; see Step 8) |
 | **Parametrize cluster** | Consolidate — N ≥ 3 tests call the same function with distinct args of the same structural type, identical fixtures+mocks, identical assertion pattern |
 | **Parametrize pair** | Consolidate — N = 2 tests meeting cluster criteria where names differ only by trailing integer or single-letter suffix |
 
@@ -283,14 +283,14 @@ Re-run the full suite with the recorded runner command (fixed order, see Step 3)
 
 If any regressed id is found, **re-run the full suite once** with the recorded runner command to confirm (flake detection; Phase B is post-consolidation so a failure under load is distinct from isolation). If all pass on retry, resume as healthy. If any still fail, record as regressed.
 
-**Serial call time.** After the first validation run (the one that loaded the hook), compare per-test call time before and after. Pass one `--removed <file>::<test_name>` per ledger `simplification.removals` entry:
+**Serial call time.** After the first validation run (the one that loaded the hook), compare per-test call time before and after. Pass one `--removed <file>::<test_name>` per ledger `simplification.removals` entry and per replaced test of `simplification.parametrizations`:
 
 ```sh
 python3 $SKILL_DIR/reference/python/calltime_delta.py --evidence .scratch/refactor-tests/test-evidence.json \
   --calltime .scratch/refactor-tests/calltime-after-python.json --removed '<file>::<test_name>' …
 ```
 
-Before is the total `call_s` of the evidence pass timing run (tests with an evidence entry); after is the total call duration of the passed rows in the validation run, minus ids listed under evidence `excluded` so both totals cover the same population. A missing `--calltime` file omits the figures with a warning; pass `--removed` the full node id (`<file>::<Class>::<test>` for a method). A bare `<file>::<test>` names a top-level test only: it never takes a class method's `call_s`. With no exact match it gets `call_s: null`, and when same-name class methods exist the `warning` names them. The script prints `before_s`, `after_s`, `delta_s`, and `call_s` per removed test id, labelled "serial call time, not wall time". Record its output in ledger `simplification.call_time`. When the evidence status is not `ok` or the calltime file is missing, the script returns null figures and a `warning`: omit both totals from the report and surface the warning. The `warning` can also be non-null next to valid totals (a bare id with same-name class methods): print it in the report whatever the evidence status. Delete `calltime-after-python.json` on every path.
+Before is the total `call_s` of the evidence pass timing run (tests with an evidence entry); after is the total call duration of the passed rows in the validation run, minus ids listed under evidence `excluded` so both totals cover the same population. A missing `--calltime` file omits the figures with a warning; pass `--removed` the full node id (`<file>::<Class>::<test>` for a method). A bare `<file>::<test>` names a top-level test only: it never takes a class method's `call_s`. With no exact match it gets `call_s: null`, and when same-name class methods exist the `warning` names them. The script prints `before_s`, `after_s`, `delta_s`, `attributable_s` (the sum of `call_s` of the removed and replaced tests), and `call_s` per removed test id, labelled "serial call time, not wall time". Record its output in ledger `simplification.call_time`. When the evidence status is not `ok` or the calltime file is missing, the script returns null figures and a `warning`: omit both totals from the report and surface the warning. The `warning` can also be non-null next to valid totals (a bare id with same-name class methods): print it in the report whatever the evidence status. When |`delta_s`| > 2 × `attributable_s` + 2% of `before_s`, the `warning` reads "delta exceeds what the changes can explain; treat it as run-to-run variance"; with `before_s` zero the check is not computed and the `warning` says so. Delete `calltime-after-python.json` on every path.
 
 - **Healthy**: advance to Phase C when ledger `spring_boot` is `true` and `--phases` includes Phase C, otherwise go to Step 11.
 - **Regressed**: record regressed ids, set `phase: failed-simplify`, run Step 11 (queue file only), stop at Phase B.
@@ -369,11 +369,11 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
    - Unanalyzable files (skipped by AST parser): list with reasons
 4. Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost, pinning, order-dependent, flaky), count and listing per group; user decides whether to remove
    - coverage-subset and cost: each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"
-   - pinning: the note per candidate (`covered through the interface` / `move the assertion to the interface`); pinning tests are never removed
+   - pinning: the note per candidate (`lines covered by one interface test (assertions not compared)` / `move the assertion to the interface`); pinning tests are never removed
    - order-dependent and flaky: the changes moved to review because of them, with `seed` and `failing_ids`
 5. Add candidates: confirmed seams per module with signal (or `proposed, not confirmed` under `--dry-run`/unattended), then the confirmed seams no interface test reaches; or the warning that evidence was not `ok` and this section was omitted. Always list ledger `seams.warnings` here (`propose` and `classify` warnings, such as a computed `__all__` or an add candidate re-exported by a package `__init__`), also under `--dry-run` and in an unattended run
 6. Order-dependent and flaky tests: every `order-dependent` and `flaky` test the gate found, whether a planned change touches it or not
-7. Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed test; when evidence was not `ok`, omit the totals. Print a non-null `warning` whatever the evidence status, also next to valid totals (same-name class methods)
+7. Serial call time, not wall time: `<before> s → <after> s (Δ <delta> s)`, plus `call_s` per removed or replaced test; when evidence was not `ok`, omit the totals. Print a non-null `warning` whatever the evidence status, also next to valid totals (same-name class methods, or the run-to-run variance warning)
 8. Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; per-context switches applied; clusters skipped with reasons; wall time before → after (informational, not gated).

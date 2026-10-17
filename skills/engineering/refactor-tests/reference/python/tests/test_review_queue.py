@@ -320,3 +320,58 @@ def test_hand_edited_index_entries_do_not_abort_the_run(tmp_path, capsys):
     _setup(tmp_path, _plan([_cand("test_a", "dead-test")]))
     out = _render(tmp_path, capsys)
     assert out["already_tracked"] == [{"key": f"review|dead-test|{A}::test_a", "ref": "?"}]
+
+
+def test_review_text_is_criterion_specific_and_coverage_criteria_do_not_offer_bare_remove():
+    from render_review_queue import WHAT
+    for crit in ("coverage-subset", "cost", "pinning"):
+        text = WHAT["review"][crit]
+        assert "keep, rewrite at the interface, or remove" not in text
+        assert "Follow-up: mutation deletion gate (optional)" in text
+        assert "Coverage shows execution, not assertion strength" in text
+    assert "Follow-up: mutation deletion gate" not in WHAT["review"]["dead-test"]
+
+
+def _draft(tmp_path, ticket):
+    return (tmp_path / ".scratch" / SLUG / "draft-issues" / f"{ticket['nn']}-{ticket['slug']}.md").read_text()
+
+
+def test_staged_review_ticket_uses_its_criterion_text(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_s", "coverage-subset")]))
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert "Follow-up: mutation deletion gate (optional)" in _draft(tmp_path, ticket)
+
+
+def test_fix_ticket_carries_reproduce_line_with_seed_and_plugin(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
+           {"runners": {"python": "pytest"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
+
+
+def test_fix_ticket_reproduce_line_for_random_order_plugin_needs_no_install(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "order-dependent", seed=7)]),
+           {"order_gate": {"plugin": "pytest-random-order", "seed": 7}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"pytest --random-order-bucket=global --random-order-seed=7 {A}" in _draft(tmp_path, ticket)
+
+
+def test_reproduce_line_replaces_recorded_no_randomly_flag_and_does_not_nest_uv(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
+           {"runners": {"python": "uv run pytest -p no:randomly"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
+    assert "no:randomly" not in _draft(tmp_path, ticket)
+
+
+def test_reproduce_line_installs_for_a_venv_launcher_and_omits_line_without_seed(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=5), _cand("test_g", "order-dependent")]),
+           {"runners": {"python": ".venv/bin/python -m pytest"}, "order_gate": {"plugin": "pytest-randomly"}})
+    tickets = _render(tmp_path, capsys, "--stage")["tickets"]
+    bodies = [_draft(tmp_path, t) for t in tickets]
+    with_seed = [b for b in bodies if "--randomly-seed=5" in b]
+    assert len(with_seed) == 1
+    assert (".scratch/refactor-tests/pytest-randomly pytest-randomly && PYTHONPATH=.scratch/refactor-tests/pytest-randomly"
+            f"${{PYTHONPATH:+:$PYTHONPATH}} .venv/bin/python -m pytest -p randomly --randomly-seed=5 {A}") in with_seed[0]
+    assert "uv run" not in with_seed[0]
+    assert all("Reproduce:" not in b for b in bodies if b is not with_seed[0])

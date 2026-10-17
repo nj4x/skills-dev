@@ -237,7 +237,7 @@ def test_pinning_note_depends_on_interface_superset_coverage(proj):
     pins = _by_test(out)
     covered = pins[("test_tokenize_directly", "src/pkg/text.py")]
     assert covered["covered_through_interface"] is True
-    assert covered["note"] == "covered through the interface"
+    assert covered["note"] == "lines covered by one interface test (assertions not compared)"
     moved = pins[("test_patched_internal", "src/pkg/text.py")]
     assert moved["covered_through_interface"] is False  # line 99 not covered by the interface test
     assert moved["note"] == "move the assertion to the interface"

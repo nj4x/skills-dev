@@ -34,6 +34,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -209,8 +210,16 @@ def _item_line(it, with_key=False):
     return "- " + " — ".join(parts)
 
 
+_CAVEAT = (" Coverage shows execution, not assertion strength. Remove a test only when a mutation check of its"
+          " module shows no lost kill; otherwise keep or merge it. See SKILL.md → Follow-up: mutation deletion gate (optional).")
+_REVIEW_WHAT = {
+    "dead-test": "The run flagged these tests for review and did not change them. Decide for each one: keep, rewrite at the interface, or remove.",
+    "coverage-subset": "The run flagged these tests for review and did not change them. Every line and arc each one covers is also covered by other passing tests." + _CAVEAT,
+    "cost": "The run flagged these slow tests for review and did not change them. Each is a coverage-subset test in the top decile by call time; the evidence does not say why it is slow." + _CAVEAT,
+    "pinning": "The run flagged these tests for review and did not change them. Each patches internals instead of calling the interface; the note per test says whether one interface test covers its lines (assertions not compared). Decide for each one: keep, or move the assertion to the interface." + _CAVEAT,
+}
 WHAT = {
-    "review": "The run flagged these tests for review and did not change them. Decide for each one: keep, rewrite at the interface, or remove.",
+    "review": _REVIEW_WHAT,  # per criterion; the dead-test text stays neutral
     "fix": "These tests fail when the suite runs in random order. The order gate moved every planned change that touches them to review. Make each one pass in any order.",
     "add": "These confirmed seams have no interface test that reaches them. Add a test at each seam.",
     "skipped": "The run could not apply this change automatically and left the files unchanged. Apply it by hand or record why it stays.",
@@ -223,11 +232,42 @@ CHECK = {
 }
 
 
-def ticket_body(t, slug):
+def reproduce_line(ledger, item):
+    """The command that re-runs one fix-ticket file with the recorded runner, plugin and seed, or None."""
+    gate = ledger.get("order_gate") or {}
+    seed = item.get("seed", gate.get("seed"))
+    if seed is None:
+        return None
+    tokens = shlex.split((ledger.get("runners") or {}).get("python") or "pytest")
+    prefix = ""
+    if gate.get("plugin") == "pytest-random-order":
+        args = ["--random-order-bucket=global", f"--random-order-seed={seed}"]
+    else:
+        # the recorded `-p no:randomly` would block the plugin; the gate installed it for its run
+        tokens = [t for i, t in enumerate(tokens)
+                  if t != "no:randomly" and not (t == "-p" and tokens[i + 1:i + 2] == ["no:randomly"])]
+        args = ["-p", "randomly", f"--randomly-seed={seed}"]
+        if tokens[:2] == ["uv", "run"]:
+            tokens[2:2] = ["--with", "pytest-randomly"]
+        elif tokens[:1] == ["pytest"]:
+            tokens = ["uv", "run", "--with", "pytest-randomly", *tokens]
+        else:  # another launcher: install into the scratch dir, as Step 7 does
+            target = ".scratch/refactor-tests/pytest-randomly"
+            prefix = (f"python3 -m pip install --target {target} pytest-randomly && "
+                      f"PYTHONPATH={target}${{PYTHONPATH:+:$PYTHONPATH}} ")
+    return prefix + shlex.join([*tokens, *args, item.get("file", "")])
+
+
+def ticket_body(t, slug, ledger=None):
     blocked = "\n".join(" — ".join(b.split("-", 1)) for b in t["blocked_by"]) or "none"
     seed = t["items"][0].get("seed")
     check = CHECK[t["category"]].format(seed=f" with seed {seed}" if seed is not None else "")
     items = "\n".join(_item_line(i, with_key=True) for i in t["items"])
+    what = WHAT["review"][t["criterion"]] if t["category"] == "review" else WHAT[t["category"]]
+    if t["category"] == "fix":
+        lines = dict.fromkeys(filter(None, (reproduce_line(ledger or {}, i) for i in t["items"])))
+        if lines:
+            what += "\n\nReproduce:\n" + "\n".join(f"    {ln}" for ln in lines)
     return (
         "---\n"
         "artifact-type: ticket\n"
@@ -238,7 +278,7 @@ def ticket_body(t, slug):
         "---\n\n"
         f"# {t['nn']} — {t['title']}\n\n"
         f"**Spec**: {slug}\n\n"
-        f"## What to build\n{WHAT[t['category']]}\n\n{items}\n\n"
+        f"## What to build\n{what}\n\n{items}\n\n"
         f"## Blocked by\n{blocked}\n\n"
         f"## Status\n{t['label']}\n\n"
         f"## Checklist\n- [ ] {check}\n"
@@ -355,7 +395,7 @@ def render(root, ledger, plan, index, project, stopped_at, stage):
         paths = []
         for t in tickets:
             rel = f".scratch/{slug}/draft-issues/{t['nn']}-{t['slug']}.md"
-            _write_text(root / rel, ticket_body(t, slug))
+            _write_text(root / rel, ticket_body(t, slug, ledger))
             paths.append(rel)
         _write_text(base / "manifest.md", "---\nartifact-type: tickets\n---\n" + "\n".join(paths) + "\n")
         write_atomic(base / "tickets.json", {"slug": slug, "tickets": [
