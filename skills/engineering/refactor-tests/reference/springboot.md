@@ -112,7 +112,7 @@ Union the mock fields across the cluster, keyed by **declared type**.
 |---|---|
 | Same type, same field name across classes | One base field, that name. |
 | Same type, differing field names | Pick the majority name; subclass bodies referencing the minority name need renaming in the same edit. In a tie, pick the alphabetically first. |
-| **Differing types under one field name** | Do **not** consolidate this cluster automatically — record it as `skipped` with the conflicting pair and surface it in the report. |
+| **Differing types under one field name** | Do **not** consolidate this cluster automatically — record it in ledger `spring.skipped_clusters` as `{ cluster, classes, reason }`, with the conflicting pair in `reason`. `cluster` is the cluster's shared class-level annotations and mocked types (`MockBean(<Type>)`), sorted and joined with `+`, so the same cluster gets the same id in every run; and surface it in the report. |
 | Mixed `@MockkBean` and `@SpykBean` on the same type | Different bean semantics; keep the spy out of the base and drop that class from the cluster. |
 
 ### C2.3 — Write the base class
@@ -208,8 +208,8 @@ Zero behaviour change is the bar. Re-run the full suite and record the post-C2/C
 | Disabled components unasserted | For each switch flipped in Step C3, `rg` confirms no test asserts on that component, or that class carries a local override. | **Gate: MUST PASS** |
 | Mock union safe | For each mock newly inherited by a class that did not declare it, no test in that class exercised the real bean. | **Gate: MUST PASS** |
 
-- **Healthy** (suite green + production config untouched + disabled components unasserted + mock union safe): set `phase: done`.
-- **Regressed** (a new suite failure, or a gate check fails): record which consolidations caused the failures and which classes to drop from the cluster. Set `phase: failed-context`.
+- **Healthy** (suite green + production config untouched + disabled components unasserted + mock union safe): go to Step 11 in `SKILL.md`, which sets `phase: done`.
+- **Regressed** (a new suite failure, or a gate check fails): record which consolidations caused the failures and which classes to drop from the cluster. Set `phase: failed-context`, then run Step 11 in `SKILL.md` (queue file only).
 
 Record the post-C4 ledger state so a resume mid-Phase-C has the consolidation history.
 

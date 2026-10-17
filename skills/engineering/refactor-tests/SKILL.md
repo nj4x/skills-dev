@@ -30,7 +30,8 @@ Every step relies on these preconditions:
 - Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
 - Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
 - Update the ledger after every durable side effect so a mid-run compaction is recoverable.
-- On `--dry-run`: write `plan.json` and `simplification-plan.json` then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`. The random-order gate (Step 8b) also runs before the exit; it too writes only under `.scratch/refactor-tests/`.
+- On `--dry-run`: write `plan.json` and `simplification-plan.json`, run Step 11, then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`. The random-order gate (Step 8b) also runs before the exit; it too writes only under `.scratch/refactor-tests/`. Step 11 writes only under `.scratch/` and to the tracker.
+- Step 11 never creates a tracker issue on a real tracker in an unattended run (no `AskUserQuestion`, no user present, or the skill was model-invoked), and never closes or deletes one. An unattended run on the local tracker may publish.
 - `rm -f` any temp file on every exit path, including hard-abort paths.
 - Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
 
@@ -47,8 +48,8 @@ Every step relies on these preconditions:
 ## Step 1 — Resolve project and detect stack
 
 1. `PROJECT_PATH` defaults to `$PWD`. Resolve to absolute path; hard-stop if not a directory.
-2. **Parse command-line arguments**: `--dry-run` (skip file mutations, stop after plan), `--phases=A,B` (run only specified phases, default all available).
-3. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`/`failed-*`, print the recorded phase and resume from it. On resume from `failed-*`, archive the old ledger to `ledger.YYYY-MM-DDTHH-MM-SS.json` and, if present, `test-evidence.json` to `test-evidence.YYYY-MM-DDTHH-MM-SS.json` (its `id_basis` may not fit the new run), and reuse the stored `baseline`. When `phase` is `done`, a fresh run is starting over an already-completed one: archive `ledger.json`, `plan.json`, and (if present) `simplification-plan.json` and `test-evidence.json` to their own `<name>.YYYY-MM-DDTHH-MM-SS.json` before writing new ones — the prior run's record would otherwise be silently overwritten with no trace. Otherwise (no ledger present) initialize a fresh ledger with `phase: discovery`.
+2. **Parse command-line arguments**: `--dry-run` (no changes to project files; stop after the plan and Step 11), `--phases=A,B` (run only specified phases, default all available), `--no-publish-review` (skip Step 11's tracker publish and queue file).
+3. **Ledger resume.** If `$PROJECT_PATH/.scratch/refactor-tests/ledger.json` exists and `phase` is not `done`/`failed-*`, print the recorded phase and resume from it. On resume from `failed-*`, archive the old ledger to `ledger.YYYY-MM-DDTHH-MM-SS.json` and, if present, `test-evidence.json` to `test-evidence.YYYY-MM-DDTHH-MM-SS.json` (its `id_basis` may not fit the new run) and `simplification-plan.json` to `simplification-plan.YYYY-MM-DDTHH-MM-SS.json` (Step 11 would otherwise queue the failed run's candidates when this run skips Phase B), and reuse the stored `baseline`. When `phase` is `done`, a fresh run is starting over an already-completed one: archive `ledger.json`, `plan.json`, and (if present) `simplification-plan.json` and `test-evidence.json` to their own `<name>.YYYY-MM-DDTHH-MM-SS.json` before writing new ones — the prior run's record would otherwise be silently overwritten with no trace. Otherwise (no ledger present) initialize a fresh ledger with `phase: discovery`. A `--dry-run` ends at `phase: done` (Step 11 item 7), so the real run after it starts fresh. Every new ledger records `started_at` as local time in `YYYY-MM-DDTHH-MM-SS` form: a fresh one, one started over a `done` ledger, and the one that replaces an archived `failed-*` ledger. Step 11 names the run's tickets after it. A resumed ledger with no `started_at`, written by an older version of this skill, gets one now. A ledger at `phase: publishing` resumes at Step 11.
 4. **Detect languages** by extension scan (respect `.gitignore`; skip `vendor/`, `node_modules/`, `.venv/`, `build/`, `.reference-projects/`, `.scratch/`).
 5. **Detect runner(s)** per language via convention markers in `reference/patterns.md`. Record the resolved command exactly.
 6. **Spring Boot check** (JVM projects only): set ledger `spring_boot: true` when a Spring Boot dependency and ≥2 context-loading test classes are both present — this enables Phase C. Detection commands are in `reference/springboot.md` Step C0.
@@ -119,8 +120,8 @@ Re-run the full suite with the recorded runner command (fixed order, see Step 3)
 
 If any regressed id is found, **re-run just those ids once** with the recorded runner command to confirm the failure (flake detection). If they all pass on retry, resume as healthy. If any still fail, record as regressed.
 
-- **Healthy**: record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B or stop if `--phases` excludes Phase B.
-- **Regressed**: print the regressed test ids (confirmed after retry), set `phase: failed-layout`, emit `say_skill_done`, stop at Phase A.
+- **Healthy**: record post-layout suite result in ledger `simplification.post_layout_baseline`. Print Phase A summary (see Final report). Advance to Phase B, or go to Step 11 if `--phases` excludes Phase B.
+- **Regressed**: print the regressed test ids (confirmed after retry), set `phase: failed-layout`, run Step 11 (queue file only), emit `say_skill_done`, stop at Phase A.
 
 ---
 
@@ -263,7 +264,7 @@ Set ledger `phase: executing`.
 
 **Removals**: delete each named test function from its file using the language's AST editor. Record each in ledger `simplification.removals` after the write. If removing the last test function in a file, delete the file with `git rm`.
 
-**Parametrizations** (atomic per entry): in a **single file write** — delete all N original test functions, insert the consolidated parametrized function, add any `required_imports` not already present. Record in ledger `simplification.parametrizations` in the same durable step. If the AST editor cannot perform the composite edit, record as `skipped` in the ledger with the error, leave the file unchanged, surface in the report.
+**Parametrizations** (atomic per entry): in a **single file write** — delete all N original test functions, insert the consolidated parametrized function, add any `required_imports` not already present. Record in ledger `simplification.parametrizations` in the same durable step. If the AST editor cannot perform the composite edit, record the entry with `tests` and `skipped: "<error>"` in the ledger, leave the file unchanged, surface in the report.
 
 **Resume.** When Step 1 resumes at `phase: executing`, walk the plan in the same order and skip every entry already applied or `skipped`:
 
@@ -291,8 +292,8 @@ python3 $SKILL_DIR/reference/python/calltime_delta.py --evidence .scratch/refact
 
 Before is the total `call_s` of the evidence pass timing run (tests with an evidence entry); after is the total call duration of the passed rows in the validation run, minus ids listed under evidence `excluded` so both totals cover the same population. A missing `--calltime` file omits the figures with a warning; pass `--removed` the full node id (`<file>::<Class>::<test>` for a method). A bare `<file>::<test>` names a top-level test only: it never takes a class method's `call_s`. With no exact match it gets `call_s: null`, and when same-name class methods exist the `warning` names them. The script prints `before_s`, `after_s`, `delta_s`, and `call_s` per removed test id, labelled "serial call time, not wall time". Record its output in ledger `simplification.call_time`. When the evidence status is not `ok` or the calltime file is missing, the script returns null figures and a `warning`: omit both totals from the report and surface the warning. The `warning` can also be non-null next to valid totals (a bare id with same-name class methods): print it in the report whatever the evidence status. Delete `calltime-after-python.json` on every path.
 
-- **Healthy**: advance to Phase C when ledger `spring_boot` is `true` and `--phases` includes Phase C, otherwise set `phase: done`.
-- **Regressed**: record regressed ids, set `phase: failed-simplify`, stop at Phase B.
+- **Healthy**: advance to Phase C when ledger `spring_boot` is `true` and `--phases` includes Phase C, otherwise go to Step 11.
+- **Regressed**: record regressed ids, set `phase: failed-simplify`, run Step 11 (queue file only), stop at Phase B.
 
 ---
 
@@ -306,8 +307,36 @@ Read `reference/springboot.md` and execute its Steps C0–C4, setting the ledger
 
 On regressed ids in Phase C, **re-run the full suite once** (not just the ids in isolation) to confirm — full-suite re-run surfaces Trap 4 state leakage.
 
-- **Healthy** (zero regressions): set `phase: done`. Wall-time improvement is reported but not gated (machine-noisy). Context count is reported.
-- **Regressed**: record regressed ids, set `phase: failed-context`.
+- **Healthy** (zero regressions): go to Step 11. Wall-time improvement is reported but not gated (machine-noisy). Context count is reported.
+- **Regressed**: record regressed ids, set `phase: failed-context`, run Step 11 (queue file only).
+
+---
+
+## Step 11 — Publish the review queue
+
+The run leaves some items to a human: review candidates (dead-test, coverage-subset, cost, pinning), fix candidates (order-dependent, flaky), add candidates (confirmed seams no interface test reaches), skipped parametrizations, and skipped Spring clusters. This step writes them to a queue file and, when the project has a tracker, publishes them as tickets through `to-tickets`. The ledger stays the source of truth for everything the run executed. Decisions and rejected options: `docs/adr/0079-refactor-tests-publish-review-queue.md` in the skills repo. Helper: `$SKILL_DIR/reference/python/render_review_queue.py`. Schema: `reference/patterns.md` → Review queue.
+
+**Entry.** A healthy run sets `phase: publishing` here, after Step 10 or Phase C. A `--dry-run` sets it after its last planning step: Step 8b, or Step 2 when `--phases` excludes Phase B. A regressed gate runs items 1–2 only, after setting its `failed-*` phase.
+
+**Ledger resume.** `publish.status` of `skipped`, `local-only`, `empty`, `drafted`, `published`, or `failed` is final: never retry it, go to item 7. `queued` reruns from item 2. `publishing` means `to-tickets` may already have published: go straight to item 6, never back to item 2, whose `render --stage` would overwrite the drafts and the rewritten manifest. A recorded `publish.parent` is kept by item 2 and reused by item 4, never created again.
+
+1. **Opt-out.** With `--no-publish-review`, run `python3 $SKILL_DIR/reference/python/render_review_queue.py render --project-root $PROJECT_PATH --ledger .scratch/refactor-tests/ledger.json --rekey-only [--stopped-at <failed-* phase>]`. It writes no queue file and only re-keys the cross-run index through this run's moves, so a moved test stays tracked in later runs. Record `publish: { status: skipped }` and go to item 7.
+2. **Render.** Run:
+
+   ```sh
+   python3 $SKILL_DIR/reference/python/render_review_queue.py render --project-root $PROJECT_PATH \
+     --ledger .scratch/refactor-tests/ledger.json --plan .scratch/refactor-tests/simplification-plan.json \
+     --project-name <project name> [--stage] [--stopped-at <failed-* phase>]
+   ```
+
+   Pass `--stopped-at` after a regressed gate. Pass `--stage` only when the run did not regress and `$PROJECT_PATH/docs/agents/issue-tracker.md` exists. The helper always writes `.scratch/refactor-tests/review-queue.md`. It drops every item already in the cross-run index `.scratch/refactor-tests/review-index.json`, after mapping index ids through this run's moves, and lists those under "already tracked". With `--stage` it writes `spec.md`, `draft-issues/`, `manifest.md`, and `tickets.json` under `.scratch/<slug>/`. The slug is `refactor-tests-review-<started_at>`, lowercased. It prints `{ slug, title, queue, staged, items, tickets, already_tracked, superseded }`. Record `publish: { status: queued, slug, parent, tickets: [], already_tracked }`, where `parent` keeps any recorded value and is otherwise `null`. Then:
+   - Regressed gate, or no `docs/agents/issue-tracker.md`: record `status: local-only` and go to item 7.
+   - `tickets` is empty: record `status: empty` and go to item 7. Create no parent issue and do not call `to-tickets`.
+3. **Tracker kind and attendance.** Read `docs/agents/issue-tracker.md`: it names either the local tracker (`.scratch/<slug>/issues/`) or a real tracker (GitHub, GitLab, …). The run is **unattended** when `AskUserQuestion` is unavailable, no user is present to answer, or the skill was model-invoked (the user did not type `/refactor-tests` to start this run). On a real tracker in an unattended run, record `status: drafted` and go to item 7. The report gives both ways to publish the drafts later (item 7).
+4. **Parent issue** (real tracker, interactive only). Skip creation when `publish.parent` is set. Otherwise create one issue with the tracker doc's create operation. Its title is the helper's `title`, and its body is the whole `spec.md`, H1 included, so `to-tickets` finds the issue identical to `spec.md` and its refresh keeps the H1 that the slug comes from. Record its reference in `publish.parent` and write the ledger before item 5.
+5. **Publish.** Record `publish.status: publishing` and write the ledger. Then call `Skill("to-tickets", args=…)`. The args name the feature `<title>`, so `to-tickets` derives the same slug. They also name the source: the parent issue on a real tracker, `.scratch/<slug>/spec.md` on the local tracker. And they say that the drafts under `.scratch/<slug>/draft-issues/` are the slices, written verbatim, with `spec.md` → "Proposed tickets" as the grouping and blocking edges, and that any merged, split, or renamed ticket keeps every `` key: `…` `` line of the items it holds. An unattended local-tracker run puts the line `headless: true` in the args, because a model-invoked run may still hold `AskUserQuestion`. `to-tickets` then takes its headless path, with those drafts as the pre-shaped context. An interactive run gets the normal quiz, with that table as its proposal, and the normal critic loop.
+6. **Record.** Run `python3 $SKILL_DIR/reference/python/render_review_queue.py record --project-root $PROJECT_PATH --slug <slug>`. Add one `--ref <ticket file name>=<tracker ref>` for each ticket that `to-tickets` reported created when it left the manifest untouched after a partial failure. The helper finds the published tickets and their bodies, so a ticket that `to-tickets` renamed, merged, or split still counts. It credits each item to the published ticket whose body holds the item's full key (each draft item line ends with `` key: `<key>` ``). It adds those keys to the index and prints `{ status, tickets, unpublished, unmatched }`. `unpublished` lists the keys no published ticket names; `unmatched` lists published names with no body file, for example a manifest line `#141 01-new-name` whose draft is still `01-old-name.md`. For each one, run `record` again with `--ref <draft file name>=<tracker ref>`; when no draft matches, the report names it. Record `publish.tickets` from `tickets`. Record `publish.status` as `failed` when `to-tickets` reported that real-tracker pass 1 or 2, or a local-tracker promotion, stopped partway. Otherwise record `drafted` when the helper says `drafted`, and `published` when it says `published` or `partial`; with `partial`, the report lists the `unpublished` items as not ticketed (a slice dropped in the quiz, or a body that lost its `key:` lines), and the next run queues them again. `failed` never changes the run's health result.
+7. **Finish.** On the healthy path and under `--dry-run`, set `phase: done`.
 
 ---
 
@@ -348,6 +377,11 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 8. Post-simplification: `<N> passed, <M> failed` — `✓ zero regressions` or `✗ <k> regressions (after flake retry):` + ids
 
 **Phase C — Context cost** (Spring Boot only): classes consolidated per cluster; Spring contexts before → after; per-context switches applied; clusters skipped with reasons; wall time before → after (informational, not gated).
+
+**Review queue** (Step 11): `publish.status`; the queue file path; one line per ticket with its reference, label, and blocking ticket, or the local `issues/` path; the "already tracked" items with their references; and any superseded earlier slug. The status decides what else the report adds:
+- `drafted`: give the ways to publish the staged drafts. On a real tracker there are two. The first uses `publish.parent` when it is set, or else creates a parent issue from the whole `.scratch/<slug>/spec.md`. It then runs `/to-tickets` with that issue as the source, so the tickets become its sub-issues. The second runs `/to-tickets` on `spec.md` alone, so the tickets have no parent. On the local tracker only the second applies. In every case, tell `/to-tickets` the feature name `<title>` and that the drafts under `.scratch/<slug>/draft-issues/` are the slices, written verbatim, with every `key:` line kept. Then give the follow-up `python3 $SKILL_DIR/reference/python/render_review_queue.py record --project-root $PROJECT_PATH --slug <slug>`, which adds the published tickets to the cross-run index. Without it the next run tickets those items again.
+- A `publish.parent` with no published tickets: name it, and say the user can close it or reuse it as the source of a later `/to-tickets`.
+- `failed`: the created and the uncreated tickets.
 
 Report only the phases that ran. When a gate regressed, name the phase that stopped the run and say the later phases were not reached — resolve those regressions and re-run to continue.
 

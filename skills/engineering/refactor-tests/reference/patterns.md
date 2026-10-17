@@ -132,7 +132,8 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 ```json
 {
-  "phase": "discovery|baseline|moving|rewriting|validating|evidence|seams|simplifying|order-gate|executing|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
+  "phase": "discovery|baseline|moving|rewriting|validating|evidence|seams|simplifying|order-gate|executing|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|publishing|done|failed-layout|failed-simplify|failed-context",
+  "started_at": "2026-10-16T19-26-00",
   "dry_run": false,
   "phases_requested": ["A", "B", "C"],
   "project_path": "/abs/path",
@@ -169,7 +170,10 @@ This preserves the package (compilation works) and allows filtering: `go test ./
     "post_layout_baseline": { "python": { "passed": 412, "failed": [] } },
     "removals": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_parse_duplicate", "criterion": "exact-duplicate" } ],
     "review_candidates": [ { "file": "tests/protrading/adapters/test_instruments.py", "test_name": "test_always_passes", "criterion": "dead-test" } ],
-    "parametrizations": [ { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" } ],
+    "parametrizations": [
+      { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" },
+      { "file": "tests/protrading/adapters/test_instruments.py", "tests": ["test_fmt_a", "test_fmt_b", "test_fmt_c"], "consolidated_name": "test_fmt_parametrized", "skipped": "composite edit failed: decorator order differs" }
+    ],
     "call_time": { "label": "serial call time, not wall time", "before_s": 41.2, "after_s": 37.9, "delta_s": -3.3, "removed": [ { "id": "tests/protrading/adapters/test_instruments.py::test_parse_duplicate", "call_s": 0.012 } ], "warning": null }
   },
   "spring": {
@@ -177,7 +181,17 @@ This preserves the package (compilation works) and allows filtering: `go test ./
     "consolidations": [
       { "file": "src/test/kotlin/com/org/support/AbstractApiDocumentationTest.kt", "base_class": "AbstractApiDocumentationTest", "annotations_removed": ["@SpringBootTest", "@AutoConfigureWebTestClient", "@AutoConfigureRestDocs"], "mocks_removed": 11 }
     ],
+    "skipped_clusters": [
+      { "cluster": "MockBean(PaymentClient)+WebMvcTest", "classes": ["PaymentApiTest", "RefundApiTest", "PayoutApiTest"], "reason": "differing types under field name client: PaymentClient vs PaymentClientV2" }
+    ],
     "post_context_cost": { "context_count": 1, "wall_time_seconds": 28.3 }
+  },
+  "publish": {
+    "status": "published",
+    "slug": "refactor-tests-review-2026-10-16t19-26-00",
+    "parent": "#140",
+    "tickets": [ { "ref": "#141", "keys": ["review|dead-test|tests/protrading/adapters/test_instruments.py::test_always_passes"] } ],
+    "already_tracked": [ { "key": "review|pinning|tests/protrading/adapters/test_instruments.py::test_cache_internals", "ref": "#97" } ]
   }
 }
 ```
@@ -279,6 +293,43 @@ A test that meets several criteria gets one entry per criterion, not one merged 
 An `exact-duplicate` removal also carries `duplicate_of`: the name of the test that stays, and `duplicate_of_file` when that test is in another file (default: the removal's `file`). Step 8b reads both to treat that kept test as involved in the change.
 
 `evidence.<lang>.status` is `ok`, `skipped`, or `failed`; `reason` is a one-line string when not `ok`; `tests` is the number of entries written. Resume reuses a recorded status rather than re-running. The top-level `evidence` object in `simplification-plan.json` is `{ "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok|skipped|failed" }`: `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
+
+## Review queue (Step 11)
+
+`reference/python/render_review_queue.py` turns the run's human-action items into `.scratch/refactor-tests/review-queue.md` and, with `--stage`, into `to-tickets` drafts. Decisions: ADR-0079.
+
+**Items and keys.** Each item belongs to one category and has the key `<category>|<criterion>|<id>`:
+
+| Category | Source | Criterion | Id | Label |
+|---|---|---|---|---|
+| review | plan `review_candidates` | `dead-test`, `coverage-subset`, `cost`, `pinning` | `<file>::<test_name>` | `ready-for-human` |
+| fix | plan `review_candidates` | `order-dependent`, `flaky` | `<file>::<test_name>` | `ready-for-agent` |
+| add | plan `seams.add_candidates` | `untested-seam` | `<module>::<seam>` | `ready-for-agent` |
+| skipped | ledger `simplification.parametrizations` with `skipped` | `skipped-parametrization` | `<file>::<consolidated_name>` | `ready-for-human` |
+| skipped | ledger `spring.skipped_clusters` | `skipped-spring-cluster` | `<cluster>` | `ready-for-human` |
+
+**Grouping.** One ticket per category, criterion, and module. The module is the test file's directory, the source module for add candidates, and the cluster for Spring clusters. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then review, add, and skipped. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them. The only blocking edge: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`).
+
+**Staged files** under `.scratch/<slug>/`, where the slug is `refactor-tests-review-<started_at>` lowercased (the `to-tickets` slug rule applied to the title `refactor-tests review <started_at>`):
+- `spec.md`: that title as H1, `Project: <name>`, item counts, already-tracked items, and a "Proposed tickets" table (NN, title, label, blocked by).
+- `draft-issues/<NN>-<slug>.md`: the `to-tickets` spec-linked template with `label:` in its frontmatter and the same value under `## Status`.
+- `manifest.md`: `artifact-type: tickets` frontmatter, then the draft paths in order.
+- `tickets.json`: `{ slug, tickets: [ { nn, slug, keys } ] }`, which `record` reads.
+
+**Cross-run index** `.scratch/refactor-tests/review-index.json`: `{ schema_version: 1, entries: { <key>: { ref, slug } } }`. `render` maps each entry's id through the ledger's `id_map`, or, when `id_map` has no entry, through its `moves` (old file to new file), before comparing keys. `render` then writes the re-keyed entries back, except after a layout regression (`--stopped-at failed-layout`, whose moves the user may revert; Phase A moves stay in the tree after a later regression), so a test moved in this run still matches its entry when a later ledger no longer holds the move. `render --rekey-only` does only the re-key, for a run with `--no-publish-review`; it needs no `--plan`. If two entries re-key to the same key, the first is kept. Only `record` adds entries, and only for published tickets. A ticket counts as published when `--ref` names it, when a manifest line reads `<tracker-ID> <name>` (`<name>` is `<NN>-<slug>`, any number of digits, `.md` optional), or when `issues/<name>.md` exists. Its body is `issues/<name>.md` or `draft-issues/<name>.md`. Each ticket item line ends with `` key: `<key>` ``. An item is credited to the published ticket whose body holds its full key in backticks, so a ticket `to-tickets` renamed, merged, or split still counts. `record` prints `{ status, tickets, unpublished, unmatched }`: `status` is `published` (every key credited), `drafted` (none), or `partial` (some; Step 11 maps it to the ledger status); `unpublished` lists every key no published body names; `unmatched` lists published names with no body file. An entry suppresses its item whatever the ticket's tracker state; delete the entry to re-ticket the item. `render` reports an earlier `refactor-tests-review-*` directory as superseded when it has `draft-issues/`, no `issues/`, no manifest line with a tracker id, and no index entry.
+
+**Ledger `publish`**: `{ status, slug, parent, tickets: [ { ref, keys } ], already_tracked: [ { key, ref } ] }`.
+
+| `status` | Meaning | Final |
+|---|---|---|
+| `skipped` | `--no-publish-review` given. | yes |
+| `queued` | Queue file written; publish not yet attempted. A resume reruns Step 11 from item 2. | no |
+| `publishing` | `to-tickets` called; it may have published some or all tickets. A resume goes to `record` (item 6). | no |
+| `local-only` | No `docs/agents/issue-tracker.md`, or a gate regressed. Queue file only. | yes |
+| `empty` | Zero items after dedupe. No parent, no `to-tickets` call. | yes |
+| `drafted` | Drafts staged, nothing published. | yes |
+| `published` | `to-tickets` finished without a pass 1 or 2 failure. Pass-3 sub-issue fallbacks count as published. Items no published body names are reported as not ticketed and queue again next run. | yes |
+| `failed` | `to-tickets` real-tracker pass 1 or 2, or a local-tracker promotion, stopped partway. | yes |
 
 ## Seam classification (Python)
 
