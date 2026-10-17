@@ -9,6 +9,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from scan_static import scan  # conftest.py puts HELPERS on sys.path
 
 HELPERS = Path(__file__).resolve().parent.parent
@@ -249,3 +251,70 @@ def test_unreadable_file_is_skipped(tmp_path):
     assert result["status"] == "skipped"
     assert result["reason"].startswith("cannot read file")
     assert ledger(root)["simplification"]["parametrizations"][0]["skipped"] == result["reason"]
+
+
+def test_non_utf8_file_is_skipped(tmp_path):
+    root = project(tmp_path, {"test_cl.py": TEST_FILE})
+    path = root / "tests" / "test_cl.py"
+    path.write_bytes(TEST_FILE.encode() + b"# \xff\xfe\n")
+    [result] = apply(root)
+    assert result["status"] == "skipped"
+    assert result["reason"].startswith("cannot read file")
+    assert "can't decode" in result["reason"]
+    assert path.read_bytes() == TEST_FILE.encode() + b"# \xff\xfe\n"
+
+
+@pytest.mark.parametrize("sep", ["\x0c", "\u2028"], ids=["form-feed", "line-separator"])
+def test_apply_counts_lines_as_ast_does(tmp_path, sep):
+    # str.splitlines splits inside this comment and ast does not: a naive split shifts
+    # every later line, so the edit would delete the wrong lines
+    def with_comment(mark):
+        return TEST_FILE.replace("from pkg.calc", f"# section{mark}one\nfrom pkg.calc", 1)
+
+    plain = project(tmp_path / "plain", {"test_cl.py": with_comment(" ")})
+    odd = project(tmp_path / "odd", {"test_cl.py": with_comment(sep)})
+    assert apply(plain)[0]["status"] == apply(odd)[0]["status"] == "applied"
+    expected = (plain / "tests" / "test_cl.py").read_text().replace(" one\n", f"{sep}one\n", 1)
+    text = (odd / "tests" / "test_cl.py").read_text()
+    assert text == expected
+    assert functions(text) == ["test_keep", "test_clamp", "test_after"]
+    assert "5 passed" in pytest_run(odd, "tests/test_cl.py").stdout
+
+
+def test_apply_keeps_mixed_line_ends(tmp_path):
+    root = project(tmp_path, {"test_cl.py": TEST_FILE})
+    path = root / "tests" / "test_cl.py"
+    path.write_bytes(TEST_FILE.replace("def test_after():\n", "def test_after():\r\n").encode())
+    [result] = apply(root)
+    assert result["status"] == "applied"
+    raw = path.read_bytes()
+    assert raw.count(b"\r\n") == 1 and b"def test_after():\r\n" in raw
+    assert raw.startswith(b'"""Clamp tests."""\nfrom pkg.calc import clamp\n')
+
+
+def test_apply_writes_through_a_symlink(tmp_path):
+    root = project(tmp_path, {"test_cl.py": TEST_FILE})
+    link = root / "tests" / "test_cl.py"
+    real = root / "real_cl.py"
+    link.rename(real)
+    link.symlink_to(real)
+    [result] = apply(root)
+    assert result["status"] == "applied"
+    assert link.is_symlink()
+    assert functions(real.read_text()) == ["test_keep", "test_clamp", "test_after"]
+
+
+def test_failed_write_leaves_no_temp_file(tmp_path, monkeypatch):
+    import apply_param
+
+    path = tmp_path / "f.py"
+    path.write_text("x = 1\n")
+
+    def boom(*_):
+        raise OSError("copymode failed")
+
+    monkeypatch.setattr(apply_param.shutil, "copymode", boom)
+    with pytest.raises(OSError, match="copymode failed"):
+        apply_param._write_text(path, "x = 2\n")
+    assert path.read_text() == "x = 1\n"
+    assert not list(tmp_path.glob("*.rt-tmp"))

@@ -486,6 +486,10 @@ CFG = '''_cache = {}
 
 def load_config():
     return _cache
+
+
+def _reset():
+    _cache.clear()
 '''
 
 KIND_TESTS = '''from unittest.mock import patch
@@ -526,6 +530,11 @@ def test_imported_not_patched():
 
 def test_two_modules():
     with patch("pkg.svc.load_config"), patch("pkg.cfg._cache", {}):
+        assert run() is not None
+
+
+def test_double_here_private_there():
+    with patch("pkg.svc.load_config"), patch("pkg.cfg._reset"):
         assert run() is not None
 '''
 
@@ -579,6 +588,17 @@ def test_one_test_takes_its_strictest_kind_in_every_module(kinds_proj):
     svc_rec, cfg_rec = pins[("test_two_modules", "src/pkg/svc.py")], pins[("test_two_modules", "src/pkg/cfg.py")]
     assert svc_rec["doubles"] == ["load_config"] and cfg_rec["internals"] == ["_cache"]
     assert svc_rec["kind"] == cfg_rec["kind"] == "collaborator-double"  # double is stricter than constant
+
+
+def test_widened_double_record_does_not_say_do_not_delete(kinds_proj):
+    from classify_seams import NOTE_DOUBLE
+    out = classify(kinds_proj, ["src"], _confirmed(propose(kinds_proj, ["src"])), ["tests/test_kinds.py"])
+    pins = _by_test(out)
+    svc_rec = pins[("test_double_here_private_there", "src/pkg/svc.py")]
+    cfg_rec = pins[("test_double_here_private_there", "src/pkg/cfg.py")]
+    assert (svc_rec["internals"], svc_rec["doubles"]) == ([], ["load_config"])
+    assert svc_rec["kind"] == cfg_rec["kind"] == "private"
+    assert svc_rec["note"] != NOTE_DOUBLE  # a private ticket ends in delete
 
 
 # --- seams-confirmed.json reuse (G6) -----------------------------------------

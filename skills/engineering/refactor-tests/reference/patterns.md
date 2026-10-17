@@ -104,7 +104,7 @@ The dead-test criterion flags tests with no assertion statements. Use this vocab
 
 | Order | `kind` | Matches | Disposition |
 |---|---|---|---|
-| 1 | `no-raise-contract` | The last statement calls a documented raiser (`*.validate(`, or a name the project lists), or the test name or docstring says "does not raise" or "must not raise". | Keep. It is the only guard against an over-strict validator. Counted in the Final report, never ticketed. |
+| 1 | `no-raise-contract` | The last statement calls a documented raiser (bare `validate(` or `*.validate(` on any receiver, or a name the project lists with `--raiser`: a bare call matches any raiser with that last name, a dotted call matches only when one dotted name ends with the other, so `config.load(` matches `pkg.config.load`, never `other.load`), or the test name or docstring says "does not raise" or "must not raise". | Keep. It is the only guard against an over-strict validator. Counted in the Final report, never ticketed. |
 | 2 | `fail-soft` | The body sets up an error (`side_effect=…Error`) and calls the code under test. | Add an assertion on the log or the return value. Check it by hand-mutating the function to a silent no-op: the test must fail. |
 | 3 | `never-fails` | The only outcome other than a pass is `pytest.skip` (or `pytest.importorskip`). | Replace the skip with an assertion, or remove the test. |
 | 4 | `no-assertion` | Everything else. | Add an assertion, or remove the test. |
@@ -390,7 +390,7 @@ Names with a leading underscore are never proposed. Test files and `conftest.py`
 - **Pinning candidate**: at least one reference is not a seam (`internals` lists them, e.g. `_tokenize`, or a mock patched at an internal path).
 - One test can be an interface test for one module and a pinning candidate for another.
 
-**Test doubles.** `classify` reads, per source module, which top-level names the module binds by an import and which it defines (`def`, `class`, or an assignment, also inside a module-level `if` or `try`; a name both imported and defined counts as defined). A `patch(...)`, `patch.object(...)`, or `monkeypatch.setattr(...)` target that names an imported name is a **test double**: the test replaces a collaborator, not the module's own code. It is listed under `doubles`, not `internals`. A test whose only non-seam references in a module are doubles is an interface test with doubles: it stays a pinning candidate with `kind: collaborator-double` and the note "re-point the stub (deps injection or a checked patch); do not delete". (`codebase-design` has no term for this; it names an in-memory fake or a mock adapter, which a test double may be.)
+**Test doubles.** `classify` reads, per source module, which top-level names the module binds by an import and which it defines (`def`, `class`, or an assignment, also inside a module-level `if` or `try`; a name both imported and defined counts as defined). A `patch(...)`, `patch.object(...)`, or `monkeypatch.setattr(...)` target that names an imported name is a **test double**: the test replaces a collaborator, not the module's own code. It is listed under `doubles`, not `internals`. A test whose only non-seam references in a module are doubles is an interface test with doubles: it stays a pinning candidate with `kind: collaborator-double` and the note "re-point the stub (deps injection or a checked patch); do not delete". When the same test takes a stricter kind in another module, every record of it carries that kind and the move or covered note instead. (`codebase-design` has no term for this; it names an in-memory fake or a mock adapter, which a test double may be.)
 
 **Pinning kinds.** Each non-seam reference has a kind, and each pinning candidate carries `kind`:
 
@@ -537,7 +537,7 @@ Optional follow-up, per module; see `SKILL.md` → Follow-up: mutation deletion 
 2. A timeout counts as killed in both runs. A mutant with a non-deterministic outcome counts as lost.
 3. Re-run only the lost mutants without fail-fast, to build the restore list: the tests to keep.
 4. Use batches of 25 candidates.
-5. Use `mutate_only_covered_lines` and `do_not_mutate` for migrations and generated code.
+5. Leave migrations and generated code out of the count. mutmut reads `mutate_only_covered_lines` and `do_not_mutate` only from project config: rely on them if the project already sets them; otherwise drop mutants in those files from both runs when comparing.
 6. Install mutmut ephemerally, as Step 7 does. Edit no project config.
 7. Run the gate after the hotspot fixes. It is about 9.6x cheaper once a shared cost is gone.
 

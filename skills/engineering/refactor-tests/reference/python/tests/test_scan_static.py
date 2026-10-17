@@ -283,6 +283,8 @@ def test_helper_cycle_does_not_cache_a_partial_false(tmp_path):
     ("def test_x():\n    with ctx():\n        schema.validate({})\n", "no-raise-contract"),
     ("def test_ok():\n    parse_strict({})\n", "no-raise-contract"),
     ("def test_ok():\n    validate({})\n", "no-raise-contract"),
+    ("def test_ok():\n    Schema().validate({})\n", "no-raise-contract"),
+    ("def test_ok():\n    get()[0].validate(x)\n", "no-raise-contract"),
     ("def test_ok():\n    config.parse_strict({})\n", "no-raise-contract"),
     ("def test_ok():\n    pkg.config.parse_strict({})\n", "no-raise-contract"),
     ("def test_ok():\n    other.parse_strict({})\n", "no-assertion"),
@@ -296,9 +298,9 @@ def test_helper_cycle_does_not_cache_a_partial_false(tmp_path):
     ("def test_x():\n    pytest.importorskip('numpy')\n    load(1)\n", "never-fails"),
     ("def test_x():\n    load(1)\n", "no-assertion"),
     ("def test_x():\n    m = Mock(side_effect=ValueError)\n", "no-assertion"),
-], ids=["validate", "validate-in-with", "raiser-flag", "bare-validate", "raiser-dotted",
-        "raiser-qualified", "raiser-other-module", "name", "docstring", "fail-soft-with",
-        "fail-soft-mock", "fail-soft-attr", "fail-soft-decorator", "never-fails", "importorskip", "no-assertion",
+], ids=["validate", "validate-in-with", "raiser-flag", "bare-validate", "call-receiver-validate",
+        "subscript-receiver-validate", "raiser-dotted", "raiser-qualified", "raiser-other-module", "name",
+        "docstring", "fail-soft-with", "fail-soft-mock", "fail-soft-attr", "fail-soft-decorator", "never-fails", "importorskip", "no-assertion",
         "error-setup-without-call"])
 def test_dead_test_kinds(tmp_path, text, kind):
     out = run(tmp_path, {"test_kinds.py": text}, raisers=["config.parse_strict"])
@@ -431,6 +433,19 @@ def test_parametrize_cluster_unanalyzable(tmp_path, tests, reason):
     [entry] = out["unanalyzable"]
     assert entry["reason"] == reason
     assert entry["file"] == "tests/test_un.py"
+
+
+@pytest.mark.parametrize("sep", ["\x0c", "\u2028"], ids=["form-feed", "line-separator"])
+def test_comment_window_counts_lines_as_ast_does(tmp_path, sep):
+    # str.splitlines splits inside this comment; ast does not, so a naive split shifts
+    # every later line and misses the comment on each test's last line
+    text = f"# section{sep}one\nfrom pkg.calc import clamp\n\n"
+    for i in range(3):
+        text += f"def test_c_{i}x():\n    assert clamp({i}, 0, 3) == {i}  # c\n\n"
+    out = run(tmp_path, {"test_un.py": text})
+    assert out["parametrizations"] == []
+    [entry] = out["unanalyzable"]
+    assert entry["reason"] == "comments in body would be lost by AST regeneration"
 
 
 def test_parametrize_cluster_skips_docstring_and_parametrized_and_fixture_differences(tmp_path):
