@@ -209,9 +209,18 @@ Parse every test file (post-layout) using the language's AST parser. For each te
 
 Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → parametrize cluster → parametrize pair.
 
+**Evidence-free criteria (Python).** The helper applies exact duplicate, dead, trivially true, parametrize cluster and parametrize pair, with the "Do NOT flag" rules of Redundancy criteria. Pass one `--source-root` per ledger `source_roots` entry and one `--tests` flag per test directory; both flags repeat (`--tests a b` fails with "unrecognized arguments"). Add one `--raiser <name>` for each documented raiser the project names beyond `*.validate`:
+
+```sh
+python3 $SKILL_DIR/reference/python/scan_static.py --root $PROJECT_PATH --source-root <root> … \
+  --tests <dir> --tests <dir> … > .scratch/refactor-tests/scan-static.json
+```
+
+It prints `{ removals, review_candidates, parametrizations, unanalyzable }` in the shapes this step defines below, and the plan takes each list as is. `rm -f` the scan file once `simplification-plan.json` is written, on every path. For other languages, apply the criteria below by hand.
+
 For each **removal** candidate (exact duplicate, trivially true): emit `{ file, test_name, criterion, evidence }` (evidence = ≤2-line excerpt proving the criterion). `test_name` is the id remainder after the file path: `Class::test` for a method, the bare name only for a top-level test. An exact-duplicate removal also carries `duplicate_of`: the name of the test that stays, plus `duplicate_of_file` when that test is in another file.
 
-For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", kind, evidence }` to the `review_candidates` array only, never to `removals`. Assign `kind` from the ordered list in `reference/patterns.md` → Assertion vocabulary → Dead-test kinds (`no-raise-contract`, `fail-soft`, `never-fails`, `no-assertion`); when several match, the first wins. A `no-raise-contract` entry is report-only: the Final report counts it, and Step 11 never tickets it. For the other kinds the user decides whether to remove the test.
+For each **dead-test candidate**: emit `{ file, test_name, criterion: "dead-test", kind, evidence }` to the `review_candidates` array only, never to `removals`. `kind` comes from the ordered list in `reference/patterns.md` → Assertion vocabulary → Dead-test kinds (`no-raise-contract`, `fail-soft`, `never-fails`, `no-assertion`); when several match, the first wins. For Python, `scan_static.py` (Evidence-free criteria, above) sets it. A `no-raise-contract` entry is report-only: the Final report counts it, and Step 11 never tickets it. For the other kinds the user decides whether to remove the test.
 
 **Coverage-subset and cost candidates** (evidence-based, review only). Run only when the evidence status of the language is `ok`; otherwise the degrade rules of Step 7 drop them. Read `test-evidence.json`:
 
@@ -225,7 +234,7 @@ The script prints the entries as a JSON list. Append them to `review_candidates`
 
 For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
-- Emit `{ file, tests: [...], consolidated_name, consolidated_body, required_imports, criterion, evidence }` where `consolidated_body` is a concrete parametrized test body with the actual parameter tuples derived from the originals.
+- Emit `{ file, class, tests: [...], consolidated_name, consolidated_body, required_imports, criterion, evidence }` where `consolidated_body` is a concrete parametrized test body with the actual parameter tuples derived from the originals. `class` is the test class, or `null` for top-level tests; `tests` and `consolidated_name` follow the `test_name` form (`Class::test` for a method).
 
 Write `$PROJECT_PATH/.scratch/refactor-tests/simplification-plan.json` with top-level `schema_version: 2` and `evidence: { file: ".scratch/refactor-tests/test-evidence.json", status }`. `status` is `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
 
@@ -265,6 +274,14 @@ Set ledger `phase: executing`.
 **Removals**: delete each named test function from its file using the language's AST editor. Record each in ledger `simplification.removals` after the write. If removing the last test function in a file, delete the file with `git rm`.
 
 **Parametrizations** (atomic per entry): in a **single file write** — delete all N original test functions, insert the consolidated parametrized function, add any `required_imports` not already present. Record in ledger `simplification.parametrizations` in the same durable step. If the AST editor cannot perform the composite edit, record the entry with `tests` and `skipped: "<error>"` in the ledger, leave the file unchanged, surface in the report.
+
+For Python, the helper performs this edit and the parametrization checks of **Resume** below, one entry at a time in plan order, and writes the ledger after each entry:
+
+```sh
+python3 $SKILL_DIR/reference/python/apply_param.py --root $PROJECT_PATH [--index <n> …]
+```
+
+It reads `.scratch/refactor-tests/simplification-plan.json` and `.scratch/refactor-tests/ledger.json`, and prints one `{ index, file, consolidated_name, status, reason }` per entry. `status` is `applied`, `recorded` (already in the ledger), `already-applied` (the write happened before the run stopped; now recorded), or `skipped` (the reason is in the ledger entry). Without `--index` it runs every entry.
 
 **Resume.** When Step 1 resumes at `phase: executing`, walk the plan in the same order and skip every entry already applied or `skipped`:
 
