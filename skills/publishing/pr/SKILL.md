@@ -37,6 +37,8 @@ Use this template for writing the PR body:
 **Blast Radius:** <one-word description>
 
 <optional: potential ramifications of merge>
+
+<optional: issue-link lines from the caller, e.g. `Closes #<n>` or `Refs #<n>`>
 ```
 
 ## Sections
@@ -175,3 +177,7 @@ Execution-based evidence is A-tier. Test results, console output. Show the exact
 Describe whether it's a one-way or two-way door. You can walk back through two-way doors, but not one-way doors. A PR that is cheap to roll back is lower risk. Changes that involve destructive actions or hard-to-reverse decisions are one-way doors.
 
 The blast radius is the potential impact or scope of the changes introduced by this PR. Consider all possibilities. Examples are layout shift, breakages for consumers, mobile responsiveness, etc.
+
+### Issue links
+
+Optional. Include this block only when the caller passes issue-link lines (for example `Closes #<n>` or `Refs #<n>` from `implement`). Keep each line word for word, one per line, as the last block of the body. Never move a line into the title or rewrite its keyword: GitHub closes an issue only from a closing keyword in the body or a commit message.

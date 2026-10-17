@@ -15,6 +15,18 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Closing work
+
+Tickets close through the PR that ships them. GitHub acts only on a closing keyword (`Closes`, `Fixes`, `Resolves`, and their variants) in the PR description or a commit message, and only when the PR targets the default branch. `Refs #<n>`, `Ticket: #<n>`, `Part of #<n>`, and a `#<n>` in the PR title close nothing.
+
+Decide the issue-link line per ticket, so one PR can mix both forms:
+
+- Use `Refs #<n>` when the ticket still has unticked `## On close` items, or when the PR does not target the default branch (stacked PRs). Close that ticket by hand once its commits reach the default branch and its `## On close` items are ticked.
+- Otherwise put one `Closes #<n>` line for the ticket in the PR body, never only in the title.
+- For an issue in another repo, use `owner/repo#<n>` (for example `Closes owner/repo#<n>`).
+
+Once its commits reach the default branch, read the issue state (`gh issue view <n> --json state`) and close it only if it is still open and its `## On close` items are ticked.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
@@ -41,6 +53,7 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 
 - **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
 - **Child ticket**: an issue made a sub-issue of the map (see **Make an issue a sub-issue of a parent** above). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Execution map**: the successor a closed decision map hands its build work to — an issue titled `<parent map name> — implementation`, labelled `wayfinder:execution-map`, whose children are build slices worked with `/implement`.
 - **Blocking**: GitHub's **native issue dependencies** — the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only — the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me` — the session's first write.

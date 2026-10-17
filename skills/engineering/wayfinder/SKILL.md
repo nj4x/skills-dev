@@ -171,7 +171,7 @@ When resolving a ticket, if you surface items that belong downstream — impleme
 
 2. **Collect followups.** Scan only the closed tickets listed in the map's **Decisions so far** section (not a fresh query of all child issues) for resolution comments with [impl], [map], or [defer] tags. Parse each tagged followup into its type and text.
 
-3. **Check for tags.** If no tags are found across all closed tickets, report the map complete with no followups, unassign yourself, and halt — do not write a spec or create a successor. **If all remaining tags are [defer] only** (no [impl] or [map] items), skip the successor creation and route those deferred items to the completed decision map's **Out of scope** section instead.
+3. **Check for tags.** If the map is an execution map (`wayfinder:execution-map`), skip steps 4–7 and go to step 8: its children are build slices with no followup tags. Otherwise, if no tags are found across all closed tickets, report the map complete with no followups, unassign yourself, and halt — do not write a spec or create a successor. **If all remaining tags are [defer] only** (no [impl] or [map] items), skip the successor creation and route those deferred items to the completed decision map's **Out of scope** section instead.
 
 4. **Route the parked items, and note where the rest land.** Only `[defer]` is actioned here; the other two need artifacts later steps create.
    - **Parked items** ([defer]) → **now**: add one line per item to the completed decision map's **Out of scope** section — the gist plus why it was parked.
@@ -203,7 +203,7 @@ When resolving a ticket, if you surface items that belong downstream — impleme
 
 7. **Release the claim.** Unassign the map from yourself. The decision map is complete; the successor execution map owns the build work.
 
-8. **Terminal condition:** When the successor execution map closes (all implementation tickets are closed), report done — no further map is spawned. Execution maps don't hand off to new maps; they terminate with the work shipped. **When the last implementation ticket closes, the human should invoke `/wayfinder` once more on the execution map** so completion is reported.
+8. **Terminal condition:** GitHub does not close a parent when its sub-issues close, so close the execution map yourself. List its children with the tracker doc's **List the sub-issues of a parent** operation; where sub-issues are off, use the map's task list and `Part of #<map>` children, as the Frontier query does. When every child is closed, for any reason (completed, not planned, or by hand), unassign yourself, close the execution map, and report done — no further map is spawned. When the map has no children, unassign yourself, skip the close, and report. Execution maps don't hand off to new maps; they terminate with the work shipped. **When the last implementation ticket closes, the human should invoke `/wayfinder` once more on the execution map** so it is closed and completion is reported.
 
 **Special case — explicit separate maps:**
 
