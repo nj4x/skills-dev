@@ -16,6 +16,18 @@ Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all op
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Closing work
+
+Tickets close through the PR that ships them. GitHub acts only on a closing keyword (`Closes`, `Fixes`, `Resolves`, and their variants) in the PR description or a commit message, and only when the PR targets the default branch. `Refs #<n>`, `Ticket: #<n>`, `Part of #<n>`, and a `#<n>` in the PR title close nothing.
+
+Decide the issue-link line per ticket, so one PR can mix both forms:
+
+- Use `Refs #<n>` when the ticket still has unticked `## On close` items, or when the PR does not target the default branch (stacked PRs). Close that ticket by hand once its commits reach the default branch and its `## On close` items are ticked.
+- Otherwise put one `Closes #<n>` line for the ticket in the PR body, never only in the title.
+- For an issue in another repo, use `owner/repo#<n>` (for example `Closes owner/repo#<n>`).
+
+Once its commits reach the default branch, read the issue state (`gh issue view <n> --json state`) and close it only if it is still open and its `## On close` items are ticked.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads this flag.)_
