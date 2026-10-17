@@ -453,3 +453,252 @@ def test_add_candidate_reexported_through_two_package_levels_warns(tmp_path):
     out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_re.py"], ev)
     assert {"module": "src/pkg/sub/text.py", "seam": "slugify"} in out["seams"]["add_candidates"]
     assert any("slugify" in w and "re-exported by src/pkg/__init__.py" in w for w in out["warnings"])
+
+
+# --- pinning kinds and test doubles (G5) -------------------------------------
+
+SVC = '''__all__ = ["run", "report"]
+
+import json
+from pkg.cfg import load_config
+
+TIMEOUT = 5
+
+
+def run():
+    return _helper(load_config(), json.dumps({}))
+
+
+def _helper(c, s):
+    return c
+
+
+def report():
+    return 1
+
+
+def extra():
+    return 2
+'''
+
+CFG = '''_cache = {}
+
+
+def load_config():
+    return _cache
+'''
+
+KIND_TESTS = '''from unittest.mock import patch
+
+import pkg.svc as svc
+from pkg.svc import run
+
+
+@patch("pkg.svc.load_config")
+def test_double(m):
+    assert run() is m.return_value
+
+
+def test_patched_defined():
+    with patch("pkg.svc._helper", return_value=1):
+        assert run() == 1
+
+
+def test_constant(monkeypatch):
+    monkeypatch.setattr("pkg.svc.TIMEOUT", 0)
+    assert run() is not None
+
+
+def test_mixed(monkeypatch):
+    monkeypatch.setattr(svc, "load_config", dict)
+    with patch.object(svc, "TIMEOUT", 1):
+        assert svc.extra() == 2
+
+
+def test_double_and_constant():
+    with patch("pkg.svc.load_config"), patch("pkg.svc.TIMEOUT", 0):
+        assert run()
+
+
+def test_imported_not_patched():
+    assert svc.json.dumps({}) == "{}"
+
+
+def test_two_modules():
+    with patch("pkg.svc.load_config"), patch("pkg.cfg._cache", {}):
+        assert run() is not None
+'''
+
+
+@pytest.fixture
+def kinds_proj(tmp_path):
+    return _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/svc.py": SVC,
+        "src/pkg/cfg.py": CFG,
+        "tests/test_kinds.py": KIND_TESTS,
+    })
+
+
+def test_module_table_tells_imported_names_from_defined_ones():
+    import ast
+
+    from classify_seams import module_table
+    table = module_table(ast.parse(SVC + "try:\n    import yaml\nexcept ImportError:\n    yaml = None\n"
+                                   "from os import path as run\n_f = lambda: 1\n"))
+    assert table["json"] == table["load_config"] == "import"
+    assert table["TIMEOUT"] == table["__all__"] == "constant"
+    assert table["run"] == table["_helper"] == table["_f"] == "callable"  # defined beats a later import
+    assert table["yaml"] == "constant"  # rebound in the module: not only an import
+
+
+def test_patched_imported_collaborator_is_a_double_not_an_internal(kinds_proj):
+    from classify_seams import NOTE_DOUBLE
+    out = classify(kinds_proj, ["src"], _confirmed(propose(kinds_proj, ["src"])), ["tests/test_kinds.py"])
+    rec = _by_test(out)[("test_double", "src/pkg/svc.py")]
+    assert (rec["internals"], rec["doubles"], rec["kind"]) == ([], ["load_config"], "collaborator-double")
+    assert rec["note"] == NOTE_DOUBLE
+
+
+def test_pinning_kind_per_reference_and_strictest_wins(kinds_proj):
+    out = classify(kinds_proj, ["src"], _confirmed(propose(kinds_proj, ["src"])), ["tests/test_kinds.py"])
+    pins = _by_test(out)
+    got = {name: (r["kind"], r["internals"], r["doubles"]) for (name, mod), r in pins.items() if mod == "src/pkg/svc.py"}
+    assert got["test_patched_defined"] == ("private", ["_helper"], [])
+    assert got["test_constant"] == ("constant", ["TIMEOUT"], [])
+    assert got["test_mixed"] == ("public-non-seam", ["TIMEOUT", "extra"], ["load_config"])
+    assert got["test_double_and_constant"] == ("collaborator-double", ["TIMEOUT"], ["load_config"])
+    assert got["test_imported_not_patched"] == ("other", ["json.dumps"], [])
+    assert all(r["note"] != "re-point the stub (deps injection or a checked patch); do not delete"
+               for r in pins.values() if r["internals"])
+
+
+def test_one_test_takes_its_strictest_kind_in_every_module(kinds_proj):
+    out = classify(kinds_proj, ["src"], _confirmed(propose(kinds_proj, ["src"])), ["tests/test_kinds.py"])
+    pins = _by_test(out)
+    svc_rec, cfg_rec = pins[("test_two_modules", "src/pkg/svc.py")], pins[("test_two_modules", "src/pkg/cfg.py")]
+    assert svc_rec["doubles"] == ["load_config"] and cfg_rec["internals"] == ["_cache"]
+    assert svc_rec["kind"] == cfg_rec["kind"] == "collaborator-double"  # double is stricter than constant
+
+
+# --- seams-confirmed.json reuse (G6) -----------------------------------------
+
+def _write_confirmed(proj, doc):
+    path = proj / ".scratch/refactor-tests/seams-confirmed.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(doc if isinstance(doc, str) else json.dumps(doc))
+    return path
+
+
+def test_reuse_drops_stale_names_and_modules_and_proposes_only_the_difference(kinds_proj):
+    from classify_seams import reuse
+    path = _write_confirmed(kinds_proj, {"modules": {
+        "src/pkg/svc.py": {"seams": [
+            {"name": "run", "signal": "__all__", "status": "confirmed"},
+            {"name": "gone_fn", "signal": "__all__", "status": "confirmed"},
+            {"name": "report", "signal": "__all__", "status": "rejected"},
+            {"name": "TIMEOUT", "signal": "user", "status": "confirmed"},
+            {"name": "extra", "signal": "public-api", "status": "confirmed"},
+        ]},
+        "src/pkg/old.py": {"seams": [{"name": "x", "signal": "__all__", "status": "confirmed"}]},
+    }})
+    out = reuse(kinds_proj, propose(kinds_proj, ["src"]), path)
+    assert out["status"] == "ok"
+    assert {s["name"]: s["status"] for s in out["modules"]["src/pkg/svc.py"]["seams"]} == {
+        "run": "confirmed", "report": "rejected", "TIMEOUT": "confirmed", "extra": "confirmed"}
+    assert "src/pkg/old.py" not in out["modules"]
+    # `extra` was proposed once and is no longer; the user-added TIMEOUT never was, so it is no change
+    assert out["diff"] == {"new_modules": ["src/pkg/cfg.py"], "added": {}, "removed": {"src/pkg/svc.py": ["extra"]}}
+    assert out["review_modules"] == ["src/pkg/cfg.py", "src/pkg/svc.py"]
+    assert out["public_api_modules"] == ["src/pkg/cfg.py"]
+    assert any("gone_fn" in w and "dropped" in w for w in out["warnings"])
+    assert any("src/pkg/old.py" in w and "dropped" in w for w in out["warnings"])
+
+
+def test_reuse_adds_newly_proposed_names_as_proposed(kinds_proj):
+    from classify_seams import reuse
+    path = _write_confirmed(kinds_proj, {"modules": {
+        "src/pkg/svc.py": {"seams": [{"name": "run", "signal": "__all__", "status": "confirmed"}]},
+        "src/pkg/cfg.py": {"seams": [{"name": "load_config", "signal": "public-api", "status": "confirmed"}]},
+    }})
+    out = reuse(kinds_proj, propose(kinds_proj, ["src"]), path)
+    assert out["diff"] == {"new_modules": [], "added": {"src/pkg/svc.py": ["report"]}, "removed": {}}
+    assert out["review_modules"] == ["src/pkg/svc.py"] and out["public_api_modules"] == []
+    assert out["warnings"] == []
+
+
+def test_reuse_twice_with_no_source_change_reports_no_difference(kinds_proj):
+    from classify_seams import reuse
+    proposed = propose(kinds_proj, ["src"])
+    path = _write_confirmed(kinds_proj, {"modules": {
+        "src/pkg/svc.py": {"seams": [{"name": "run", "signal": "__all__", "status": "confirmed"},
+                                     {"name": "report", "signal": "__all__", "status": "rejected"},
+                                     {"name": "Acc", "signal": "user", "status": "confirmed"}]},
+        "src/pkg/cfg.py": {"seams": [{"name": "load_config", "signal": "public-api", "status": "confirmed"}]},
+    }})
+    (kinds_proj / "src/pkg/svc.py").write_text(SVC + "\n\nclass Acc:\n    def push(self):\n        return 1\n")
+    first = reuse(kinds_proj, proposed, path)
+    _write_confirmed(kinds_proj, {"schema_version": 1, "modules": first["modules"]})
+    second = reuse(kinds_proj, proposed, path)
+    assert second["diff"] == {"new_modules": [], "added": {}, "removed": {}}
+    assert second["review_modules"] == [] and second["warnings"] == []
+
+
+def test_reuse_keeps_seams_of_a_star_import_module_and_counts_all_names_as_bound(tmp_path):
+    from classify_seams import reuse
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "from .core import *\n",
+        "src/pkg/core.py": "def run():\n    return 1\n",
+        "src/pkg/api.py": '__all__ = ["late"]\n\n\ndef __dir__():\n    return __all__\n',
+    })
+    path = _write_confirmed(proj, {"modules": {
+        "src/pkg/__init__.py": {"seams": [{"name": "run", "signal": "user", "status": "confirmed"}]},
+        "src/pkg/api.py": {"seams": [{"name": "late", "signal": "__all__", "status": "confirmed"}]},
+    }})
+    out = reuse(proj, propose(proj, ["src"]), path)
+    assert out["modules"]["src/pkg/__init__.py"]["seams"][0]["name"] == "run"
+    assert out["modules"]["src/pkg/api.py"]["seams"][0]["name"] == "late"
+    assert not any("dropped" in w for w in out["warnings"])
+    assert any("src/pkg/__init__.py" in w and "kept unchecked" in w for w in out["warnings"])
+
+
+@pytest.mark.parametrize("text", ["not json{", '{"modules": {"src/pkg/svc.py": '])
+def test_reuse_ignores_a_corrupt_file_with_a_warning(kinds_proj, text):
+    from classify_seams import reuse
+    path = _write_confirmed(kinds_proj, text)
+    proposed = propose(kinds_proj, ["src"])
+    out = reuse(kinds_proj, proposed, path)
+    assert out["status"] == "ignored"
+    assert out["modules"] == proposed["modules"]
+    assert out["diff"]["new_modules"] == sorted(proposed["modules"])
+    assert len(out["warnings"]) == 1 and "ignored" in out["warnings"][0]
+
+
+@pytest.mark.parametrize("doc", [
+    [], {"mods": {}}, {"modules": []}, {"modules": {"src/pkg/svc.py": {"seams": "run"}}},
+    {"modules": {"src/pkg/svc.py": {"seams": [{"name": 1, "status": "confirmed"}]}}},
+    {"modules": {"src/pkg/svc.py": {"seams": [{"name": "run"}]}}},
+])
+def test_reuse_ignores_valid_json_with_the_wrong_schema(kinds_proj, doc):
+    from classify_seams import reuse
+    out = reuse(kinds_proj, propose(kinds_proj, ["src"]), _write_confirmed(kinds_proj, doc))
+    assert out["status"] == "ignored"
+    assert out["diff"]["new_modules"] == ["src/pkg/cfg.py", "src/pkg/svc.py"]
+    assert len(out["warnings"]) == 1 and "ignored" in out["warnings"][0]
+
+
+def test_reuse_without_a_file_proposes_everything(kinds_proj):
+    from classify_seams import reuse
+    out = reuse(kinds_proj, propose(kinds_proj, ["src"]), kinds_proj / ".scratch/refactor-tests/seams-confirmed.json")
+    assert (out["status"], out["warnings"]) == ("absent", [])
+    assert out["review_modules"] == ["src/pkg/cfg.py", "src/pkg/svc.py"]
+
+
+def test_cli_reuse_reads_the_default_confirmed_path(kinds_proj, capsys):
+    from classify_seams import main
+    _write_confirmed(kinds_proj, {"modules": {"src/pkg/svc.py": {"seams": [
+        {"name": "run", "signal": "__all__", "status": "confirmed"}]}}})
+    (kinds_proj / "proposed.json").write_text(json.dumps(propose(kinds_proj, ["src"])))
+    main(["reuse", "--root", str(kinds_proj), "--proposed", "proposed.json"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "ok" and out["diff"]["added"] == {"src/pkg/svc.py": ["report"]}

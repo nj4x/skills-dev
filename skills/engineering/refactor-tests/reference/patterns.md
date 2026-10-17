@@ -94,11 +94,20 @@ The dead-test criterion flags tests with no assertion statements. Use this vocab
 
 | Language | Assertion keywords |
 |---|---|
-| Python | `assert`, `pytest.raises`, `pytest.warns` |
+| Python | `assert`, `pytest.raises`, `pytest.warns`; a call to any function whose name starts with `assert`, `_assert`, `check`, `_check`, `expect`, `_expect`, `verify`, or `_verify`; a fixture the test requests, or a helper it calls, that is defined in the test file or `conftest.py` and whose body asserts |
 | TypeScript/JavaScript | `expect`, `assert` (chai), `should` (should.js), `.to.throw` (chai), `.toThrow` (jest) |
 | Go | `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `require.*`, `assert.*` (testify) |
 | Java | `assertThat`, `assertTrue`, `assertEquals`, `fail` (JUnit/AssertJ) |
 | Kotlin | `assertThat`, `assertTrue`, `assertEquals`, `fail` (same as Java) |
+
+**Dead-test kinds.** Each dead-test entry carries `kind`, from this ordered list. The order is the precedence: when several kinds match, the first one wins.
+
+| Order | `kind` | Matches | Disposition |
+|---|---|---|---|
+| 1 | `no-raise-contract` | The last statement calls a documented raiser (`*.validate(`, or a name the project lists), or the test name or docstring says "does not raise" or "must not raise". | Keep. It is the only guard against an over-strict validator. Counted in the Final report, never ticketed. |
+| 2 | `fail-soft` | The body sets up an error (`side_effect=…Error`) and calls the code under test. | Add an assertion on the log or the return value. Check it by hand-mutating the function to a silent no-op: the test must fail. |
+| 3 | `never-fails` | The only outcome other than a pass is `pytest.skip`. | Replace the skip with an assertion, or remove the test. |
+| 4 | `no-assertion` | Everything else. | Add an assertion, or remove the test. |
 
 ## Import rewriting (AST-based, per language)
 
@@ -154,6 +163,8 @@ This preserves the package (compilation works) and allows filtering: `go test ./
   },
   "seams": {
     "status": "confirmed",
+    "confirmed_file": "ok",
+    "confirm_path": "per-module",
     "modules": { "src/protrading/adapters/instruments.py": { "seams": [ { "name": "parse_instrument", "signal": "__all__", "status": "confirmed" } ] } },
     "propose_warnings": [ "src/protrading/adapters/__init__.py: __all__ is computed or mutated, not a literal list; only its literal names are proposed under __all__ and public-api is not used" ],
     "warnings": [ "src/protrading/adapters/__init__.py: __all__ is computed or mutated, not a literal list; only its literal names are proposed under __all__ and public-api is not used" ]
@@ -281,6 +292,7 @@ Every `review_candidates` entry has the base fields `{ file, test_name, criterio
 | `call_s` | number, seconds | coverage-subset, cost |
 | `time_saved_s` | number, seconds | coverage-subset, cost |
 | `note` | string | pinning |
+| `kind` | string | dead-test (see Assertion vocabulary → Dead-test kinds), pinning (see Seam classification → Pinning kinds) |
 | `seed` | integer | order-dependent, flaky |
 | `failing_ids` | array of test ids | order-dependent, flaky |
 
@@ -335,7 +347,7 @@ Never apply a "delete non-head migration tests" rule as a whole. The classificat
 | skipped | ledger `simplification.parametrizations` with `skipped` | `skipped-parametrization` | `<file>::<consolidated_name>` | `ready-for-human` |
 | skipped | ledger `spring.skipped_clusters` | `skipped-spring-cluster` | `<cluster>` | `ready-for-human` |
 
-**Grouping.** One ticket per category, criterion, and module. The module is the test file's directory, the source module for add candidates, and the cluster for Spring clusters. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then review, add, and skipped. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them. The only blocking edge: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`). A review ticket's "What to build" text depends on its criterion (`WHAT["review"]`): coverage-subset, cost and pinning carry the mutation-gate caveat (see What each criterion proves). A fix ticket ends its text with a `Reproduce:` command built from the ledger `runners.python` command, the `order_gate.plugin` install, and the seed, for example `uv run --with pytest-randomly pytest -p randomly --randomly-seed=<seed> <file>`.
+**Grouping.** One ticket per category, criterion, and module. Dead-test and pinning items also split by `kind`: one ticket per criterion, kind, and module, with the kind in the title. A pinning `collaborator-double` ticket is labelled `ready-for-agent`; every other review ticket stays `ready-for-human`. A dead-test `no-raise-contract` item is never ticketed: `render` leaves it out of the queue and counts it in its output under `report_only`. The helper accepts an item with any `kind` value, or none. Any string kind on a dead-test or pinning item splits the ticket, also one the helper has no text for. A kind on another criterion, or a non-string kind, shows in the item line and does not split the ticket. The module is the test file's directory, the source module for add candidates, and the cluster for Spring clusters. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then review, add, and skipped. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them. The only blocking edge: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`). A review ticket's "What to build" text depends on its criterion (`WHAT["review"]`): coverage-subset, cost and pinning carry the mutation-gate caveat (see What each criterion proves). A known kind replaces that text (`review_what`): a dead-test ticket states its kind's disposition (no kind reads as `no-assertion`), and a pinning `collaborator-double` ticket says "Re-point the stub (deps injection or a checked patch); do not delete." with no mutation-gate caveat. Other pinning kinds keep the pinning text. A fix ticket ends its text with a `Reproduce:` command built from the ledger `runners.python` command, the `order_gate.plugin` install, and the seed, for example `uv run --with pytest-randomly pytest -p randomly --randomly-seed=<seed> <file>`.
 
 **Staged files** under `.scratch/<slug>/`, where the slug is `refactor-tests-review-<started_at>` lowercased (the `to-tickets` slug rule applied to the title `refactor-tests review <started_at>`):
 - `spec.md`: that title as H1, `Project: <name>`, item counts, already-tracked items, and a "Proposed tickets" table (NN, title, label, blocked by).
@@ -360,7 +372,7 @@ Never apply a "delete non-head migration tests" rule as a whole. The classificat
 
 ## Seam classification (Python)
 
-Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
+Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `reuse`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
 
 **Seam signals**, per source module, strongest first. A name takes the first signal that proposes it, and the proposal records that signal.
 
@@ -378,9 +390,23 @@ Names with a leading underscore are never proposed. Test files and `conftest.py`
 - **Pinning candidate**: at least one reference is not a seam (`internals` lists them, e.g. `_tokenize`, or a mock patched at an internal path).
 - One test can be an interface test for one module and a pinning candidate for another.
 
+**Test doubles.** `classify` reads, per source module, which top-level names the module binds by an import and which it defines (`def`, `class`, or an assignment, also inside a module-level `if` or `try`; a name both imported and defined counts as defined). A `patch(...)`, `patch.object(...)`, or `monkeypatch.setattr(...)` target that names an imported name is a **test double**: the test replaces a collaborator, not the module's own code. It is listed under `doubles`, not `internals`. A test whose only non-seam references in a module are doubles is an interface test with doubles: it stays a pinning candidate with `kind: collaborator-double` and the note "re-point the stub (deps injection or a checked patch); do not delete". (`codebase-design` has no term for this; it names an in-memory fake or a mock adapter, which a test double may be.)
+
+**Pinning kinds.** Each non-seam reference has a kind, and each pinning candidate carries `kind`:
+
+| `kind` | Reference | Workflow |
+|---|---|---|
+| `public-non-seam` | A public name defined in the module that is not a confirmed seam. | A human seam decision: confirm it as a seam, or move the test to one. |
+| `private` | A `def`, `class`, or lambda name with a leading-underscore part (`_tokenize`, `Acc._drain`). | Merge the assertion into the closest existing interface test as parametrized cases, keep the original, run the mutation check (`SKILL.md` → Follow-up: mutation deletion gate (optional)), then delete. |
+| `collaborator-double` | A patch target bound by an import (a test double). | Re-point the stub: deps injection or a checked patch. Do not delete. |
+| `constant` | A module-level name bound by an assignment, not a `def`, `class`, or lambda, with or without a leading underscore (`TIMEOUT`, `_cache`). | Re-point the stub. |
+| `other` | Anything else, for example an imported name the test uses without patching it. | Look by hand. |
+
+When a test has several kinds, it follows the strictest: `public-non-seam` > `private` > `collaborator-double` > `constant` > `other`. `kind` is the strictest over every non-seam reference of the test, in every module, so all entries of one test carry the same kind and the test is grouped under it. Writing one new interface test per pinning test is not the goal.
+
 **Coverage against the interface** (needs evidence status `ok`). A seam's body lines are the lines of its body statements (decorators and the `def`/`class` header excluded: the header runs at import, outside any `|run` context). A seam is **reached** when an interface test's `covered` lines for the module intersect its body lines; parametrized ids merge by their base id. A confirmed seam no interface test reaches is an **add candidate**; pinning tests never count. A seam whose name has no function or class body in its module (a re-export or a constant in `__all__`) is never an add candidate; the report warns. A test that imports a name through a package `__init__` re-export (`from pkg import run`, where `pkg/__init__.py` has `from .mod import run`) is linked to the `__init__`, not to `mod.py`, so it is not an interface test of `mod.py` and its coverage does not count toward reaching `mod.py`'s seam. When such a seam is an add candidate, the helper adds a warning that the candidate needs a check by hand. Re-exports are followed through every package level: when `pkg/sub/__init__.py` re-exports `run` from `.mod` and `pkg/__init__.py` re-exports it from `.sub`, a test importing `from pkg import run` is linked to `pkg/__init__.py` the same way: it does not reach the seam in `pkg/sub/mod.py`, and that add candidate gets the warning. A pinning candidate has `covered_through_interface: true` when some interface test of the same module covers a superset of its lines in that module (a pinning test with no coverage in the evidence gets `false`, with a warning); the note is then "lines covered by one interface test (assertions not compared)", otherwise "move the assertion to the interface". With evidence status other than `ok`, `add_candidates` and `covered_through_interface` are omitted (keys absent) and the note is "move the assertion to the interface".
 
-**`seams` object** in `simplification-plan.json` (only confirmed seams are listed; under `--dry-run` or unattended runs seams stay `proposed` in the ledger and the plan carries no `pinning_candidates`):
+**`seams` object** in `simplification-plan.json` (only confirmed seams are listed; under `--dry-run` or unattended runs with no readable `seams-confirmed.json`, seams stay `proposed` in the ledger and the plan carries no `pinning_candidates`):
 
 ```json
 "seams": {
@@ -396,6 +422,8 @@ Names with a leading underscore are never proposed. Test files and `conftest.py`
       "test_name": "test_tokenize_directly",
       "module": "src/protrading/adapters/instruments.py",
       "internals": ["_tokenize"],
+      "doubles": ["load_config"],
+      "kind": "private",
       "covered_through_interface": true,
       "note": "lines covered by one interface test (assertions not compared)"
     }
@@ -403,7 +431,25 @@ Names with a leading underscore are never proposed. Test files and `conftest.py`
 }
 ```
 
-Each pinning candidate also goes to `review_candidates` as `{ file, test_name, criterion: "pinning", evidence, note }`.
+Each pinning candidate also goes to `review_candidates` as `{ file, test_name, criterion: "pinning", kind, evidence, note }`.
+
+**Seam sidecars**, all under `.scratch/refactor-tests/`:
+
+| File | Written by | Holds |
+|---|---|---|
+| `seams-proposed.json` | Step 7b item 1 | the `propose` output of this run |
+| `seams-classified.json` | Step 7b item 3 | the `classify` output of this run |
+| `seams-confirmed.json` | Step 7b item 2, when a round confirms | `{ schema_version: 1, modules }` in the `propose` shape; each seam has `status: confirmed`, or `rejected` for a name the user removed |
+
+Step 1 never archives `seams-confirmed.json`: it carries the confirmed seams from run to run. A `--dry-run` never writes it.
+
+**Reuse across runs.** `classify_seams.py reuse --root P --proposed .scratch/refactor-tests/seams-proposed.json` reads `seams-confirmed.json` (`--confirmed` overrides the path) and prints `{ status, modules, diff: { new_modules, added, removed }, review_modules, public_api_modules, warnings }`:
+
+- `status` is `ok`, `absent` (no file), or `ignored`. A file that cannot be read, is not JSON, or has the wrong shape (no `modules` key, `modules` not an object, or a module without a `seams` list of entries with string `name` and `status`) is `ignored` with a warning; the run then behaves as with no file.
+- `modules` keeps each earlier seam with its status and adds this run's new proposals as `proposed`. A rejected name is not proposed again.
+- A confirmed module whose file no longer exists, or a seam name its module no longer binds (top-level name or `Class.method`), is dropped with a warning naming it. A module that cannot be parsed, or that has a star import or a module `__getattr__`, keeps its seams unchecked, with a warning. Literal `__all__` names count as bound.
+- `diff`: `new_modules` (not in the file), `added` (newly proposed names per module), `removed` (confirmed names this run no longer proposes, except `signal: user` names, which were never proposed; they stay confirmed until the user removes them).
+- `review_modules` are the new or changed modules: the only ones the confirm round shows. `public_api_modules` are those of them with a `public-api` proposal, the weakest signal.
 
 ## Random-order gate
 
