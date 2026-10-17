@@ -132,7 +132,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 ```json
 {
-  "phase": "discovery|baseline|moving|rewriting|validating|evidence|seams|simplifying|order-gate|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
+  "phase": "discovery|baseline|moving|rewriting|validating|evidence|seams|simplifying|order-gate|executing|simplify-validating|context-measuring|context-consolidating|context-switching|context-validating|done|failed-layout|failed-simplify|failed-context",
   "dry_run": false,
   "phases_requested": ["A", "B", "C"],
   "project_path": "/abs/path",

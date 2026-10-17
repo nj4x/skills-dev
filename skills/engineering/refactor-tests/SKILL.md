@@ -259,9 +259,20 @@ The gate is Python-only for now. A project with no Python runner gets `status: s
 
 ### Step 9 — Execute simplification
 
+Set ledger `phase: executing`.
+
 **Removals**: delete each named test function from its file using the language's AST editor. Record each in ledger `simplification.removals` after the write. If removing the last test function in a file, delete the file with `git rm`.
 
 **Parametrizations** (atomic per entry): in a **single file write** — delete all N original test functions, insert the consolidated parametrized function, add any `required_imports` not already present. Record in ledger `simplification.parametrizations` in the same durable step. If the AST editor cannot perform the composite edit, record as `skipped` in the ledger with the error, leave the file unchanged, surface in the report.
+
+**Resume.** When Step 1 resumes at `phase: executing`, walk the plan in the same order and skip every entry already applied or `skipped`:
+
+- A removal whose `file` and `test_name` match an entry in `simplification.removals` is applied: skip it.
+- A parametrization whose `file` and `consolidated_name` match an entry in `simplification.parametrizations` (applied or `skipped`) is done: skip it.
+- A removal not in the ledger whose test function is absent from its file, or whose file is gone, was written before the run stopped: record it in `simplification.removals` now. If its file still exists but holds no test function, delete it with `git rm`; otherwise edit nothing.
+- A parametrization not in the ledger whose file already holds `consolidated_name` and holds none of the plan entry's `tests` functions was written before the run stopped: record it in `simplification.parametrizations` (with `replaced` set to those `tests`) and edit nothing.
+
+Apply every other entry as above. The plan stays the source of the entry order; the ledger only marks which entries are done.
 
 ### Step 10 — Validate simplification
 
