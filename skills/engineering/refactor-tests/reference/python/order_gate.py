@@ -25,17 +25,19 @@ candidate that does not pass in the re-run is `order-dependent`, one that passes
 `flaky` test to `review_candidates`, one entry per involved test and criterion, with
 `seed` and `failing_ids`. A test matches a plan entry by file and base name (parameters
 dropped); when both the id and the entry name a class, the class must agree too. The
-plan is rewritten atomically (to --out, default --plan). A gate result with
+plan is rewritten atomically (to --out, default --plan), as JSON with indent 1 and sorted
+keys, the format of test-evidence.json. A gate result with
 `rerun_required: true` is refused: exit 2, plan untouched.
 """
 import argparse
 import copy
 import json
-import os
 import random
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from refactor_tests_shared import strip_params, write_atomic
 
 CRITERIA = ("order-dependent", "flaky")
 FAILING = ("failed", "error")
@@ -110,14 +112,9 @@ def classify(baseline, gate, rerun, seed):
     return result
 
 
-def _strip_params(test_id):
-    base, bracket, params = test_id.partition("[")
-    return base, bracket + params
-
-
 def _split(test_id):
     """Return (head, name) with the `[params]` suffix removed before any split."""
-    base, _ = _strip_params(test_id)
+    base, _ = strip_params(test_id)
     parts = base.split("::")
     return parts[0], parts[-1]
 
@@ -132,7 +129,7 @@ def normalize_id(test_id):
 
     A JUnit-form id passes through unchanged.
     """
-    base, params = _strip_params(test_id)
+    base, params = strip_params(test_id)
     parts = base.split("::")
     if not parts[0].endswith(".py"):
         return test_id
@@ -146,7 +143,7 @@ def matches(test_id, file, test_name):
     Parameters are ignored on both sides. When both carry a class segment, it must agree.
     """
     head, name = _split(normalize_id(test_id))
-    segs = _strip_params(test_name)[0].split("::")
+    segs = strip_params(test_name)[0].split("::")
     segs = segs[:-1] + segs[-1].split(".")
     if name != segs[-1]:
         return False
@@ -220,13 +217,6 @@ def demote(plan, gate_result):
     return out
 
 
-def _write_atomic(path, doc):
-    path = Path(path)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(doc, indent=2) + "\n")
-    os.replace(tmp, path)
-
-
 def _yes(v):
     return v == "yes"
 
@@ -264,7 +254,7 @@ def main(argv=None):
         except ValueError as e:
             sys.stderr.write(f"order_gate demote: {e}\n")
             return 2
-        _write_atomic(a.out or a.plan, demoted)
+        write_atomic(a.out or a.plan, demoted)
         return 0
     json.dump(doc, sys.stdout, indent=2)
     sys.stdout.write("\n")

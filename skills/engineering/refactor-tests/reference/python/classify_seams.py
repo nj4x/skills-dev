@@ -41,6 +41,8 @@ import json
 import sys
 from pathlib import Path
 
+from refactor_tests_shared import is_variant
+
 NOTE_COVERED = "covered through the interface"
 NOTE_MOVE = "move the assertion to the interface"
 
@@ -470,28 +472,27 @@ def _evidence_lines(evidence, file_id, rel_src):
     """Covered line set of `rel_src` over all evidence ids of one test (parametrized ids merged)."""
     lines = set()
     for tid, entry in evidence["tests"].items():
-        if tid == file_id or tid.startswith(file_id + "["):
+        if is_variant(tid, file_id):
             lines |= set(entry.get("covered", {}).get(rel_src, {}).get("lines", []))
     return lines
 
 
-def classify(root, source_roots, seams_doc, test_paths, evidence=None):
-    files = source_files(root, source_roots)
-    rel_to_mod = {rel: name for name, (rel, _) in files.items()}
-    seam_sets = {}
-    for rel, entry in seams_doc.get("modules", {}).items():
-        names = {s["name"] for s in entry["seams"] if s.get("status") == "confirmed"}
-        if names and rel in rel_to_mod:
-            seam_sets[rel_to_mod[rel]] = names
-    warnings = []
-    if not seam_sets:
-        warnings.append("no confirmed seams: no test classified")
-    evidence_ok = bool(evidence) and evidence.get("status") == "ok"
-    if not evidence_ok:
-        warnings.append(
-            "evidence status is not ok: add_candidates and covered_through_interface omitted"
-        )
+def _test_id(rec):
+    return f"{rec['file']}::{rec['test_name']}"
 
+
+def _confirmed_seams(seams_doc):
+    """Source path -> confirmed seam entries, for modules with at least one."""
+    out = {}
+    for rel, entry in seams_doc.get("modules", {}).items():
+        confirmed = [s for s in entry["seams"] if s.get("status") == "confirmed"]
+        if confirmed:
+            out[rel] = {"seams": confirmed}
+    return out
+
+
+def _split_tests(root, test_paths, files, seam_sets, warnings):
+    """(interface, pinning_raw, all_refs): each test split per source module it references."""
     interface, pinning_raw = [], []
     all_refs = set()
     for tpath in sorted(test_paths):
@@ -520,54 +521,51 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
                     pinning_raw.append({**rec, "internals": internals})
                 else:
                     interface.append(rec)
+    return interface, pinning_raw, all_refs
 
-    modules_out = {}
-    for rel, entry in seams_doc.get("modules", {}).items():
-        confirmed = [s for s in entry["seams"] if s.get("status") == "confirmed"]
-        if confirmed:
-            modules_out[rel] = {"seams": confirmed}
-    out = {"modules": modules_out}
 
-    def test_id(rec):
-        return f"{rec['file']}::{rec['test_name']}"
-
-    if evidence_ok:
-        add = []
-        for rel, entry in modules_out.items():
-            tree = _parse(root / rel)
-            if tree is None:
-                warnings.append(f"{rel}: cannot parse, add candidates skipped")
+def _add_candidates(root, files, rel_to_mod, modules_out, interface, all_refs, evidence, warnings):
+    """Confirmed seams no interface test reaches; warns on re-exported candidates."""
+    add = []
+    for rel, entry in modules_out.items():
+        tree = _parse(root / rel)
+        if tree is None:
+            warnings.append(f"{rel}: cannot parse, add candidates skipped")
+            continue
+        tests_here = [r for r in interface if r["module"] == rel]
+        for seam in entry["seams"]:
+            lines = _body_lines(tree, seam["name"])
+            if not lines:
+                warnings.append(
+                    f"{rel}: seam {seam['name']} has no function or class body here "
+                    "(re-export or constant): not an add candidate"
+                )
                 continue
-            tests_here = [r for r in interface if r["module"] == rel]
-            for seam in entry["seams"]:
-                lines = _body_lines(tree, seam["name"])
-                if not lines:
-                    warnings.append(
-                        f"{rel}: seam {seam['name']} has no function or class body here "
-                        "(re-export or constant): not an add candidate"
-                    )
-                    continue
-                reached = any(lines & _evidence_lines(evidence, test_id(r), rel) for r in tests_here)
-                if not reached:
-                    add.append({"module": rel, "seam": seam["name"]})
-        reexports = _package_reexports(root, files)
-        for cand in add:
-            head = cand["seam"].partition(".")[0]
-            for pkg, exported in sorted(reexports.get((rel_to_mod[cand["module"]], head), ())):
-                if any(m == pkg and r.partition(".")[0] == exported for m, r in all_refs):
-                    warnings.append(
-                        f"{cand['module']}: add candidate {cand['seam']} is re-exported by {files[pkg][0]} "
-                        f"as {exported}, and tests import it from there; those tests are not linked to "
-                        f"{cand['module']}, so check the candidate by hand"
-                    )
-        out["add_candidates"] = add
+            reached = any(lines & _evidence_lines(evidence, _test_id(r), rel) for r in tests_here)
+            if not reached:
+                add.append({"module": rel, "seam": seam["name"]})
+    reexports = _package_reexports(root, files)
+    for cand in add:
+        head = cand["seam"].partition(".")[0]
+        for pkg, exported in sorted(reexports.get((rel_to_mod[cand["module"]], head), ())):
+            if any(m == pkg and r.partition(".")[0] == exported for m, r in all_refs):
+                warnings.append(
+                    f"{cand['module']}: add candidate {cand['seam']} is re-exported by {files[pkg][0]} "
+                    f"as {exported}, and tests import it from there; those tests are not linked to "
+                    f"{cand['module']}, so check the candidate by hand"
+                )
+    return add
+
+
+def _pinning_candidates(pinning_raw, interface, evidence, evidence_ok, warnings):
+    """Pinning records with their note, plus `covered_through_interface` when evidence is ok."""
     pinning = []
     for rec in pinning_raw:
         item = dict(rec)
         if evidence_ok:
-            mine = _evidence_lines(evidence, test_id(rec), rec["module"])
+            mine = _evidence_lines(evidence, _test_id(rec), rec["module"])
             covered = bool(mine) and any(
-                mine <= _evidence_lines(evidence, test_id(r), rec["module"])
+                mine <= _evidence_lines(evidence, _test_id(r), rec["module"])
                 for r in interface
                 if r["module"] == rec["module"]
             )
@@ -581,7 +579,36 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
         else:
             item["note"] = NOTE_MOVE
         pinning.append(item)
-    out["pinning_candidates"] = pinning
+    return pinning
+
+
+def classify(root, source_roots, seams_doc, test_paths, evidence=None):
+    files = source_files(root, source_roots)
+    rel_to_mod = {rel: name for name, (rel, _) in files.items()}
+    modules_out = _confirmed_seams(seams_doc)
+    seam_sets = {
+        rel_to_mod[rel]: {s["name"] for s in entry["seams"]}
+        for rel, entry in modules_out.items()
+        if rel in rel_to_mod
+    }
+    warnings = []
+    if not seam_sets:
+        warnings.append("no confirmed seams: no test classified")
+    evidence_ok = bool(evidence) and evidence.get("status") == "ok"
+    if not evidence_ok:
+        warnings.append(
+            "evidence status is not ok: add_candidates and covered_through_interface omitted"
+        )
+
+    interface, pinning_raw, all_refs = _split_tests(root, test_paths, files, seam_sets, warnings)
+    out = {"modules": modules_out}
+    if evidence_ok:
+        out["add_candidates"] = _add_candidates(
+            root, files, rel_to_mod, modules_out, interface, all_refs, evidence, warnings
+        )
+    out["pinning_candidates"] = _pinning_candidates(
+        pinning_raw, interface, evidence, evidence_ok, warnings
+    )
     return {"seams": out, "interface_tests": interface, "warnings": warnings}
 
 
