@@ -17,10 +17,14 @@ Criteria, in the order of SKILL.md Step 8:
   `raise`, `pytest.raises`/`warns`/`fail`/`deprecated_call`, a call whose name starts
   with an assertion prefix, or a fixture or helper from the test file or a conftest.py
   above it whose body asserts). `kind` is the first match of `no-raise-contract`,
-  `fail-soft`, `never-fails`, `no-assertion`.
+  `fail-soft`, `never-fails`, `no-assertion`. `no-raise-contract` matches when the last
+  call is a bare `validate(…)` or `<any receiver>.validate(…)`, or matches a `--raiser`: a
+  bare call matches any raiser with that last name; a dotted call matches only when one
+  dotted name ends with the other (`config.load` and `pkg.config.load`, never `other.load`).
 - trivially-true (removal): every statement is `assert <truthy constant>`,
   `assert a == a` / `assert a is a`, `assertTrue(<truthy constant>)` or
-  `assertEqual(a, a)` / `assertIs(a, a)`, where `a` holds no call.
+  `assertEqual(a, a)` / `assertIs(a, a)`, where `a` holds no call. A test whose fixture
+  asserts is not flagged trivially-true.
 - parametrize-cluster (N >= 3) and parametrize-pair (N = 2, names differ only by a
   trailing integer or a `_<letter>` suffix): same scope, arguments and decorators, and
   bodies equal once constants are replaced by placeholders. Each differing constant
@@ -48,6 +52,7 @@ import tokenize
 from pathlib import Path
 
 from classify_seams import _skip_dir, source_files
+from refactor_tests_shared import source_lines
 
 ASSERT_PREFIXES = ("assert", "_assert", "check", "_check", "expect", "_expect", "verify", "_verify")
 ASSERT_CALLS = {"raises", "warns", "fail", "deprecated_call"}
@@ -301,7 +306,7 @@ def dead_kind(fn, raisers=()):
     last = _last_call(body)
     if last is not None:
         dotted = _dotted(last.func) or ""
-        tail = dotted.split(".")[-1]
+        tail = dotted.split(".")[-1] if dotted else getattr(last.func, "attr", "")
         if tail == "validate" and isinstance(last.func, (ast.Name, ast.Attribute)):
             return "no-raise-contract"
         if any(_raiser_match(last.func, dotted, r) for r in raisers):
@@ -671,7 +676,7 @@ def scan(root, source_roots, tests, raisers=()):
         except (SyntaxError, UnicodeDecodeError, ValueError) as exc:
             out["unanalyzable"].append({"file": rel, "reason": f"{type(exc).__name__}: {exc}"})
             continue
-        lines = text.splitlines()
+        lines = [line.rstrip("\r\n") for line in source_lines(text)]
         helpers = Helpers(root, path, tree, conftests)
         dups, norms, trivial = {}, {}, set()
         for cls, fn in test_functions(tree):
@@ -721,7 +726,8 @@ def main(argv=None):
     ap.add_argument("--source-root", action="append", required=True)
     ap.add_argument("--tests", action="append", required=True, help="test directory or file; repeat the flag")
     ap.add_argument("--raiser", action="append", default=[],
-                    help="a documented raiser beyond `*.validate`; repeat the flag")
+                    help="a documented raiser beyond bare `validate(` and `*.validate(`; a dotted name matches "
+                         "a dotted call only when one ends with the other; repeat the flag")
     args = ap.parse_args(argv)
     json.dump(scan(args.root, args.source_root, args.tests, args.raiser), sys.stdout, indent=1)
     sys.stdout.write("\n")

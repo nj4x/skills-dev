@@ -702,7 +702,8 @@ def _pinning_candidates(pinning_raw, interface, evidence, evidence_ok, warnings)
             item["note"] = NOTE_COVERED if covered else NOTE_MOVE
         else:
             item["note"] = NOTE_MOVE
-        if not item["internals"]:  # only doubles in this module: nothing to move
+        if not item["internals"] and item["kind"] == "collaborator-double":
+            # only doubles in this module, and no stricter kind elsewhere: nothing to move
             item["note"] = NOTE_DOUBLE
         pinning.append(item)
     return pinning

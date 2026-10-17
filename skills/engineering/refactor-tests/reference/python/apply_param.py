@@ -25,7 +25,8 @@ entry runs, in plan order. Prints one JSON object per entry, as a list:
 
 Test names follow the plan: `Class::test` for a method, the bare name for a top-level
 test. The ledger is rewritten atomically after every entry. An edited file keeps its
-line ends (LF or CRLF) and permission bits.
+line ends (LF or CRLF; in a file with mixed line ends, only the inserted lines use LF),
+its permission bits, and a symlink to it.
 """
 import argparse
 import ast
@@ -36,7 +37,7 @@ import sys
 import textwrap
 from pathlib import Path
 
-from refactor_tests_shared import write_atomic
+from refactor_tests_shared import source_lines, write_atomic
 
 PLAN = ".scratch/refactor-tests/simplification-plan.json"
 LEDGER = ".scratch/refactor-tests/ledger.json"
@@ -82,7 +83,7 @@ def _add_imports(text, modules):
     missing = [m for m in modules if m not in present]
     if not missing:
         return text
-    lines = text.splitlines(keepends=True)
+    lines = source_lines(text)
     at = 0
     for i, node in enumerate(tree.body):
         is_doc = i == 0 and isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) \
@@ -103,15 +104,15 @@ def edit(text, entry):
         tree = ast.parse(text)
     except SyntaxError as exc:
         raise EditError(f"file does not parse: {exc}") from exc
-    lines = text.splitlines(keepends=True)
+    lines = source_lines(text)
     cls, name = _split(entry["consolidated_name"])
     if name in _functions(_scope(tree, cls)) and name not in {
             _split(t)[1] for t in entry["tests"] if _split(t)[0] == cls}:
         raise EditError(f"{entry['consolidated_name']} is already defined; the edit would shadow it")
     ranges = []
     for t in entry["tests"]:
-        cls, name = _split(t)
-        fn = _functions(_scope(tree, cls)).get(name)
+        t_cls, t_name = _split(t)
+        fn = _functions(_scope(tree, t_cls)).get(t_name)
         if fn is None:
             raise EditError(f"test function {t} not found")
         start = min([fn.lineno] + [d.lineno for d in fn.decorator_list]) - 1
@@ -151,19 +152,29 @@ def edit(text, entry):
 
 
 def _read_text(path):
-    """(text with LF line ends, original line end)."""
+    """(text, line end for the write). A file whose every line end is CRLF reads with LF
+    and writes back with CRLF; any other file reads and writes its text unchanged."""
     with open(path, encoding="utf-8", newline="") as f:
         raw = f.read()
-    return raw.replace("\r\n", "\n"), "\r\n" if "\r\n" in raw else "\n"
+    crlf = raw.count("\r\n")
+    if crlf and crlf == raw.count("\n"):
+        return raw.replace("\r\n", "\n"), "\r\n"
+    return raw, "\n"
 
 
 def _write_text(path, text, newline="\n"):
-    """Atomic write that keeps the file's line ends and permission bits."""
+    """Atomic write that keeps the file's line ends and permission bits. A symlink stays a
+    symlink: the write goes to its target. The temp file is removed when the write fails."""
+    path = os.path.realpath(path)
     tmp = f"{path}.rt-tmp"
-    with open(tmp, "w", encoding="utf-8", newline="") as f:
-        f.write(text.replace("\n", newline) if newline != "\n" else text)
-    shutil.copymode(path, tmp)
-    os.replace(tmp, path)
+    try:
+        with open(tmp, "w", encoding="utf-8", newline="") as f:
+            f.write(text.replace("\n", newline) if newline != "\n" else text)
+        shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    finally:
+        if os.path.lexists(tmp):
+            os.unlink(tmp)
 
 
 def apply_entry(root, entry, ledger):

@@ -137,7 +137,7 @@ A test is a **simplification candidate** when it meets one of these criteria. **
 |-----------|--------|
 | **Exact duplicate** | Remove one — byte/AST-identical body AND identical fixtures, mocks, decorators (ignoring only name and docstring) |
 | **Dead test** | Review only, never removed — no assertion statement in body (per-language vocabulary and sub-kind in `reference/patterns.md` → Assertion vocabulary) |
-| **Trivially true** | Remove — only `assert True`, `assertEqual(x, x)`, `expect(1).toBe(1)` |
+| **Trivially true** | Remove — only `assert True`, `assertEqual(x, x)`, `expect(1).toBe(1)`; not flagged when a fixture the test requests asserts |
 | **Coverage subset** | Review only, never removed on this evidence alone: see `reference/patterns.md` → What each criterion proves — every line and branch arc the test covers is also covered by other passing tests (evidence-based; fixture identity not required; see Step 8) |
 | **Cost** | Review only, never removed on this evidence alone: see `reference/patterns.md` → What each criterion proves — a coverage-subset candidate in the top decile by `call_s`, at or above 0.5 s (evidence-based; see Step 8) |
 | **Parametrize cluster** | Consolidate — N ≥ 3 tests call the same function with distinct args of the same structural type, identical fixtures+mocks, identical assertion pattern |
@@ -209,7 +209,7 @@ Parse every test file (post-layout) using the language's AST parser. For each te
 
 Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → parametrize cluster → parametrize pair.
 
-**Evidence-free criteria (Python).** The helper applies exact duplicate, dead, trivially true, parametrize cluster and parametrize pair, with the "Do NOT flag" rules of Redundancy criteria. Pass one `--source-root` per ledger `source_roots` entry and one `--tests` flag per test directory; both flags repeat (`--tests a b` fails with "unrecognized arguments"). Add one `--raiser <name>` for each documented raiser the project names beyond `*.validate`:
+**Evidence-free criteria (Python).** The helper applies exact duplicate, dead, trivially true, parametrize cluster and parametrize pair, with the "Do NOT flag" rules of Redundancy criteria. Pass one `--source-root` per ledger `source_roots` entry and one `--tests` flag per test directory; both flags repeat (`--tests a b` fails with "unrecognized arguments"). Add one `--raiser <name>` for each documented raiser the project names beyond `validate` (bare `validate(` and `*.validate(` always count):
 
 ```sh
 python3 $SKILL_DIR/reference/python/scan_static.py --root $PROJECT_PATH --source-root <root> … \
