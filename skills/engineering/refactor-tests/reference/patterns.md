@@ -94,7 +94,7 @@ The dead-test criterion flags tests with no assertion statements. Use this vocab
 
 | Language | Assertion keywords |
 |---|---|
-| Python | `assert`, `pytest.raises`, `pytest.warns`; a call to any function whose name starts with `assert`, `_assert`, `check`, `_check`, `expect`, `_expect`, `verify`, or `_verify`; a fixture the test requests, or a helper it calls, that is defined in the test file or `conftest.py` and whose body asserts |
+| Python | `assert`, `raise`, `pytest.raises`, `pytest.warns`, `pytest.fail`, `pytest.deprecated_call`; a call to any function whose name starts with `assert`, `_assert`, `check`, `_check`, `expect`, `_expect`, `verify`, or `_verify`; a fixture the test requests, or a helper it calls, that is defined in the test file or `conftest.py` and whose body asserts |
 | TypeScript/JavaScript | `expect`, `assert` (chai), `should` (should.js), `.to.throw` (chai), `.toThrow` (jest) |
 | Go | `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `require.*`, `assert.*` (testify) |
 | Java | `assertThat`, `assertTrue`, `assertEquals`, `fail` (JUnit/AssertJ) |
@@ -106,7 +106,7 @@ The dead-test criterion flags tests with no assertion statements. Use this vocab
 |---|---|---|---|
 | 1 | `no-raise-contract` | The last statement calls a documented raiser (`*.validate(`, or a name the project lists), or the test name or docstring says "does not raise" or "must not raise". | Keep. It is the only guard against an over-strict validator. Counted in the Final report, never ticketed. |
 | 2 | `fail-soft` | The body sets up an error (`side_effect=…Error`) and calls the code under test. | Add an assertion on the log or the return value. Check it by hand-mutating the function to a silent no-op: the test must fail. |
-| 3 | `never-fails` | The only outcome other than a pass is `pytest.skip`. | Replace the skip with an assertion, or remove the test. |
+| 3 | `never-fails` | The only outcome other than a pass is `pytest.skip` (or `pytest.importorskip`). | Replace the skip with an assertion, or remove the test. |
 | 4 | `no-assertion` | Everything else. | Add an assertion, or remove the test. |
 
 ## Import rewriting (AST-based, per language)
@@ -281,7 +281,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 }
 ```
 
-`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch.
+`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch. Every parametrization carries `class` (the test class; `null` for top-level tests), and its `tests` and `consolidated_name` take the `Class::test` form. `reference/python/scan_static.py` builds the `removals`, the dead-test `review_candidates`, and the `parametrizations` for Python; `reference/python/apply_param.py` applies the parametrizations (SKILL.md Step 9).
 
 The top-level `schema_version` is `2`.
 
