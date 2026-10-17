@@ -350,6 +350,16 @@ After Phase B normalises the assertion vocabulary (e.g., `kotlin.test` over JUni
 
 ---
 
+## Follow-up: mutation deletion gate (optional)
+
+Coverage-subset is not redundancy. On one pro-trading module, deleting the flagged set would have dropped the mutation score from 26/28 to 11/28. Before you delete a flagged test, run this gate per module. It is off by default and advice only: no helper script ships and nothing depends on it.
+
+The contract and the recipe are in `reference/patterns.md` → Mutation deletion gate. In short: delete test T only if every mutant T kills is also killed by some kept test. Tests under evidence `excluded` are kept tests: they count as killers, never as candidates. Run mutmut twice on the module, scoped to its covering tests, once as is and once with a batch of 25 candidates deselected; a mutant killed in the first run and surviving the second is a lost kill. Install mutmut ephemerally, as Step 7 does. Edit no project config.
+
+Run the gate after the hotspot fixes, because it is about 9.6x cheaper once a shared cost is gone.
+
+---
+
 ## Final report
 
 **Phase A — Layout:**
