@@ -23,11 +23,11 @@ Give each ticket blocking edges. Wide refactors are the exception — use expand
 
 Present as numbered list (title, blocked-by, what it delivers). Iterate on granularity and edges until approved.
 
-**Headless detection:** check whether the `AskUserQuestion` tool is available. If absent, the skill is running headless (invoked by another agent). Skip the quiz and draw slice granularity and blocking-edge decisions from the conversation or task context. **Shaping-context validation:** before skipping, confirm the context contains explicit slice and edge decisions; if none are found, stop with: "headless mode requires pre-shaped context with slice/edge decisions — provide them in the task description and re-invoke."
+**Headless detection:** the skill is running headless when the `AskUserQuestion` tool is absent, or when the caller's args hold the line `headless: true` (an unattended caller, such as `refactor-tests` Step 11, that may still hold the tool but has no user to answer). Skip the quiz and draw slice granularity and blocking-edge decisions from the conversation or task context. **Shaping-context validation:** before skipping, confirm the context contains explicit slice and edge decisions; if none are found, stop with: "headless mode requires pre-shaped context with slice/edge decisions — provide them in the task description and re-invoke."
 
 ### 5. Stage the draft
 
-**Derive the feature slug.** Slugify the conversation's feature name — lowercase, non-alphanumeric → `-`, trimmed. Headless fallback: `<CLAUDE_CODE_SESSION_ID>-<unix-timestamp>`. The slug lives in memory for this run.
+**Derive the feature slug.** Slugify the conversation's feature name — lowercase, non-alphanumeric → `-`, trimmed. Headless fallback, only when the caller names no feature: `<CLAUDE_CODE_SESSION_ID>-<unix-timestamp>`. The slug lives in memory for this run.
 
 **Resolve ticket lineage subtype (ADR-0067).** Before staging, confirm one of:
 
@@ -57,12 +57,15 @@ artifact-type: tickets
 .scratch/<feature-slug>/draft-issues/03-ui-component.md
 ```
 
-Use the appropriate `<local-ticket-template>` for each ticket file:
+Use the appropriate `<local-ticket-template>` for each ticket file.
+
+**Ticket label.** A ticket's label is its frontmatter `label:` field; a ticket without the field gets `ready-for-agent`; `## Status` holds the same value. A caller that stages pre-shaped drafts sets it per ticket. `refactor-tests` Step 11, for example, sets `ready-for-human` on tickets that need a human decision (ADR-0079). Publishing applies each ticket's own label.
 
 **Spec-linked ticket (default):**
 ```
 ---
 artifact-type: ticket
+label: ready-for-agent
 lineage-rules:
   - "Ticket must reference its source spec"
   - "Ticket may additionally reference source ADRs for cross-cutting concerns"
@@ -82,7 +85,7 @@ lineage-rules:
 <NN> — <slug>, or none
 
 ## Status
-ready-for-agent
+<the label value>
 
 ## Checklist
 - [ ] ...
@@ -97,6 +100,7 @@ ready-for-agent
 ---
 artifact-type: ticket
 ticket-subtype: adr-direct
+label: ready-for-agent
 lineage-rules:
   - "Ticket must reference at least one source ADR"
   - "Spec field is intentionally omitted: this ticket traces directly to an ADR"
@@ -116,7 +120,7 @@ lineage-rules:
 <NN> — <slug>, or none
 
 ## Status
-ready-for-agent
+<the label value>
 
 ## Checklist
 - [ ] ...
@@ -144,8 +148,8 @@ Critic detects `artifact-type: tickets` from the manifest frontmatter, selects t
 
 **Approved** (critic printed the sentinel, `auto_approval` true): publish.
 
-- **Local tracker:** for each path listed in the manifest, promote `draft-issues/<NN>-<slug>.md` → `issues/<NN>-<slug>.md`, apply `ready-for-agent`. After all promotions succeed, remove the `draft-issues/` directory. On partial promotion failure (permission error, disk full), stop and report which files were promoted and which remain in `draft-issues/`; do not remove `draft-issues/` until all promotions succeed.
-- **Real tracker (GitHub, Linear, …):** publish in up to three passes — first create all issues in manifest dependency order (recording each slug → tracker ID), then create native blocking links resolving `Blocked by` slugs to tracker IDs, then (only when the source was an existing issue) make each ticket a sub-issue of it. Keep each ticket's `## Blocked by` section even when the native links exist: critic validates it, the local tracker uses it as the task graph, and it records the edges a partial publish never created (ADR-0078). On success of passes 1 and 2, run pass 3 below, then rewrite `manifest.md`'s body in place: replace each `draft-issues/<NN>-<slug>.md` line with `<tracker-ID> <NN>-<slug>`, keeping dependency order — a manifest still pointing at `draft-issues/` paths after a successful real-tracker publish is a stale pointer with no working target. On partial failure in pass 1 or 2, stop and report created issues (slug → ID), uncreated issues, and dangling edges; leave the manifest untouched. In headless mode write the report to `.scratch/<feature-slug>/publish-report.md`. Do not roll back created issues. See ADR-0041 for the deferred resume / idempotency-by-slug subsystem.
+- **Local tracker:** for each path listed in the manifest, promote `draft-issues/<NN>-<slug>.md` → `issues/<NN>-<slug>.md`, apply the ticket's label (default `ready-for-agent`). After all promotions succeed, remove the `draft-issues/` directory. On partial promotion failure (permission error, disk full), stop and report which files were promoted and which remain in `draft-issues/`; do not remove `draft-issues/` until all promotions succeed.
+- **Real tracker (GitHub, Linear, …):** publish in up to three passes — first create all issues in manifest dependency order, each with its ticket's label (recording each slug → tracker ID), then create native blocking links resolving `Blocked by` slugs to tracker IDs, then (only when the source was an existing issue) make each ticket a sub-issue of it. Keep each ticket's `## Blocked by` section even when the native links exist: critic validates it, the local tracker uses it as the task graph, and it records the edges a partial publish never created (ADR-0078). On success of passes 1 and 2, run pass 3 below, then rewrite `manifest.md`'s body in place: replace each `draft-issues/<NN>-<slug>.md` line with `<tracker-ID> <NN>-<slug>`, keeping dependency order — a manifest still pointing at `draft-issues/` paths after a successful real-tracker publish is a stale pointer with no working target. On partial failure in pass 1 or 2, stop and report created issues (slug → ID), uncreated issues, and dangling edges; leave the manifest untouched. In headless mode write the report to `.scratch/<feature-slug>/publish-report.md`. Do not roll back created issues. See ADR-0041 for the deferred resume / idempotency-by-slug subsystem.
   - **Pass 3 — sub-issues (ADR-0078):** run this pass only when the source was an existing issue (the spec or plan issue the tickets were cut from; call it `<parent>`). For each created ticket, in manifest order, make it a sub-issue of `<parent>` with the **Make an issue a sub-issue of a parent** operation in `docs/agents/issue-tracker.md`. When that doc has no such operation (GitLab, other trackers), or the operation fails for a ticket at runtime, edit that ticket's body to put `Part of #<parent>` at the top instead, and record the ticket and the reason. A pass-3 failure is not fatal: it never stops the publish, the manifest rewrite still runs, and every fallback ticket is listed in the publish report (headless: `.scratch/<feature-slug>/publish-report.md`). The pass is idempotent, so it can be rerun alone: skip a ticket already listed among `<parent>`'s sub-issues (the **List the sub-issues of a parent** operation in the tracker doc; when the doc has none, rely on the `Part of #<parent>` check alone) and a ticket whose body already begins with `Part of #<parent>`. Resume of passes 1–2 stays deferred to ADR-0041.
 
 **Not approved** (revise-at-cap, unresolved major issues, hard-abort — no sentinel from critic): leave the drafts staged under `.scratch/<feature-slug>/draft-issues/` and `manifest.md`.
