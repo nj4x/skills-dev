@@ -22,6 +22,8 @@ import json
 import sys
 from collections import Counter
 
+from refactor_tests_shared import split_file
+
 MIN_COST_S = 0.5
 
 
@@ -35,7 +37,7 @@ def _points(covered):
 
 
 def _entry(nodeid, criterion, call_s, evidence):
-    file, _, test_name = nodeid.partition("::")
+    file, test_name = split_file(nodeid)
     return {
         "file": file,
         "test_name": test_name,

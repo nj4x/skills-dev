@@ -22,6 +22,8 @@ import argparse
 import json
 import sys
 
+from refactor_tests_shared import is_variant, split_file, strip_params
+
 LABEL = "serial call time, not wall time"
 
 
@@ -29,23 +31,15 @@ def _r(x):
     return round(x, 6)
 
 
-def _matches(nodeid, rid):
-    """True when evidence id `nodeid` is the removed test `rid` or a parametrized id of it.
-
-    A bare `<file>::<test>` names the top-level test only, never `<file>::<Class>::<test>`.
-    """
-    return nodeid.partition("[")[0] == rid
-
-
 def _same_name_methods(tests, rid):
     """Base ids of class methods in `rid`'s file that share a bare `rid`'s test name.
 
     Called only when no evidence id matches `rid`, so `rid` itself is never a base here.
     """
-    file, _, name = rid.partition("::")
+    file, name = split_file(rid)
     if "::" in name:
         return []
-    bases = {n.partition("[")[0] for n in tests}
+    bases = {strip_params(n)[0] for n in tests}
     return sorted(b for b in bases if b.startswith(file + "::") and b.endswith("::" + name))
 
 
@@ -79,7 +73,7 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
     removed = []
     warnings = []
     for rid in removed_ids:
-        hits = sorted(n for n in tests if _matches(n, rid))
+        hits = sorted(n for n in tests if is_variant(n, rid))
         if not hits:
             # No exact match: charge nothing, even when one class method has the name.
             removed.append({"id": rid, "call_s": None})

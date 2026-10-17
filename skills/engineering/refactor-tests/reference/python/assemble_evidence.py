@@ -24,6 +24,8 @@ import json
 import os
 import sys
 
+from refactor_tests_shared import write_atomic
+
 ID_BASES = ("post-layout", "pre-layout")
 
 
@@ -82,14 +84,6 @@ def _load(path):
         return json.load(f)
 
 
-def _write_atomic(path, doc):
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(doc, f, indent=1, sort_keys=True)
-        f.write("\n")
-    os.replace(tmp, path)
-
-
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--arcs")
@@ -113,5 +107,5 @@ if __name__ == "__main__":
         )
     except ValueError as e:
         sys.exit(f"assemble_evidence: {e}")
-    _write_atomic(a.out, doc)
+    write_atomic(a.out, doc)
     sys.stderr.write(f"wrote {a.out}\n")
