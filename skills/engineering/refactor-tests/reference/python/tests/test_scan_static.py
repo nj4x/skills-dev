@@ -163,6 +163,23 @@ def test_two_identical_trivially_true_tests_are_not_also_duplicates(tmp_path):
     assert [e["criterion"] for e in out["removals"]] == ["trivially-true", "trivially-true"]
 
 
+def test_trivially_true_body_with_an_asserting_fixture_is_kept(tmp_path):
+    out = run(tmp_path, {"test_triv.py": '''
+        def test_db_ready(db):
+            assert True
+    '''}, conftest='''
+        import pytest
+
+        @pytest.fixture
+        def db():
+            conn = object()
+            assert conn
+            return conn
+    ''')
+    assert out["removals"] == []
+    assert out["review_candidates"] == []
+
+
 # --- dead test --------------------------------------------------------------
 
 def test_dead_test_is_review_only_with_kind(tmp_path):
@@ -238,10 +255,37 @@ def test_asserting_helper_in_file_or_conftest_and_fixture_count(tmp_path):
     assert names(out["review_candidates"], "dead-test") == ["test_plain_fixture"]
 
 
+def test_helper_cycle_does_not_cache_a_partial_false(tmp_path):
+    # a() reaches b() before c(); b() calls a() back. The cycle guard cuts b() short while
+    # a() is checked, but b() still asserts through a() -> c().
+    out = run(tmp_path, {"test_cycle.py": '''
+        def c(x):
+            assert x
+
+        def a(x):
+            b(x)
+            c(x)
+
+        def b(x):
+            a(x)
+
+        def test_first():
+            a(1)
+
+        def test_second():
+            b(1)
+    '''})
+    assert out["review_candidates"] == []
+
+
 @pytest.mark.parametrize("text, kind", [
     ("def test_ok():\n    schema.validate({})\n", "no-raise-contract"),
     ("def test_x():\n    with ctx():\n        schema.validate({})\n", "no-raise-contract"),
     ("def test_ok():\n    parse_strict({})\n", "no-raise-contract"),
+    ("def test_ok():\n    validate({})\n", "no-raise-contract"),
+    ("def test_ok():\n    config.parse_strict({})\n", "no-raise-contract"),
+    ("def test_ok():\n    pkg.config.parse_strict({})\n", "no-raise-contract"),
+    ("def test_ok():\n    other.parse_strict({})\n", "no-assertion"),
     ("def test_load_does_not_raise():\n    load(1)\n", "no-raise-contract"),
     ('def test_x():\n    """Must not raise on empty input."""\n    load(1)\n', "no-raise-contract"),
     ("def test_x():\n    with patch('pkg.calc.load', side_effect=OSError('x')):\n        run()\n", "fail-soft"),
@@ -252,7 +296,8 @@ def test_asserting_helper_in_file_or_conftest_and_fixture_count(tmp_path):
     ("def test_x():\n    pytest.importorskip('numpy')\n    load(1)\n", "never-fails"),
     ("def test_x():\n    load(1)\n", "no-assertion"),
     ("def test_x():\n    m = Mock(side_effect=ValueError)\n", "no-assertion"),
-], ids=["validate", "validate-in-with", "raiser-flag", "name", "docstring", "fail-soft-with",
+], ids=["validate", "validate-in-with", "raiser-flag", "bare-validate", "raiser-dotted",
+        "raiser-qualified", "raiser-other-module", "name", "docstring", "fail-soft-with",
         "fail-soft-mock", "fail-soft-attr", "fail-soft-decorator", "never-fails", "importorskip", "no-assertion",
         "error-setup-without-call"])
 def test_dead_test_kinds(tmp_path, text, kind):
@@ -437,6 +482,33 @@ def test_dead_and_duplicate_tests_never_join_a_cluster(tmp_path):
     assert len(names(out["review_candidates"], "dead-test")) == 3
 
 
+def test_two_same_prefix_clusters_get_distinct_names_and_both_apply(tmp_path):
+    from apply_param import apply_entry
+    root = project(tmp_path, {"test_add.py": '''
+        from pkg.calc import clamp
+
+        def test_add_1():
+            assert clamp(1, 0, 3) == 1
+
+        def test_add_2():
+            assert clamp(2, 0, 3) == 2
+
+        def test_add_3():
+            x = clamp(1, 0, 3)
+            assert x == 1
+
+        def test_add_4():
+            x = clamp(2, 0, 3)
+            assert x == 2
+    '''})
+    entries = scan(root, ["src"], ["tests"])["parametrizations"]
+    assert [e["consolidated_name"] for e in entries] == ["test_add", "test_clamp"]
+    ledger = {}
+    assert [apply_entry(root, e, ledger) for e in entries] == [("applied", None), ("applied", None)]
+    tree = ast.parse((root / "tests" / "test_add.py").read_text())
+    assert [n.name for n in tree.body if isinstance(n, ast.FunctionDef)] == ["test_add", "test_clamp"]
+
+
 def test_unparsable_file_is_unanalyzable(tmp_path):
     out = run(tmp_path, {"test_bad.py": "def test_x(:\n    pass\n"})
     [entry] = out["unanalyzable"]
@@ -444,11 +516,18 @@ def test_unparsable_file_is_unanalyzable(tmp_path):
     assert entry["reason"].startswith("SyntaxError")
 
 
+def test_unparsable_conftest_is_unanalyzable(tmp_path):
+    out = run(tmp_path, {"test_ok.py": "def test_x():\n    assert 1 + 1 == 2\n"}, conftest="def broken(:\n")
+    [entry] = out["unanalyzable"]
+    assert entry["file"] == "tests/conftest.py"
+    assert entry["reason"].startswith("SyntaxError")
+
+
 # --- plan-v2 shapes and CLI -----------------------------------------------
 
 REMOVAL_KEYS = {"file", "test_name", "criterion", "evidence"}
 REVIEW_KEYS = {"file", "test_name", "criterion", "evidence"}
-PARAM_KEYS = {"file", "tests", "consolidated_name", "consolidated_body", "required_imports",
+PARAM_KEYS = {"file", "class", "tests", "consolidated_name", "consolidated_body", "required_imports",
               "criterion", "evidence"}
 
 
@@ -464,6 +543,9 @@ def test_output_matches_plan_v2_shapes(tmp_path):
         assert clamp(-5, 0, 3) == 0
     '''})
     assert set(out) == {"removals", "review_candidates", "parametrizations", "unanalyzable"}
+    assert sorted(e["criterion"] for e in out["removals"]) == ["exact-duplicate", "trivially-true"]
+    assert len(out["review_candidates"]) == 1
+    assert len(out["parametrizations"]) == 1
     for e in out["removals"]:
         assert REMOVAL_KEYS <= set(e)
         assert e["criterion"] in ("exact-duplicate", "trivially-true")
@@ -482,11 +564,33 @@ def test_cli_repeatable_source_root_and_tests_flags(tmp_path):
     (root / "lib").mkdir()
     (root / "lib" / "other.py").write_text("def pick(x):\n    return x\n")
     (root / "more").mkdir()
+    # each class is named after its source function only when both source roots are read
     (root / "more" / "test_two.py").write_text(textwrap.dedent('''
         from other import pick
+        from pkg.calc import clamp
 
         def test_a():
             pick(1)
+
+        class TestP:
+            def test_one(self):
+                assert pick(1) == 1
+
+            def test_two(self):
+                assert pick(2) == 2
+
+            def test_six(self):
+                assert pick(6) == 6
+
+        class TestC:
+            def test_one(self):
+                assert clamp(1, 0, 3) == 1
+
+            def test_two(self):
+                assert clamp(2, 0, 3) == 2
+
+            def test_six(self):
+                assert clamp(6, 0, 3) == 3
     '''))
     res = subprocess.run([sys.executable, str(HELPERS / "scan_static.py"), "--root", str(root),
                           "--source-root", "src", "--source-root", "lib",
@@ -494,7 +598,9 @@ def test_cli_repeatable_source_root_and_tests_flags(tmp_path):
                          capture_output=True, text=True)
     assert res.returncode == 0, res.stderr
     out = json.loads(res.stdout)
-    assert [e["file"] for e in out["parametrizations"]] == ["tests/test_one.py"]
+    assert [(e["file"], e["consolidated_name"]) for e in out["parametrizations"]] == [
+        ("more/test_two.py", "TestP::test_pick"), ("more/test_two.py", "TestC::test_clamp"),
+        ("tests/test_one.py", "test_clamp")]
     assert [e["file"] for e in out["review_candidates"]] == ["more/test_two.py"]
 
 

@@ -227,6 +227,16 @@ def test_call_time_delta_totals_and_removed_tests():
     assert result["warning"] is None
 
 
+def test_call_time_delta_charges_a_test_two_ids_match_once():
+    ev = _evidence({"tests/t.py::test_a[1]": (0.25, _cov([1])), "tests/t.py::test_a[2]": (0.5, _cov([1]))})
+    result = call_time_delta(ev, {}, ["tests/t.py::test_a", "tests/t.py::test_a[1]"])
+    assert result["removed"] == [
+        {"id": "tests/t.py::test_a[1]", "call_s": 0.25},
+        {"id": "tests/t.py::test_a[2]", "call_s": 0.5},
+    ]
+    assert result["attributable_s"] == 0.75
+
+
 def test_call_time_delta_omitted_with_warning_when_evidence_not_ok():
     result = call_time_delta(_evidence({}, status="skipped"), {}, [])
     assert result["before_s"] is None

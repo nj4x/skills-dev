@@ -193,19 +193,30 @@ class Helpers:
         key = (cls, id(fn))
         if key in self._memo:
             return self._memo[key]
-        seen = set() if seen is None else seen
+        top = seen is None
+        seen = set() if top else seen
         if key in seen:
             return False
         seen.add(key)
         result = self._asserts(fn, cls, seen)
-        self._memo[key] = result
+        # A False below the top call may come from the cycle guard cutting off a path that
+        # asserts (A -> B -> A, A -> C asserts): only a top-level False is final.
+        if result or top:
+            self._memo[key] = result
         return result
 
-    def _asserts(self, fn, cls, seen):
+    def fixture_asserts(self, fn, seen=None):
+        """True when a fixture `fn` requests asserts."""
+        seen = set() if seen is None else seen
         for a in fn.args.args + fn.args.kwonlyargs:
             fix = self.fixtures.get(a.arg)
             if fix is not None and fix is not fn and self.asserts(fix, None, seen):
                 return True
+        return False
+
+    def _asserts(self, fn, cls, seen):
+        if self.fixture_asserts(fn, seen):
+            return True
         for node in ast.walk(fn):
             if isinstance(node, (ast.Assert, ast.Raise)):
                 return True
@@ -274,6 +285,16 @@ def _has_call(stmt):
     return any(isinstance(n, ast.Call) for n in ast.walk(stmt))
 
 
+def _raiser_match(func, dotted, raiser):
+    """A bare `load()` (a from-import) matches any raiser named `….load`; `x.load()` matches
+    only when one dotted name ends with the other (`config.load` and `pkg.config.load`)."""
+    if not dotted:
+        return False
+    if isinstance(func, ast.Name):
+        return raiser.split(".")[-1] == dotted
+    return dotted == raiser or dotted.endswith("." + raiser) or raiser.endswith("." + dotted)
+
+
 def dead_kind(fn, raisers=()):
     """`kind` of a test with no assertion: the first of Dead-test kinds that matches."""
     body = _strip_docstring(fn.body)
@@ -281,9 +302,9 @@ def dead_kind(fn, raisers=()):
     if last is not None:
         dotted = _dotted(last.func) or ""
         tail = dotted.split(".")[-1]
-        if isinstance(last.func, ast.Attribute) and last.func.attr == "validate":
+        if tail == "validate" and isinstance(last.func, (ast.Name, ast.Attribute)):
             return "no-raise-contract"
-        if any(r == dotted or r.split(".")[-1] == tail for r in raisers):
+        if any(_raiser_match(last.func, dotted, r) for r in raisers):
             return "no-raise-contract"
     text = fn.name.replace("_", " ").lower() + " " + (ast.get_docstring(fn) or "").lower()
     text = re.sub(r"\s+", " ", text)
@@ -541,8 +562,11 @@ def _literal_ok(v):
         return False
 
 
-def _cluster(rel, cls, members, lines, tree, sources):
-    """(parametrizations entry, None) or (None, unanalyzable entry) or (None, None) when no candidate."""
+def _cluster(rel, cls, members, lines, tree, sources, chosen):
+    """(parametrizations entry, None) or (None, unanalyzable entry) or (None, None) when no candidate.
+
+    `chosen` holds the names earlier clusters in this file and scope picked; the picked name is added.
+    """
     fns = [f for f, _ in members]
     names = [f.name for f in fns]
     if len(fns) == 2 and not _pair_ok(*names):
@@ -573,8 +597,9 @@ def _cluster(rel, cls, members, lines, tree, sources):
     if not all(_literal_ok(s[i][0]) for s in slots for i in positions):
         return skip("constant has no literal form")
     callee = sources.callee(tree, fns[0])
-    taken = _scope_names(tree, cls) | set(names)
+    taken = _scope_names(tree, cls) | set(names) | chosen
     name = _consolidated_name(names, taken, callee)
+    chosen.add(name)
     params = _param_names([slots[0][i][1] for i in positions], fns[0])
     rows = [[s[i][0] for i in positions] for s in slots]
     prefix = _common_prefix(names)
@@ -611,7 +636,8 @@ def find_tests(root, entries):
 
 
 def _conftests(root, entries):
-    out = {}
+    """({directory: tree}, unanalyzable entries for conftest.py files that do not parse)."""
+    out, bad = {}, []
     dirs = set()
     for e in entries:
         p = root / e
@@ -625,16 +651,18 @@ def _conftests(root, entries):
             seen.add(path)
             try:
                 out[path.parent] = ast.parse(path.read_text())
-            except (SyntaxError, UnicodeDecodeError, ValueError):
-                pass
-    return out
+            except (SyntaxError, UnicodeDecodeError, ValueError) as exc:
+                bad.append({"file": path.relative_to(root).as_posix(),
+                            "reason": f"{type(exc).__name__}: {exc}; its helpers and fixtures are not "
+                                      f"counted as assertions"})
+    return out, sorted(bad, key=lambda e: e["file"])
 
 
 def scan(root, source_roots, tests, raisers=()):
     root = Path(root).resolve()
     sources = SourceIndex(root, source_roots)
-    conftests = _conftests(root, tests)
-    out = {"removals": [], "review_candidates": [], "parametrizations": [], "unanalyzable": []}
+    conftests, bad_conftests = _conftests(root, tests)
+    out = {"removals": [], "review_candidates": [], "parametrizations": [], "unanalyzable": bad_conftests}
     for rel in find_tests(root, tests):
         path = root / rel
         try:
@@ -647,7 +675,7 @@ def scan(root, source_roots, tests, raisers=()):
         helpers = Helpers(root, path, tree, conftests)
         dups, norms, trivial = {}, {}, set()
         for cls, fn in test_functions(tree):
-            if trivially_true(fn):
+            if trivially_true(fn) and not helpers.fixture_asserts(fn):
                 trivial.add((cls, fn.name))
                 out["removals"].append({"file": rel, "test_name": _tname(cls, fn.name),
                                         "criterion": "trivially-true", "evidence": _excerpt(lines, fn)})
@@ -675,10 +703,11 @@ def scan(root, source_roots, tests, raisers=()):
                 continue
             norm, slots = _normalized(fn)
             norms.setdefault((cls, _sig(fn), norm), []).append((fn, slots))
+        chosen = {}
         for (cls, _s, _n), members in norms.items():
             if len(members) < 2:
                 continue
-            entry, skipped = _cluster(rel, cls, members, lines, tree, sources)
+            entry, skipped = _cluster(rel, cls, members, lines, tree, sources, chosen.setdefault(cls, set()))
             if entry:
                 out["parametrizations"].append(entry)
             if skipped:
