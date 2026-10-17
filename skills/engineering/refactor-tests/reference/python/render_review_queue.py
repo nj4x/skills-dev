@@ -28,6 +28,11 @@ Items fall in four categories: review (dead-test, coverage-subset, cost, pinning
 has the key `<category>|<criterion>|<id>`. A key already in the index is "already tracked"
 and gets no ticket. Index ids are mapped through the ledger's moves first, so a test moved
 since it was ticketed still matches.
+
+A review candidate may carry `kind`. Dead-test and pinning tickets split by it, and a known
+kind picks the ticket text (and `ready-for-agent` for a pinning `collaborator-double`).
+Dead-test `no-raise-contract` items are never ticketed: `render` counts them under
+`report_only`. Any other `kind` value, or none, passes through into the item line.
 """
 import argparse
 import json
@@ -46,6 +51,9 @@ FIX = ("order-dependent", "flaky")
 CATEGORY_ORDER = ("fix", "review", "add", "skipped")
 LABELS = {"review": "ready-for-human", "skipped": "ready-for-human",
           "fix": "ready-for-agent", "add": "ready-for-agent"}
+KIND_GROUPED = ("dead-test", "pinning")  # criteria whose tickets split by item `kind`
+KIND_LABELS = {("pinning", "collaborator-double"): "ready-for-agent"}
+REPORT_ONLY = {("dead-test", "no-raise-contract")}  # counted in the Final report, never ticketed
 MAX_IDS = 25
 QUEUE = ".scratch/refactor-tests/review-queue.md"
 INDEX = ".scratch/refactor-tests/review-index.json"
@@ -86,7 +94,9 @@ def collect_items(ledger, plan):
         crit = c.get("criterion")
         if crit not in REVIEW and crit not in FIX:
             continue
-        extra = {k: c[k] for k in ("evidence", "call_s", "time_saved_s", "note", "seed", "failing_ids")
+        if _report_only(c):
+            continue
+        extra = {k: c[k] for k in ("kind", "evidence", "call_s", "time_saved_s", "note", "seed", "failing_ids")
                  if c.get(k) is not None}
         add("review" if crit in REVIEW else "fix", crit, f"{c['file']}::{c['test_name']}",
             _module(c["file"]), file=c["file"], test_name=c["test_name"], **extra)
@@ -104,6 +114,21 @@ def collect_items(ledger, plan):
         add("skipped", "skipped-spring-cluster", s["cluster"], s["cluster"],
             evidence=s.get("reason", ""), classes=s.get("classes", []))
     return items
+
+
+def _report_only(c):
+    kind = c.get("kind")
+    return isinstance(kind, str) and (c.get("criterion"), kind) in REPORT_ONLY
+
+
+def report_only_counts(plan):
+    """`<criterion>/<kind>` -> number of review candidates that are reported, never ticketed."""
+    out = {}
+    for c in plan.get("review_candidates", []):
+        if _report_only(c):
+            name = f"{c['criterion']}/{c['kind']}"
+            out[name] = out.get(name, 0) + 1
+    return out
 
 
 def _move_map(ledger):
@@ -143,10 +168,10 @@ def should_rekey(stopped_at):
 
 # --- grouping ---------------------------------------------------------------
 
-def _title(category, criterion, module, items):
+def _title(category, criterion, module, items, kind=None):
     n = len(items)
     if category == "review":
-        return f"Review {n} {criterion} test{'s' * (n != 1)} in {module}"
+        return f"Review {n} {criterion} test{'s' * (n != 1)}" + (f" ({kind})" if kind else "") + f" in {module}"
     if category == "fix":
         seed = items[0].get("seed")
         return f"Fix {n} {criterion} test{'s' * (n != 1)} in {module}" + (f" (seed {seed})" if seed is not None else "")
@@ -157,22 +182,32 @@ def _title(category, criterion, module, items):
     return f"Consolidate skipped Spring cluster {module} by hand"
 
 
+def _kind(it):
+    """The item's `kind` when its criterion splits tickets by kind, else "" (any other kind only shows in the item line)."""
+    kind = it.get("kind") if it["criterion"] in KIND_GROUPED else None
+    return kind if isinstance(kind, str) else ""
+
+
 def group_tickets(items):
-    """One ticket per (category, criterion, module); a group over MAX_IDS ids splits into parts."""
+    """One ticket per (category, criterion, kind, module); a group over MAX_IDS ids splits into parts.
+
+    `kind` splits dead-test and pinning items only; it is "" for every other criterion.
+    """
     groups = {}
     for it in items:
-        groups.setdefault((it["category"], it["criterion"], it["module"]), []).append(it)
-    order = sorted(groups, key=lambda g: (CATEGORY_ORDER.index(g[0]), g[1], g[2]))
+        groups.setdefault((it["category"], it["criterion"], _kind(it), it["module"]), []).append(it)
+    order = sorted(groups, key=lambda g: (CATEGORY_ORDER.index(g[0]), g[1], g[2], g[3]))
     tickets = []
-    for category, criterion, module in order:
-        members = sorted(groups[(category, criterion, module)], key=lambda i: i["id"])
+    for category, criterion, kind, module in order:
+        members = sorted(groups[(category, criterion, kind, module)], key=lambda i: i["id"])
         parts = [members[i:i + MAX_IDS] for i in range(0, len(members), MAX_IDS)]
+        label = KIND_LABELS.get((criterion, kind), LABELS[category])
         for n, part in enumerate(parts, 1):
-            title = _title(category, criterion, module, part)
+            title = _title(category, criterion, module, part, kind)
             if len(parts) > 1:
                 title += f" (part {n} of {len(parts)})"
-            tickets.append({"category": category, "criterion": criterion, "module": module,
-                            "title": title, "label": LABELS[category], "items": part, "blocked_by": []})
+            tickets.append({"category": category, "criterion": criterion, "kind": kind or None, "module": module,
+                            "title": title, "label": label, "items": part, "blocked_by": []})
     for nn, t in enumerate(tickets, 1):
         t["nn"] = f"{nn:02d}"
         t["slug"] = slugify(t["title"])[:60].strip("-")
@@ -193,6 +228,8 @@ def _wire_blocking(tickets):
 
 def _item_line(it, with_key=False):
     parts = [f"`{it['id']}`"]
+    if it.get("kind") is not None:
+        parts.append(f"kind: {it['kind']}")
     if it.get("evidence"):
         parts.append(_excerpt(it["evidence"]))
     if it.get("call_s") is not None:
@@ -212,14 +249,28 @@ def _item_line(it, with_key=False):
 
 _CAVEAT = (" Coverage shows execution, not assertion strength. Remove a test only when a mutation check of its"
           " module shows no lost kill; otherwise keep or merge it. See SKILL.md → Follow-up: mutation deletion gate (optional).")
+_DEAD = "The run flagged these tests for review and did not change them. None has an assertion in its body."
+_PINNING_DOUBLE = (
+    "The run flagged these tests for review and did not change them. Each patches a collaborator that the"
+    " module imports (a test double), and that double is its strictest reference to the module's internals;"
+    " the note per test names any other reference. Re-point the stub (deps injection or a checked patch); do not delete.")
+# Per (criterion, kind): replaces the criterion text of _REVIEW_WHAT. Any other kind, or none, keeps that text.
+_KIND_WHAT = {
+    ("dead-test", "fail-soft"): _DEAD + " Each sets up an error and calls the code under test, so it passes when that"
+        " code silently does nothing. Add an assertion on the log or the return value, then check it by"
+        " hand-mutating the function to a silent no-op: the test must fail.",
+    ("dead-test", "never-fails"): _DEAD + " Each can only pass or `pytest.skip`. Replace the skip with an assertion, or remove the test.",
+    ("dead-test", "no-assertion"): _DEAD + " Add an assertion on the behaviour the test exercises, or remove the test.",
+    ("pinning", "collaborator-double"): _PINNING_DOUBLE,
+}
 _REVIEW_WHAT = {
-    "dead-test": "The run flagged these tests for review and did not change them. Decide for each one: keep, rewrite at the interface, or remove.",
+    "dead-test": _KIND_WHAT[("dead-test", "no-assertion")],  # an item with no kind, or another kind, reads as no-assertion
     "coverage-subset": "The run flagged these tests for review and did not change them. Every line and arc each one covers is also covered by other passing tests." + _CAVEAT,
     "cost": "The run flagged these slow tests for review and did not change them. Each is a coverage-subset test in the top decile by call time; the evidence does not say why it is slow." + _CAVEAT,
     "pinning": "The run flagged these tests for review and did not change them. Each patches internals instead of calling the interface; the note per test says whether one interface test covers its lines (assertions not compared). Decide for each one: keep, or move the assertion to the interface." + _CAVEAT,
 }
 WHAT = {
-    "review": _REVIEW_WHAT,  # per criterion; the dead-test text stays neutral
+    "review": _REVIEW_WHAT,  # per criterion; review_what() swaps in the _KIND_WHAT text for a known kind
     "fix": "These tests fail when the suite runs in random order. The order gate moved every planned change that touches them to review. Make each one pass in any order.",
     "add": "These confirmed seams have no interface test that reaches them. Add a test at each seam.",
     "skipped": "The run could not apply this change automatically and left the files unchanged. Apply it by hand or record why it stays.",
@@ -230,6 +281,11 @@ CHECK = {
     "add": "Each listed seam has an interface test that reaches its body",
     "skipped": "Each listed item is applied by hand, or the reason it stays is recorded",
 }
+
+
+def review_what(criterion, kind=None):
+    """A review ticket's "What to build" text: the kind's disposition when it has one, else the criterion text."""
+    return _KIND_WHAT.get((criterion, kind), _REVIEW_WHAT[criterion])
 
 
 def reproduce_line(ledger, item):
@@ -263,7 +319,7 @@ def ticket_body(t, slug, ledger=None):
     seed = t["items"][0].get("seed")
     check = CHECK[t["category"]].format(seed=f" with seed {seed}" if seed is not None else "")
     items = "\n".join(_item_line(i, with_key=True) for i in t["items"])
-    what = WHAT["review"][t["criterion"]] if t["category"] == "review" else WHAT[t["category"]]
+    what = review_what(t["criterion"], t.get("kind")) if t["category"] == "review" else WHAT[t["category"]]
     if t["category"] == "fix":
         lines = dict.fromkeys(filter(None, (reproduce_line(ledger or {}, i) for i in t["items"])))
         if lines:
@@ -410,6 +466,7 @@ def render(root, ledger, plan, index, project, stopped_at, stage):
                      "blocked_by": t["blocked_by"], "ids": len(t["items"])} for t in tickets],
         "already_tracked": [{"key": k, "ref": ref} for k, ref in tracked],
         "superseded": superseded,
+        "report_only": report_only_counts(plan),
     }
 
 

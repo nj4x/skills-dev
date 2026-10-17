@@ -375,3 +375,78 @@ def test_reproduce_line_installs_for_a_venv_launcher_and_omits_line_without_seed
             f"${{PYTHONPATH:+:$PYTHONPATH}} .venv/bin/python -m pytest -p randomly --randomly-seed=5 {A}") in with_seed[0]
     assert "uv run" not in with_seed[0]
     assert all("Reproduce:" not in b for b in bodies if b is not with_seed[0])
+
+
+def test_no_raise_contract_is_counted_never_ticketed_and_kind_shows_in_the_item_line(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_valid", "dead-test", kind="no-raise-contract"),
+                            _cand("test_soft", "dead-test", kind="fail-soft")]))
+    out = _render(tmp_path, capsys, "--stage")
+    assert out["items"] == 1
+    assert out["report_only"] == {"dead-test/no-raise-contract": 1}
+    (ticket,) = out["tickets"]
+    body = _draft(tmp_path, ticket)
+    assert "test_valid" not in body
+    assert f"`{A}::test_soft` — kind: fail-soft — " in body
+    assert "test_valid" not in (tmp_path / ".scratch/refactor-tests/review-queue.md").read_text()
+
+
+def test_dead_test_and_pinning_group_by_kind_and_collaborator_double_is_for_an_agent(tmp_path, capsys):
+    _setup(tmp_path, _plan([
+        _cand("test_a", "dead-test", kind="fail-soft"), _cand("test_b", "dead-test", kind="never-fails"),
+        _cand("test_c", "dead-test", kind="fail-soft"),
+        _cand("test_d", "pinning", kind="collaborator-double"), _cand("test_e", "pinning", kind="private"),
+        _cand("test_f", "pinning"),
+    ]))
+    tickets = _render(tmp_path, capsys)["tickets"]
+    assert [(t["title"], t["label"], t["ids"]) for t in tickets] == [
+        ("Review 2 dead-test tests (fail-soft) in tests/pkg/adapters", "ready-for-human", 2),
+        ("Review 1 dead-test test (never-fails) in tests/pkg/adapters", "ready-for-human", 1),
+        ("Review 1 pinning test in tests/pkg/adapters", "ready-for-human", 1),
+        ("Review 1 pinning test (collaborator-double) in tests/pkg/adapters", "ready-for-agent", 1),
+        ("Review 1 pinning test (private) in tests/pkg/adapters", "ready-for-human", 1),
+    ]
+
+
+def test_review_text_follows_the_kind():
+    from render_review_queue import WHAT, review_what
+    double = review_what("pinning", "collaborator-double")
+    assert "Re-point the stub (deps injection or a checked patch); do not delete." in double
+    assert "Remove a test only when a mutation check" not in double
+    for kind in ("private", "constant", "public-non-seam", "other", None):
+        assert review_what("pinning", kind) == WHAT["review"]["pinning"]
+    assert "Add an assertion on the log or the return value" in review_what("dead-test", "fail-soft")
+    assert "Replace the skip with an assertion, or remove the test." in review_what("dead-test", "never-fails")
+    assert review_what("dead-test", None) == review_what("dead-test", "no-assertion") == WHAT["review"]["dead-test"]
+    assert "keep, rewrite at the interface, or remove" not in WHAT["review"]["dead-test"]
+
+
+def test_staged_collaborator_double_ticket_says_do_not_delete(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_d", "pinning", kind="collaborator-double")]))
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    body = _draft(tmp_path, ticket)
+    assert "do not delete" in body
+    assert "Remove a test only when a mutation check of its module shows no lost kill" not in body
+    assert "label: ready-for-agent" in body and "## Status\nready-for-agent" in body
+
+
+def test_items_with_any_kind_or_none_pass_through(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_a", "cost", kind="hotspot-blocked", call_s=1.0),
+                            _cand("test_b", "dead-test", kind=["odd"]),
+                            _cand("test_c", "pinning", kind=7),
+                            _cand("test_d", "coverage-subset")]))
+    out = _render(tmp_path, capsys, "--stage")
+    assert out["items"] == 4 and out["report_only"] == {}
+    titles = [t["title"] for t in out["tickets"]]
+    assert "Review 1 cost test in tests/pkg/adapters" in titles  # kind does not split other criteria
+    assert "Review 1 dead-test test in tests/pkg/adapters" in titles  # a non-string kind does not split
+    queue = (tmp_path / ".scratch/refactor-tests/review-queue.md").read_text()
+    assert "kind: hotspot-blocked" in queue and "kind: ['odd']" in queue and "kind: 7" in queue
+
+
+def test_unknown_string_kind_splits_dead_test_and_keeps_the_criterion_text(tmp_path, capsys):
+    from render_review_queue import WHAT
+    _setup(tmp_path, _plan([_cand("test_a", "dead-test", kind="weird"), _cand("test_b", "dead-test")]))
+    tickets = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert [t["title"] for t in tickets] == ["Review 1 dead-test test in tests/pkg/adapters",
+                                             "Review 1 dead-test test (weird) in tests/pkg/adapters"]
+    assert WHAT["review"]["dead-test"] in _draft(tmp_path, tickets[1])
