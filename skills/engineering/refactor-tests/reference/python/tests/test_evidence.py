@@ -191,6 +191,7 @@ def test_assemble_matches_schema_v1_and_lists_non_passed(runs):
         arcs, calltime,
         tools={"coverage": "x", "pytest-cov": "y"},
         commands={"coverage": "cov cmd", "timing": "time cmd"},
+        id_basis="post-layout",
     )
     assert doc["schema_version"] == 1
     assert doc["id_basis"] == "post-layout"
@@ -213,7 +214,7 @@ def test_assemble_matches_schema_v1_and_lists_non_passed(runs):
 
 def test_assemble_lists_passed_test_without_coverage_context():
     calltime = {"t::a": {"outcome": "passed", "duration": 0.1}}
-    doc = assemble({}, calltime, tools={}, commands={})
+    doc = assemble({}, calltime, tools={}, commands={}, id_basis="post-layout")
     py = doc["languages"]["python"]
     assert py["tests"] == {}
     assert py["excluded"] == [{"id": "t::a", "outcome": "no-coverage"}]
@@ -221,14 +222,15 @@ def test_assemble_lists_passed_test_without_coverage_context():
 
 def test_assemble_lists_covered_test_without_timing_row():
     arcs = {"t::b": {"m.py": {"lines": [1], "arcs": [[-1, 1]]}}}
-    doc = assemble(arcs, {}, tools={}, commands={})
+    doc = assemble(arcs, {}, tools={}, commands={}, id_basis="post-layout")
     py = doc["languages"]["python"]
     assert py["tests"] == {}
     assert py["excluded"] == [{"id": "t::b", "outcome": "no-timing"}]
 
 
 def test_assemble_degraded_status_has_no_tests():
-    doc = assemble({}, {}, tools={}, commands={}, status="failed", reason="pytest-cov missing")
+    doc = assemble({}, {}, tools={}, commands={}, status="failed", reason="pytest-cov missing",
+                   id_basis="post-layout")
     py = doc["languages"]["python"]
     assert py["status"] == "failed"
     assert py["reason"] == "pytest-cov missing"
@@ -237,7 +239,62 @@ def test_assemble_degraded_status_has_no_tests():
 
 def test_assemble_degraded_status_requires_reason():
     with pytest.raises(ValueError):
-        assemble({}, {}, tools={}, commands={}, status="skipped")
+        assemble({}, {}, tools={}, commands={}, status="skipped", id_basis="post-layout")
+
+
+@pytest.mark.parametrize("id_basis", ["post-layout", "pre-layout"])
+def test_assemble_records_the_callers_id_basis(id_basis):
+    doc = assemble({}, {}, tools={}, commands={}, id_basis=id_basis)
+    assert doc["id_basis"] == id_basis
+
+
+def test_assemble_rejects_an_unknown_id_basis():
+    with pytest.raises(ValueError, match="id_basis"):
+        assemble({}, {}, tools={}, commands={}, id_basis="layout")
+
+
+def test_assemble_rejects_an_existing_file_with_another_id_basis():
+    existing = assemble({}, {}, tools={}, commands={}, id_basis="post-layout")
+    with pytest.raises(ValueError, match="id_basis"):
+        assemble({}, {}, tools={}, commands={}, status="skipped", reason="r",
+                 language="go", existing=existing, id_basis="pre-layout")
+
+
+def test_assemble_cli_requires_id_basis(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(HELPERS / "assemble_evidence.py"), "--out", str(tmp_path / "e.json")],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 2
+    assert "--id-basis" in result.stderr
+    assert not (tmp_path / "e.json").exists()
+
+
+def test_assemble_cli_refuses_existing_file_with_another_id_basis(tmp_path):
+    target = tmp_path / "test-evidence.json"
+    target.write_text(json.dumps({"schema_version": 1, "id_basis": "post-layout", "languages": {}}))
+    before = target.read_text()
+    result = subprocess.run(
+        [sys.executable, str(HELPERS / "assemble_evidence.py"), "--id-basis", "pre-layout",
+         "--status", "failed", "--reason", "r", "--existing", str(target), "--out", str(target)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 1
+    assert result.stderr.startswith("assemble_evidence: existing id_basis")
+    assert "Traceback" not in result.stderr
+    assert len(result.stderr.splitlines()) == 1
+    assert target.read_text() == before
+
+
+def test_assemble_cli_rejects_an_unknown_id_basis(tmp_path):
+    result = subprocess.run(
+        [sys.executable, str(HELPERS / "assemble_evidence.py"), "--id-basis", "layout",
+         "--out", str(tmp_path / "e.json")],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr
+    assert not (tmp_path / "e.json").exists()
 
 
 def test_assemble_cli_writes_out_and_merges_existing(runs, tmp_path):
@@ -254,6 +311,7 @@ def test_assemble_cli_writes_out_and_merges_existing(runs, tmp_path):
         sys.executable, str(HELPERS / "assemble_evidence.py"),
         "--arcs", str(arcs_file), "--calltime", str(out / "calltime.json"),
         "--tool", "coverage=7.16.2", "--command", "coverage=c",
+        "--id-basis", "pre-layout",
         "--out", str(target),
     ]
     first = subprocess.run(base_cmd + ["--language", "python"], capture_output=True, check=False)
@@ -261,11 +319,13 @@ def test_assemble_cli_writes_out_and_merges_existing(runs, tmp_path):
     second = subprocess.run(
         [sys.executable, str(HELPERS / "assemble_evidence.py"), "--calltime", str(out / "calltime.json"),
          "--status", "skipped", "--reason", "no tooling for go", "--language", "go",
+         "--id-basis", "pre-layout",
          "--existing", str(target), "--out", str(target)],
         capture_output=True, check=False,
     )
     assert second.returncode == 0, second.stderr
     doc = json.loads(target.read_text())
+    assert doc["id_basis"] == "pre-layout"
     assert doc["languages"]["python"]["status"] == "ok"
     assert doc["languages"]["go"] == {
         "status": "skipped", "reason": "no tooling for go", "tools": {}, "commands": {},
