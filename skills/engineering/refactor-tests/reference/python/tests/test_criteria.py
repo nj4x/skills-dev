@@ -341,3 +341,36 @@ def test_class_less_id_rule_differs_on_purpose_between_gate_and_call_time():
     assert call_time_delta(ev, {}, ["tests/t.py::test_c"])["removed"] == [
         {"id": "tests/t.py::test_c", "call_s": None}
     ]
+
+
+def test_call_time_delta_warns_when_delta_exceeds_what_the_changes_explain():
+    ev = _evidence({"tests/t.py::test_a": (200.0, _cov([1])), "tests/t.py::test_b": (0.4, _cov([1]))})
+    after = {"tests/t.py::test_a": {"duration": 67.8, "outcome": "passed"},
+             "tests/t.py::test_b": {"duration": 0.0, "outcome": "passed"}}
+    result = call_time_delta(ev, after, [])  # nothing removed
+    assert result["delta_s"] == -132.6
+    assert result["attributable_s"] == 0
+    assert result["warning"] == "delta exceeds what the changes can explain; treat it as run-to-run variance"
+
+
+def test_call_time_delta_no_warning_when_removed_tests_explain_the_delta():
+    ev = _evidence({"tests/t.py::test_a": (10.0, _cov([1])), "tests/t.py::test_b": (5.0, _cov([1]))})
+    after = {"tests/t.py::test_a": {"duration": 10.0, "outcome": "passed"}}
+    result = call_time_delta(ev, after, ["tests/t.py::test_b"])
+    assert result["attributable_s"] == 5.0
+    assert result["delta_s"] == -5.0
+    assert result["warning"] is None
+
+
+def test_call_time_delta_zero_before_skips_the_variance_check_and_says_so():
+    ev = _evidence({"tests/t.py::test_a": (0.0, _cov([1]))})
+    result = call_time_delta(ev, {"tests/t.py::test_a": {"duration": 3.0, "outcome": "passed"}}, [])
+    assert result["before_s"] == 0.0
+    assert result["warning"] == "variance check not computed: before_s is zero"
+
+
+def test_call_time_delta_charges_a_repeated_removed_id_once():
+    ev = _evidence({"tests/t.py::test_a": (10.0, _cov([1]))})
+    result = call_time_delta(ev, {}, ["tests/t.py::test_a", "tests/t.py::test_a"])
+    assert result["attributable_s"] == 10.0
+    assert result["removed"] == [{"id": "tests/t.py::test_a", "call_s": 10.0}]

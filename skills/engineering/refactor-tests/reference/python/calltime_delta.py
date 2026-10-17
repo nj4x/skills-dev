@@ -5,7 +5,10 @@ Usage:
       --calltime .scratch/refactor-tests/calltime-after-python.json \
       [--removed <file>::<test_name> ...] [--language python]
 
-Prints `{ label, before_s, after_s, delta_s, removed, warning }` as JSON.
+Prints `{ label, before_s, after_s, delta_s, attributable_s, removed, warning }` as JSON.
+`attributable_s` is the sum of `call_s` of the removed and replaced tests. When
+|`delta_s`| > 2 * `attributable_s` + 2% of `before_s`, `warning` carries VARIANCE_WARNING. When
+`before_s` is zero the check is not computed and `warning` says so.
 Before: total `call_s` of the evidence pass timing run (passed tests in
 test-evidence.json). After: total call duration of passed rows in the
 `calltime` hook file written by the simplify validation run, minus ids listed
@@ -25,6 +28,8 @@ import sys
 from refactor_tests_shared import is_variant, split_file, strip_params
 
 LABEL = "serial call time, not wall time"
+VARIANCE_WARNING = "delta exceeds what the changes can explain; treat it as run-to-run variance"
+NO_BASELINE_WARNING = "variance check not computed: before_s is zero"
 
 
 def _r(x):
@@ -50,14 +55,14 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
         reason = block.get("reason") or "no evidence block"
         return {
             "label": LABEL, "before_s": None, "after_s": None, "delta_s": None,
-            "removed": [],
+            "attributable_s": None, "removed": [],
             "warning": f"serial call time omitted: {language} evidence "
                        f"{block.get('status', 'missing')} ({reason})",
         }
     if after_calltime is None:
         return {
             "label": LABEL, "before_s": None, "after_s": None, "delta_s": None,
-            "removed": [],
+            "attributable_s": None, "removed": [],
             "warning": "serial call time omitted: no calltime file from the validation run",
         }
     tests = block.get("tests", {})
@@ -72,7 +77,7 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
     )
     removed = []
     warnings = []
-    for rid in removed_ids:
+    for rid in dict.fromkeys(removed_ids):  # a repeated id is charged once
         hits = sorted(n for n in tests if is_variant(n, rid))
         if not hits:
             # No exact match: charge nothing, even when one class method has the name.
@@ -84,11 +89,18 @@ def call_time_delta(evidence, after_calltime, removed_ids, language="python"):
                     f"class method(s) {', '.join(methods)}; pass the full node id"
                 )
         removed.extend({"id": n, "call_s": tests[n]["call_s"]} for n in hits)
+    attributable = sum(r["call_s"] for r in removed if r["call_s"] is not None)
+    delta = after - before
+    if before <= 0:
+        warnings.append(NO_BASELINE_WARNING)
+    elif abs(delta) > 2 * attributable + 0.02 * before:
+        warnings.append(VARIANCE_WARNING)
     return {
         "label": LABEL,
         "before_s": _r(before),
         "after_s": _r(after),
-        "delta_s": _r(after - before),
+        "delta_s": _r(delta),
+        "attributable_s": _r(attributable),
         "removed": removed,
         "warning": "; ".join(warnings) or None,
     }

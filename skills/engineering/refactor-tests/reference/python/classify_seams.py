@@ -43,7 +43,7 @@ from pathlib import Path
 
 from refactor_tests_shared import is_variant
 
-NOTE_COVERED = "covered through the interface"
+NOTE_COVERED = "lines covered by one interface test (assertions not compared)"
 NOTE_MOVE = "move the assertion to the interface"
 
 
