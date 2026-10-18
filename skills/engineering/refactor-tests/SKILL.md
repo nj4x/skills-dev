@@ -30,7 +30,7 @@ Every step relies on these preconditions:
 - Each parametrize consolidation is a single atomic file write; ledger entry written in the same durable step.
 - Leave every change in the working tree for the user to review and commit — no `git commit`, and no auto-rollback on a regressed health gate.
 - Update the ledger after every durable side effect so a mid-run compaction is recoverable.
-- On `--dry-run`: write `plan.json` and `simplification-plan.json`, run Step 11, then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`. The random-order gate (Step 8b) also runs before the exit; it too writes only under `.scratch/refactor-tests/`. Step 11 writes only under `.scratch/` and to the tracker.
+- On `--dry-run`: write `plan.json` and `simplification-plan.json`, run Step 11, then exit; no file mutations. The evidence pass still runs: it writes only under `.scratch/refactor-tests/`. So does the Step 8 hotspot probe. The random-order gate (Step 8b) also runs before the exit; it too writes only under `.scratch/refactor-tests/`. Step 11 writes only under `.scratch/` and to the tracker.
 - Step 11 never creates a tracker issue on a real tracker in an unattended run (no `AskUserQuestion`, no user present, or the skill was model-invoked), and never closes or deletes one. An unattended run on the local tracker may publish.
 - `rm -f` any temp file on every exit path, including hard-abort paths.
 - Clear the audio-suppression marker via `say_skill_done`/`say_skill_cancel` on every exit path.
@@ -207,7 +207,7 @@ Set ledger `phase: simplifying`.
 
 Parse every test file (post-layout) using the language's AST parser. For each test function extract: name, body AST, fixture parameters, mock/stub configurations, decorator list, primary source function called, call arguments, assertion list.
 
-Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → parametrize cluster → parametrize pair.
+Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → hotspot probe → parametrize cluster → parametrize pair.
 
 **Evidence-free criteria (Python).** The helper applies exact duplicate, dead, trivially true, parametrize cluster and parametrize pair, with the "Do NOT flag" rules of Redundancy criteria. Pass one `--source-root` per ledger `source_roots` entry and one `--tests` flag per test directory; both flags repeat (`--tests a b` fails with "unrecognized arguments"). Add one `--raiser <name>` for each documented raiser the project names beyond `validate` (bare `validate(` and `*.validate(` always count):
 
@@ -231,6 +231,24 @@ python3 $SKILL_DIR/reference/python/select_candidates.py --evidence .scratch/ref
 The script prints the entries as a JSON list. Append them to `review_candidates`, never to `removals`. It applies these rules per language:
 - **Coverage subset**: test T is a candidate when every line and arc in its `covered` map is in the union of the other passing tests' `|run` coverage. A test with an empty `covered` map is never a candidate. Process tests in descending `call_s` and remove each flagged test from the union, so of two tests that cover each other only the slower is flagged. Entry: `criterion: "coverage-subset"`, with `call_s` and `time_saved_s` (the test's own `call_s`).
 - **Cost**: rank the coverage-subset candidates by `call_s`, descending. Take the top decile (ceiling of 10% of the candidates, minimum 1). Flag each one whose `call_s` is at least 0.5 s. Entry: `criterion: "cost"`, with `call_s` and `time_saved_s`. A test flagged by both criteria gets one entry per criterion. A slow test with unique coverage is never a cost candidate.
+
+**Hotspot probe** (Python only, after the cost rule). Slow tests often share one cause, such as a subprocess behind every database connection. This probe finds it before the cost entries read as deletion savings. It runs under `--dry-run` too, writes only under `.scratch/refactor-tests/`, and never stops the run. Helpers: `$SKILL_DIR/reference/python/hotspot_probe.py` and the pytest plugin `hotspot_profile.py`. Rules and entry schema: `reference/patterns.md` → Simplification plan schema (hotspot entry).
+
+1. **Select.** When you run `select_candidates.py` above, also save the JSON list it prints as `.scratch/refactor-tests/candidates.json`. Then run `python3 $SKILL_DIR/reference/python/hotspot_probe.py select --candidates .scratch/refactor-tests/candidates.json`. `profile` lists the top 5 cost candidates by `call_s`. With fewer than 5 cost candidates, it lists all of them. With fewer than 2, one profile cannot make a hotspot: `profile` is empty and `warnings` holds a warning. Skip to item 4 and apply the Degrade rules (`skipped`).
+2. **Profile** each listed test serially, one run per test, `k` counting from 1. The plugin wraps the test's run protocol (setup, call, teardown) in cProfile, so collection and start-up stay out of the profile. Build the command from the recorded runner as Step 7 builds the timing run, and append `-n0` when project `addopts` carry `-n`/`--numprocesses`:
+
+   ```sh
+   PYTHONPATH=$SKILL_DIR/reference/python${PYTHONPATH:+:$PYTHONPATH} HOTSPOT_PROFILE=.scratch/refactor-tests/profile-<k>.prof \
+     uv run --with pytest-cov pytest --no-cov -p no:randomly -p hotspot_profile '<test id>'
+   ```
+
+   Stop a run that exceeds 10 minutes. A run that exits non-zero, times out, or writes no profile file is a failed profile: pass its test id to `--failed` with a one-line reason, such as `pytest exit 1`, and omit it from `--profile`. Quote a test id that holds an apostrophe.
+3. **Analyze.** Run `python3 $SKILL_DIR/reference/python/hotspot_probe.py analyze --root $PROJECT_PATH --profile '<test id>=.scratch/refactor-tests/profile-<k>.prof' … --failed '<test id>=<reason>' …`. It totals cumulative time by function in each profile and counts `subprocess` spawns per test. **Hotspot rule:** a function that holds at least 50% of a test's time in at least half of the usable profiles is a hotspot; with n usable profiles it needs max(2, ceil(n / 2)) hits, and one hit is never a hotspot. A failed profile is excluded from n, and the output names it under `failed`. With fewer than 2 usable profiles, the output holds no hotspot and a warning. Append each `hotspots` entry, `{ criterion: "hotspot", function, share, tests, subprocess_spawns, via }`, to `review_candidates`. Record ledger `simplification.hotspot_probe`: `{ status, reason, n, profiled, failed, hotspots: <count>, warnings }`.
+4. **Clean up.** `rm -f` `candidates.json` and every `profile-*.prof` on every path, success or degraded.
+
+A hotspot is fixed in the test tier (a fixture or stub), never by deleting tests. After the fix, re-run the evidence pass, because `call_s` order changes. Step 11 numbers each hotspot ticket before every review ticket. It also makes each hotspot block the `cost` and `coverage-subset` tickets of its tests' directories.
+
+**Degrade rules.** The probe never stops the run. When the evidence status is not `ok`, or there are fewer than 2 cost candidates (one profile cannot make a hotspot), set `status: skipped` with the reason. A single failed profile only leaves that test out of n. When profiling cannot run at all (the plugin will not load, every run fails), or fewer than 2 usable profiles remain, set `status: failed` with the reason. On every `skipped` or `failed` path, append no hotspot entry, and add a warning that no hotspot was emitted to ledger `simplification.hotspot_probe.warnings` and the report, as in the Step 7 degrade rules.
 
 For each **parametrize** candidate:
 - Verify expected assertion values share a structural type across all N tests (same type homogeneity). If they differ in type, classify as **unanalyzable**, skip.
@@ -331,7 +349,7 @@ On regressed ids in Phase C, **re-run the full suite once** (not just the ids in
 
 ## Step 11 — Publish the review queue
 
-The run leaves some items to a human: review candidates (dead-test, coverage-subset, cost, pinning), fix candidates (order-dependent, flaky), add candidates (confirmed seams no interface test reaches), skipped parametrizations, and skipped Spring clusters. This step writes them to a queue file and, when the project has a tracker, publishes them as tickets through `to-tickets`. The ledger stays the source of truth for everything the run executed. Decisions and rejected options: `docs/adr/0079-refactor-tests-publish-review-queue.md` in the skills repo. Helper: `$SKILL_DIR/reference/python/render_review_queue.py`. Schema: `reference/patterns.md` → Review queue.
+The run leaves some items to a human: review candidates (dead-test, coverage-subset, cost, pinning), fix candidates (order-dependent, flaky), hotspot candidates (shared cost causes from the Step 8 hotspot probe), add candidates (confirmed seams no interface test reaches), skipped parametrizations, and skipped Spring clusters. This step writes them to a queue file and, when the project has a tracker, publishes them as tickets through `to-tickets`. The ledger stays the source of truth for everything the run executed. Decisions and rejected options: `docs/adr/0079-refactor-tests-publish-review-queue.md` and `docs/adr/0080-refactor-tests-review-queue-triage.md` in the skills repo. Helper: `$SKILL_DIR/reference/python/render_review_queue.py`. Schema: `reference/patterns.md` → Review queue.
 
 **Entry.** A healthy run sets `phase: publishing` here, after Step 10 or Phase C. A `--dry-run` sets it after its last planning step: Step 8b, or Step 2 when `--phases` excludes Phase B. A regressed gate runs items 1–2 only, after setting its `failed-*` phase.
 
@@ -394,8 +412,9 @@ Run the gate after the hotspot fixes, because it is about 9.6x cheaper once a sh
 3. Tests parametrized: count; before/after listing (original names → consolidated name + parameter tuples)
    - Parametrizations skipped (AST editor failures): list with reasons
    - Unanalyzable files (skipped by AST parser): list with reasons
-4. Tests flagged for review: `review_candidates` grouped by criterion (dead-test, coverage-subset, cost, pinning, order-dependent, flaky), count and listing per group; user decides whether to remove
-   - coverage-subset and cost: each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"
+4. Tests flagged for review: `review_candidates` grouped by criterion (hotspot, dead-test, coverage-subset, cost, pinning, order-dependent, flaky), count and listing per group; user decides whether to remove
+   - hotspots first: each `function` with its `share`, the `tests` it holds, `subprocess_spawns` per profiled test, and `via`; then ledger `simplification.hotspot_probe` status, n, each failed profile by test id with its reason, and every warning (fewer than 2 usable profiles, or hotspots dropped). Say that a hotspot is fixed in the test tier, never by deleting tests
+   - coverage-subset and cost: each test with its `time_saved_s` and a running total per criterion group (a test in both groups is one test: count its time once in any combined total), labelled "serial time, not wall time"; for cost entries, label `time_saved_s` "upper bound if deleted; see hotspots"
    - dead-test: count per `kind`; `no-raise-contract` entries are listed as kept, not for review
    - pinning: count per `kind`, and the note per candidate (`lines covered by one interface test (assertions not compared)` / `move the assertion to the interface` / `re-point the stub (deps injection or a checked patch); do not delete`); pinning tests are never removed
    - order-dependent and flaky: the changes moved to review because of them, with `seed` and `failing_ids`

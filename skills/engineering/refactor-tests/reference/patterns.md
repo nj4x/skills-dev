@@ -185,6 +185,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
       { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" },
       { "file": "tests/protrading/adapters/test_instruments.py", "tests": ["test_fmt_a", "test_fmt_b", "test_fmt_c"], "consolidated_name": "test_fmt_parametrized", "skipped": "composite edit failed: decorator order differs" }
     ],
+    "hotspot_probe": { "status": "ok", "reason": null, "n": 2, "profiled": ["tests/protrading/db/test_store.py::test_roundtrip", "tests/protrading/db/test_store.py::test_query"], "failed": [ { "id": "tests/protrading/db/test_store.py::test_bulk", "reason": "pytest exit 1" } ], "hotspots": 1, "warnings": ["profile of tests/protrading/db/test_store.py::test_bulk failed (pytest exit 1); left out of n"] },
     "call_time": { "label": "serial call time, not wall time", "before_s": 41.2, "after_s": 37.9, "delta_s": -3.3, "attributable_s": 0.012, "removed": [ { "id": "tests/protrading/adapters/test_instruments.py::test_parse_duplicate", "call_s": 0.012 } ], "warning": null }
   },
   "spring": {
@@ -285,7 +286,7 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 
 The top-level `schema_version` is `2`.
 
-Every `review_candidates` entry has the base fields `{ file, test_name, criterion, evidence }`. Some criteria add optional fields:
+Every `review_candidates` entry except `hotspot` (below) has the base fields `{ file, test_name, criterion, evidence }`. Some criteria add optional fields:
 
 | Field | Type | Criteria that set it |
 |---|---|---|
@@ -297,6 +298,23 @@ Every `review_candidates` entry has the base fields `{ file, test_name, criterio
 | `failing_ids` | array of test ids | order-dependent, flaky |
 
 A test that meets several criteria gets one entry per criterion, not one merged entry.
+
+A `hotspot` entry has no `file` or `test_name`: it names a function, not a test. `reference/python/hotspot_probe.py analyze` builds it from the Step 8 profiles (SKILL.md Step 8 → Hotspot probe):
+
+```json
+{
+  "criterion": "hotspot",
+  "function": "src/protrading/db/connection.py:connect",
+  "share": 0.84,
+  "tests": ["tests/protrading/db/test_store.py::test_roundtrip", "tests/protrading/db/test_store.py::test_query"],
+  "subprocess_spawns": { "tests/protrading/db/test_store.py::test_query": 12, "tests/protrading/db/test_store.py::test_roundtrip": 12 },
+  "via": ["keyring/core.py:get_password", "subprocess.py:run"]
+}
+```
+
+`function` is `<path>:<name>`, the path relative to `site-packages`, the standard library, or the project root; a built-in reads as its pstats name, except `builtins` dispatchers such as `next`, which never count. The probe tells functions apart by path, line and name: when two functions print the same `<path>:<name>` (two `__init__` methods in one file), each prints as `<path>:<name>:<line>`, and their hits are never added together. `share` is the mean, over the profiles where the function itself holds at least 0.5, of its cumulative time divided by the test's profiled time (setup, call, teardown; a session-scoped fixture set up by the profiled test counts, so read a hotspot that sits in fixture setup with that in mind). `tests` are the tests where it or a `via` function holds at least 0.5. `subprocess_spawns` maps every usable profiled test id to the processes it started (`_posixsubprocess.fork_exec`, `posix_spawn`, `system`, `_winapi.CreateProcess` calls). `via` lists the other hotspots this one reaches through calls: a hotspot that another hotspot calls is folded into the hotspot at the top of that call chain, so one shared cause makes one entry.
+
+**Hotspot rule.** With n usable profiles, a function is a hotspot when its share is at least 0.5 in at least max(2, ceil(n / 2)) of them: n=2 needs 2 hits, n=3 needs 2, n=4 needs 2, n=5 needs 3. One hit is never a hotspot. pytest and pluggy frames, the test function, and every caller of the test function (a decorator, an async runner) are wrappers and never count. A profile that is missing, unreadable, or empty, or a test whose profile run exited non-zero, is excluded from n and is listed under `failed`. With fewer than 2 usable profiles no hotspot is emitted and `warnings` says so.
 
 `test_name` is the test id after the file path. Its form follows what the criterion judges. Coverage-subset and cost judge evidence ids, so their `test_name` keeps the parameter suffix (`Class::test[param]`): each parametrized id is its own candidate, with its own `call_s`. Dead-test and pinning judge test functions in the source, so their `test_name` has no suffix (`Class::test`). Order-dependent and flaky take `test_name` from each test a demoted change involves: the removal's own `test_name`, a kept duplicate's `duplicate_of`, or each name in a parametrization's `tests`. Stripping the suffix from coverage-subset entries would merge distinct candidates into duplicate names, so the two forms stay.
 
@@ -314,7 +332,8 @@ Each evidence-based criterion shows less than its name suggests. A review ticket
 |---|---|---|
 | dead-test | No assertion statement in the body. | That no exception path asserts. See [Schema-migration tests](#schema-migration-tests-hint) for a kind that often looks dead. |
 | coverage-subset | The test's lines and arcs are covered by other passing tests. | Anything about assertions. The result is one greedy set cover. See [Schema-migration tests](#schema-migration-tests-hint). |
-| cost | Slow and coverage-subset. | Why it is slow. |
+| cost | Slow and coverage-subset. | Why it is slow. Its `time_saved_s` is an upper bound if the test is deleted; a hotspot fix often saves the time with no test deleted. |
+| hotspot | One function holds at least half the profiled time of at least half the profiled cost candidates. | That it is the only cause, or that tests outside the profiled ones share it. |
 | pinning, `covered_through_interface` | Lines are a subset of one interface test's lines. | Arcs, assertions, or the same behaviour. |
 
 - **Greedy single set cover.** The coverage-subset result comes from one greedy pass: it names tests whose coverage the rest of the suite holds, not the smallest or the only such set. Order decides which of two mutually covering tests is flagged: the slower one, since flagged tests leave the pool. Removing all flagged tests keeps line and arc coverage, but says nothing about assertions.
@@ -335,7 +354,7 @@ Never apply a "delete non-head migration tests" rule as a whole. The classificat
 
 ## Review queue (Step 11)
 
-`reference/python/render_review_queue.py` turns the run's human-action items into `.scratch/refactor-tests/review-queue.md` and, with `--stage`, into `to-tickets` drafts. Decisions: ADR-0079.
+`reference/python/render_review_queue.py` turns the run's human-action items into `.scratch/refactor-tests/review-queue.md` and, with `--stage`, into `to-tickets` drafts. Decisions: ADR-0079, amended by ADR-0080.
 
 **Items and keys.** Each item belongs to one category and has the key `<category>|<criterion>|<id>`:
 
@@ -343,11 +362,12 @@ Never apply a "delete non-head migration tests" rule as a whole. The classificat
 |---|---|---|---|---|
 | review | plan `review_candidates` | `dead-test`, `coverage-subset`, `cost`, `pinning` | `<file>::<test_name>` | `ready-for-human` |
 | fix | plan `review_candidates` | `order-dependent`, `flaky` | `<file>::<test_name>` | `ready-for-agent` |
+| hotspot | plan `review_candidates` | `hotspot` | `<function>` | `ready-for-agent` |
 | add | plan `seams.add_candidates` | `untested-seam` | `<module>::<seam>` | `ready-for-agent` |
 | skipped | ledger `simplification.parametrizations` with `skipped` | `skipped-parametrization` | `<file>::<consolidated_name>` | `ready-for-human` |
 | skipped | ledger `spring.skipped_clusters` | `skipped-spring-cluster` | `<cluster>` | `ready-for-human` |
 
-**Grouping.** One ticket per category, criterion, and module. Dead-test and pinning items also split by `kind`: one ticket per criterion, kind, and module, with the kind in the title. A pinning `collaborator-double` ticket is labelled `ready-for-agent`; every other review ticket stays `ready-for-human`. A dead-test `no-raise-contract` item is never ticketed: `render` leaves it out of the queue and counts it in its output under `report_only`. The helper accepts an item with any `kind` value, or none. Any string kind on a dead-test or pinning item splits the ticket, also one the helper has no text for. A kind on another criterion, or a non-string kind, shows in the item line and does not split the ticket. The module is the test file's directory, the source module for add candidates, and the cluster for Spring clusters. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then review, add, and skipped. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them. The only blocking edge: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`). A review ticket's "What to build" text depends on its criterion (`WHAT["review"]`): coverage-subset, cost and pinning carry the mutation-gate caveat (see What each criterion proves). A known kind replaces that text (`review_what`): a dead-test ticket states its kind's disposition (no kind reads as `no-assertion`), and a pinning `collaborator-double` ticket says "Re-point the stub (deps injection or a checked patch); do not delete." with no mutation-gate caveat. Other pinning kinds keep the pinning text. A fix ticket ends its text with a `Reproduce:` command built from the ledger `runners.python` command, the `order_gate.plugin` install, and the seed, for example `uv run --with pytest-randomly pytest -p randomly --randomly-seed=<seed> <file>`.
+**Grouping.** One ticket per category, criterion, and module. Dead-test and pinning items also split by `kind`: one ticket per criterion, kind, and module, with the kind in the title. A pinning `collaborator-double` ticket is labelled `ready-for-agent`; every other review ticket stays `ready-for-human`. A dead-test `no-raise-contract` item is never ticketed: `render` leaves it out of the queue and counts it in its output under `report_only`. The helper accepts an item with any `kind` value, or none. Any string kind on a dead-test or pinning item splits the ticket, also one the helper has no text for. A kind on another criterion, or a non-string kind, shows in the item line and does not split the ticket. The module is the test file's directory, the source module for add candidates, the cluster for Spring clusters, and the function for a hotspot, so each hotspot gets its own ticket, titled `Fix cost hotspot <function> in the test tier`. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then hotspot, review, add, and skipped, so every hotspot ticket comes before every review ticket. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them; a hotspot item lists its `share`, profiled `tests`, `subprocess_spawns` per test, and `via`. Two blocking edges: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`); a hotspot ticket blocks each `cost` and `coverage-subset` ticket that holds a test in the directory of one of the hotspot's `tests`, because fixing the hotspot changes their `call_s` order (ADR-0080 Decision 2). A hotspot ticket's text (`WHAT["hotspot"]`) says: "Fix this in the test tier (a fixture or stub), never by deleting tests. Re-run the evidence pass after the fix, because `call_s` order changes." A review ticket's "What to build" text depends on its criterion (`WHAT["review"]`): coverage-subset, cost and pinning carry the mutation-gate caveat (see What each criterion proves). A known kind replaces that text (`review_what`): a dead-test ticket states its kind's disposition (no kind reads as `no-assertion`), and a pinning `collaborator-double` ticket says "Re-point the stub (deps injection or a checked patch); do not delete." with no mutation-gate caveat. Other pinning kinds keep the pinning text. A fix ticket ends its text with a `Reproduce:` command built from the ledger `runners.python` command, the `order_gate.plugin` install, and the seed, for example `uv run --with pytest-randomly pytest -p randomly --randomly-seed=<seed> <file>`.
 
 **Staged files** under `.scratch/<slug>/`, where the slug is `refactor-tests-review-<started_at>` lowercased (the `to-tickets` slug rule applied to the title `refactor-tests review <started_at>`):
 - `spec.md`: that title as H1, `Project: <name>`, item counts, already-tracked items, and a "Proposed tickets" table (NN, title, label, blocked by).

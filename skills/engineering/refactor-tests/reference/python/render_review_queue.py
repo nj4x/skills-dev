@@ -22,10 +22,13 @@ key credited), `drafted` (none), or `partial`; `unpublished` lists uncredited ke
 ids re-keyed through the run's moves, except after a layout regression (`--stopped-at failed-layout`);
 `render --rekey-only` does only that, for a run with `--no-publish-review`.
 
-Items fall in four categories: review (dead-test, coverage-subset, cost, pinning), fix
-(order-dependent, flaky), add (confirmed seams no interface test reaches), and skipped
-(parametrizations the AST editor skipped, Spring clusters left unconsolidated). Each item
-has the key `<category>|<criterion>|<id>`. A key already in the index is "already tracked"
+Items fall in five categories: review (dead-test, coverage-subset, cost, pinning), fix
+(order-dependent, flaky), hotspot (shared cost causes from `hotspot_probe.py`, one ticket
+each, numbered after fix and before review tickets), add (confirmed seams no interface test
+reaches), and skipped (parametrizations the AST editor skipped, Spring clusters left
+unconsolidated). A fix ticket blocks each review ticket sharing a test with it; a hotspot
+ticket blocks each cost and coverage-subset ticket with a test in the directory of one of
+its `tests`. Each item has the key `<category>|<criterion>|<id>`. A key already in the index is "already tracked"
 and gets no ticket. Index ids are mapped through the ledger's moves first, so a test moved
 since it was ticketed still matches.
 
@@ -48,9 +51,10 @@ from refactor_tests_shared import split_file, strip_params, write_atomic
 
 REVIEW = ("dead-test", "coverage-subset", "cost", "pinning")
 FIX = ("order-dependent", "flaky")
-CATEGORY_ORDER = ("fix", "review", "add", "skipped")
+CATEGORY_ORDER = ("fix", "hotspot", "review", "add", "skipped")
 LABELS = {"review": "ready-for-human", "skipped": "ready-for-human",
-          "fix": "ready-for-agent", "add": "ready-for-agent"}
+          "fix": "ready-for-agent", "hotspot": "ready-for-agent", "add": "ready-for-agent"}
+HOTSPOT_BLOCKS = ("cost", "coverage-subset")  # review criteria whose `call_s` order a hotspot fix changes
 KIND_GROUPED = ("dead-test", "pinning")  # criteria whose tickets split by item `kind`
 KIND_LABELS = {("pinning", "collaborator-double"): "ready-for-agent"}
 REPORT_ONLY = {("dead-test", "no-raise-contract")}  # counted in the Final report, never ticketed
@@ -92,6 +96,11 @@ def collect_items(ledger, plan):
 
     for c in plan.get("review_candidates", []):
         crit = c.get("criterion")
+        if crit == "hotspot":
+            if isinstance(c.get("function"), str) and c["function"]:  # one ticket per hotspot: its function is the module
+                extra = {k: c[k] for k in ("share", "tests", "subprocess_spawns", "via") if c.get(k)}
+                add("hotspot", "hotspot", c["function"], c["function"], **extra)
+            continue
         if crit not in REVIEW and crit not in FIX:
             continue
         if _report_only(c):
@@ -175,6 +184,8 @@ def _title(category, criterion, module, items, kind=None):
     if category == "fix":
         seed = items[0].get("seed")
         return f"Fix {n} {criterion} test{'s' * (n != 1)} in {module}" + (f" (seed {seed})" if seed is not None else "")
+    if category == "hotspot":
+        return f"Fix cost hotspot {module} in the test tier"
     if category == "add":
         return f"Add interface tests for {n} untested seam{'s' * (n != 1)} in {module}"
     if criterion == "skipped-parametrization":
@@ -215,13 +226,27 @@ def group_tickets(items):
     return tickets
 
 
+def _test_dir(test_id):
+    return posixpath.dirname(split_file(test_id)[0]) or "."
+
+
 def _wire_blocking(tickets):
-    """A fix ticket blocks every review ticket that shares a test with it."""
+    """A fix ticket blocks every review ticket that shares a test with it.
+
+    A hotspot ticket blocks every cost and coverage-subset ticket with a test in the directory
+    of one of the hotspot's tests: fixing the hotspot changes their `call_s` order.
+    """
+    reviews = [t for t in tickets if t["category"] == "review"]
     for fix in (t for t in tickets if t["category"] == "fix"):
         fix_ids = [i["id"] for i in fix["items"]]
-        for rev in (t for t in tickets if t["category"] == "review"):
+        for rev in reviews:
             if any(matches(fid, i["file"], i["test_name"]) for fid in fix_ids for i in rev["items"]):
                 rev["blocked_by"].append(f"{fix['nn']}-{fix['slug']}")
+    for hot in (t for t in tickets if t["category"] == "hotspot"):
+        dirs = {_test_dir(tid) for i in hot["items"] for tid in i.get("tests") or [] if isinstance(tid, str)}
+        for rev in (r for r in reviews if r["criterion"] in HOTSPOT_BLOCKS):
+            if any(_test_dir(i["file"]) in dirs for i in rev["items"]):
+                rev["blocked_by"].append(f"{hot['nn']}-{hot['slug']}")
 
 
 # --- rendering --------------------------------------------------------------
@@ -238,8 +263,14 @@ def _item_line(it, with_key=False):
         parts.append(it["note"])
     if it.get("failing_ids"):
         parts.append("failing_ids: " + ", ".join(f"`{f}`" for f in it["failing_ids"]))
+    if it.get("share") is not None:
+        parts.append(f"mean share {it['share']} of the time of the tests where it is hot")
     if it.get("tests"):
         parts.append("tests: " + ", ".join(f"`{t}`" for t in it["tests"]))
+    if isinstance(it.get("subprocess_spawns"), dict):
+        parts.append("subprocess_spawns: " + ", ".join(f"`{t}` {n}" for t, n in it["subprocess_spawns"].items()))
+    if it.get("via"):
+        parts.append("via: " + ", ".join(f"`{v}`" for v in it["via"]))
     if it.get("classes"):
         parts.append("classes: " + ", ".join(f"`{c}`" for c in it["classes"]))
     if with_key:  # `record` credits an item to a published ticket by this key
@@ -272,12 +303,17 @@ _REVIEW_WHAT = {
 WHAT = {
     "review": _REVIEW_WHAT,  # per criterion; review_what() swaps in the _KIND_WHAT text for a known kind
     "fix": "These tests fail when the suite runs in random order. The order gate moved every planned change that touches them to review. Make each one pass in any order.",
+    "hotspot": "Profiling the slowest cost candidates found this function holding at least half the time of at least half"
+               " of the profiled tests; `subprocess_spawns` counts the processes each profiled test started."
+               " Fix this in the test tier (a fixture or stub), never by deleting tests. Re-run the evidence pass after"
+               " the fix, because `call_s` order changes.",
     "add": "These confirmed seams have no interface test that reaches them. Add a test at each seam.",
     "skipped": "The run could not apply this change automatically and left the files unchanged. Apply it by hand or record why it stays.",
 }
 CHECK = {
     "review": "Each listed test is kept, rewritten, or removed, and the decision is recorded in the PR",
     "fix": "Each listed test passes under the random-order run{seed}",
+    "hotspot": "The listed tests no longer spend most of their time in the hotspot, no test is deleted, and the evidence pass is re-run",
     "add": "Each listed seam has an interface test that reaches its body",
     "skipped": "Each listed item is applied by hand, or the reason it stays is recorded",
 }

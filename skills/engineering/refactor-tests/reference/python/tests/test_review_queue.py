@@ -461,3 +461,60 @@ def test_unknown_string_kind_splits_dead_test_and_keeps_the_criterion_text(tmp_p
     assert [t["title"] for t in tickets] == ["Review 1 dead-test test in tests/pkg/adapters",
                                              "Review 1 dead-test test (weird) in tests/pkg/adapters"]
     assert WHAT["review"]["dead-test"] in _draft(tmp_path, tickets[1])
+
+
+def _hotspot(function="src/pkg/db.py:connect", tests=(f"{A}::test_slow",), **extra):
+    spawns = {t: 3 for t in tests}
+    return {"criterion": "hotspot", "function": function, "share": 0.84, "tests": list(tests),
+            "subprocess_spawns": spawns, "via": ["subprocess.py:run"], **extra}
+
+
+def test_hotspot_is_for_an_agent_and_numbered_after_fix_and_before_review_tickets(tmp_path, capsys):
+    from render_review_queue import LABELS, WHAT
+    assert LABELS["hotspot"] == "ready-for-agent"
+    assert "Fix this in the test tier (a fixture or stub), never by deleting tests." in WHAT["hotspot"]
+    assert "Re-run the evidence pass after the fix, because `call_s` order changes." in WHAT["hotspot"]
+    _setup(tmp_path, _plan([_cand("test_c", "cost", call_s=2.0), _cand("Cls::test_f", "flaky", seed=3),
+                            _hotspot(), _cand("test_s", "coverage-subset", call_s=2.0)],
+                           [{"module": "src/pkg/core.py", "seam": "run"}]))
+    tickets = _render(tmp_path, capsys)["tickets"]
+    assert [(t["nn"], t["title"].split(" ")[:2], t["label"]) for t in tickets] == [
+        ("01", ["Fix", "1"], "ready-for-agent"),
+        ("02", ["Fix", "cost"], "ready-for-agent"),
+        ("03", ["Review", "1"], "ready-for-human"),
+        ("04", ["Review", "1"], "ready-for-human"),
+        ("05", ["Add", "interface"], "ready-for-agent"),
+    ]
+    assert tickets[1]["title"] == "Fix cost hotspot src/pkg/db.py:connect in the test tier"
+
+
+def test_hotspot_blocks_only_cost_and_coverage_subset_tickets_in_its_test_directories(tmp_path, capsys):
+    core = "tests/pkg/core/test_core.py"
+    _setup(tmp_path, _plan([
+        _hotspot(tests=(f"{A}::test_slow[1]", f"{A}::Cls::test_slower")),
+        _cand("test_c", "cost", call_s=2.0), _cand("test_s", "coverage-subset", call_s=1.0),
+        _cand("test_d", "dead-test"), _cand("test_p", "pinning"),
+        _cand("test_c", "cost", file=core, call_s=2.0), _cand("test_s", "coverage-subset", file=core),
+    ]))
+    tickets = _render(tmp_path, capsys)["tickets"]
+    hot = next(t for t in tickets if t["title"].startswith("Fix cost hotspot"))
+    edge = f"{hot['nn']}-{hot['slug']}"
+    blocked = {t["title"] for t in tickets if edge in t["blocked_by"]}
+    assert blocked == {"Review 1 cost test in tests/pkg/adapters", "Review 1 coverage-subset test in tests/pkg/adapters"}
+
+
+def test_hotspot_ticket_body_lists_share_tests_and_subprocess_spawns(tmp_path, capsys):
+    from render_review_queue import WHAT
+    tests = (f"{A}::test_a", "tests/pkg/core/test_core.py::test_b")
+    _setup(tmp_path, _plan([_hotspot(tests=tests)]))
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    body = _draft(tmp_path, ticket)
+    assert "label: ready-for-agent" in body and WHAT["hotspot"] in body
+    assert f"subprocess_spawns: `{tests[0]}` 3, `{tests[1]}` 3" in body
+    assert "share 0.84" in body and "via: `subprocess.py:run`" in body
+    assert "key: `hotspot|hotspot|src/pkg/db.py:connect`" in body
+
+
+def test_hotspot_entry_without_a_function_is_ignored(tmp_path, capsys):
+    _setup(tmp_path, _plan([{"criterion": "hotspot", "share": 0.9}, _hotspot(function=7)]))
+    assert _render(tmp_path, capsys)["tickets"] == []
