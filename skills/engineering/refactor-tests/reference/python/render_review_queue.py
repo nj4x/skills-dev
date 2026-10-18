@@ -3,7 +3,7 @@
 Usage:
   python render_review_queue.py render --project-root P --ledger L (--plan SP | --rekey-only [--plan SP]) \\
       [--index IDX] [--project-name NAME] [--stopped-at PHASE] [--stage] [--evidence EV] \\
-      [--tracker local|real] [--unattended] [--triage]
+      [--tracker local|real] [--unattended] [--triage | --choice a|b|c]
   python render_review_queue.py record --project-root P --slug SLUG [--index IDX] [--ref NN-slug=REF ...]
 
 Both `render` forms also write `.scratch/refactor-tests/run-summary.json`, the committable
@@ -12,10 +12,14 @@ file, evidence not `ok`) is null, and its `notes` say why. Every staged ticket b
 `git_sha: <sha>` read from the evidence file, `git_sha: unknown` when there is none.
 
 Volume gate (ADR-0080 Decision 3): `render` counts the tickets it would stage after dedupe,
-hotspot tickets included, and prints `volume: { tickets, threshold, over, action }`. With
-`--tracker`, `action` is `publish` (at most 50), `ask` (interactive), `triage` (unattended,
-local tracker; `render` then applies `--triage` itself), or `drafted` (unattended, real
-tracker). `--triage` (option (b)) stages fix, hotspot and add tickets unchanged and replaces
+hotspot tickets included, and prints `volume: { tickets, threshold, over, action, choice,
+chosen_by }`. With `--tracker`, `action` is `publish` (at most 50), `ask` (interactive),
+`triage` (unattended, local tracker; `render` then applies `--triage` itself), or `drafted`
+(unattended, real tracker). `--choice a|b|c` passes the user's answer to an `ask`: the
+action becomes `publish`, `triage` or `declined`, and `choice` and `chosen_by: asked` record
+it. Without `--choice`, an `ask` takes the choice recorded in ledger `publish.volume`, so a
+resume does not ask again. An unattended default records `chosen_by: unattended-default`.
+`--triage` (option (b), the same as `--choice b`) stages fix, hotspot and add tickets unchanged and replaces
 the review tickets with one triage ticket per review criterion, with no `key:` lines; the
 review tickets' blocking edges move to it, and skipped tickets are not staged. The queue
 file lists every ticket in either mode.
@@ -543,7 +547,9 @@ def run_summary(ledger, plan, evidence, stopped_at=None, volume=None):
     """The committable `run-summary.json` of one run; a field it cannot compute is null and `notes` says why.
 
     `plan` and `evidence` are None when their file is missing. `git_sha` and `dirty` come from
-    the evidence file only, the same source the ticket bodies read.
+    the evidence file only, the same source the ticket bodies read. Report-only candidates
+    (dead-test `no-raise-contract`) count in `counts`, `kinds` and `report_only`, never in
+    `shares`, `warnings` or `concentration`: they are never ticketed.
     """
     notes = []
     gate = ledger.get("order_gate") or {}
@@ -593,7 +599,7 @@ def run_summary(ledger, plan, evidence, stopped_at=None, volume=None):
         if isinstance(c.get("kind"), str):
             name = f"{crit}/{c['kind']}"
             kinds[name] = kinds.get(name, 0) + 1
-        if crit in REVIEW and c.get("file") and c.get("test_name"):
+        if crit in REVIEW and c.get("file") and c.get("test_name") and not _report_only(c):
             ids.setdefault(crit, set()).add(f"{c['file']}::{c['test_name']}")
     summary.update(counts=counts, kinds=kinds, report_only=report_only_counts(plan))
     summary["hotspots"] = [c for c in cands if c.get("criterion") == "hotspot"]
@@ -601,8 +607,8 @@ def run_summary(ledger, plan, evidence, stopped_at=None, volume=None):
         notes.append("no hotspot entry (the probe found none or did not run): hotspots is []")
     by_count, by_call, seen = {}, {}, set()
     for c in cands:
-        if c.get("criterion") not in REVIEW or not c.get("file") or not c.get("test_name"):
-            continue
+        if c.get("criterion") not in REVIEW or not c.get("file") or not c.get("test_name") or _report_only(c):
+            continue  # a report-only test is never ticketed: it adds to no share and no concentration
         module = _module(c["file"])
         by_count[module] = by_count.get(module, 0) + 1
         tid = f"{c['file']}::{c['test_name']}"
@@ -638,8 +644,32 @@ def volume_gate(count, tracker=None, unattended=False):
     return "triage" if tracker == "local" else "drafted"
 
 
+CHOICE_ACTIONS = {"a": "publish", "b": "triage", "c": "declined"}  # volume gate answer -> action
+
+
+def gate_choice(action, choice=None, recorded=None):
+    """(action, choice, chosen_by) once the volume gate's answer is applied.
+
+    `choice` is the answer given now (`--choice`); `recorded` is ledger `publish.volume`
+    from an earlier render of this run. An `ask` takes the answer given now, else the
+    recorded one, so a resume does not ask again; `chosen_by` is then `asked`. An
+    unattended default records `chosen_by: unattended-default`, with choice `b` for
+    `triage` and none for `drafted`. Any other action keeps an explicit `choice`.
+    """
+    recorded = recorded if isinstance(recorded, dict) else {}
+    if action in ("triage", "drafted"):
+        return action, ("b" if action == "triage" else None), "unattended-default"
+    if action == "ask":
+        if choice is None and recorded.get("choice") in CHOICE_ACTIONS:
+            choice = recorded["choice"]
+        if choice is None:
+            return action, None, None
+        return CHOICE_ACTIONS[choice], choice, "asked"
+    return action, choice, ("asked" if choice else None)
+
+
 def render(root, ledger, plan, index, project, stopped_at, stage, *, triage=False, tracker=None,
-           unattended=False, git_sha=None):
+           unattended=False, git_sha=None, choice=None):
     started_at = ledger.get("started_at")
     if not started_at:
         raise SystemExit("render_review_queue: ledger has no started_at (Step 1 records it, also on resume)")
@@ -654,9 +684,12 @@ def render(root, ledger, plan, index, project, stopped_at, stage, *, triage=Fals
         else:
             items.append(it)
     full = group_tickets(items)  # the queue file always lists every ticket
+    action, choice, chosen_by = gate_choice(volume_gate(len(full), tracker, unattended),
+                                            choice or ("b" if triage else None),
+                                            (ledger.get("publish") or {}).get("volume"))
     volume = {"tickets": len(full), "threshold": VOLUME_THRESHOLD, "over": len(full) > VOLUME_THRESHOLD,
-              "action": volume_gate(len(full), tracker, unattended)}
-    triage = bool(triage or volume["action"] == "triage")
+              "action": action, "choice": choice, "chosen_by": chosen_by}
+    triage = bool(choice == "b" or action == "triage")
     tickets = group_tickets(items, triage=True) if triage else full
     superseded = superseded_slugs(root, slug, index)
     _write_text(root / QUEUE, queue_body(started_at, project, full, tracked, superseded, stopped_at))
@@ -745,6 +778,7 @@ def main(argv=None):
     r.add_argument("--tracker", choices=["local", "real"], help="tracker kind, for the volume gate")
     r.add_argument("--unattended", action="store_true", help="the run is unattended (volume gate defaults)")
     r.add_argument("--triage", action="store_true", help="volume gate option (b): one triage ticket per review criterion")
+    r.add_argument("--choice", choices=sorted(CHOICE_ACTIONS), help="the user's volume gate answer; b also stages --triage")
     c = sub.add_parser("record")
     c.add_argument("--project-root", required=True)
     c.add_argument("--slug", required=True)
@@ -772,7 +806,7 @@ def main(argv=None):
             if not a.plan:
                 ap.error("render needs --plan unless --rekey-only")
             out = render(root, ledger, plan or {}, index, a.project_name or root.name, a.stopped_at, a.stage,
-                         triage=a.triage, tracker=a.tracker, unattended=a.unattended, git_sha=git_sha)
+                         triage=a.triage, tracker=a.tracker, unattended=a.unattended, git_sha=git_sha, choice=a.choice)
             volume = out["volume"]
         summary_path = root / SUMMARY  # written on every Step 11 path
         summary_path.parent.mkdir(parents=True, exist_ok=True)

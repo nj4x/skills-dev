@@ -21,8 +21,9 @@ refused. --out is written atomically (temp file, then rename).
 
 Provenance: an `ok` call records top-level `git_sha` (`git rev-parse HEAD` in --root,
 default the working directory) and `dirty` (`git status --porcelain` not empty). Both
-are null outside git or when git fails. A `skipped` or `failed` call keeps the values
-an --existing file holds, null when it holds none: a failed assembly records no SHA.
+are null outside git or when git fails. A `failed` call sets both to null, also over
+values an --existing file holds: a failed assembly leaves no SHA. A `skipped` call keeps
+the values an --existing file holds, null when it holds none.
 """
 import argparse
 import json
@@ -91,6 +92,8 @@ def assemble(arcs, calltime, *, tools, commands, id_basis, status="ok", reason=N
     )
     if status == "ok":
         doc["git_sha"], doc["dirty"] = git_provenance(root)
+    elif status == "failed":
+        doc["git_sha"], doc["dirty"] = None, None
     else:
         doc.setdefault("git_sha", None)
         doc.setdefault("dirty", None)
