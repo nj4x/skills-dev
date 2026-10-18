@@ -39,8 +39,8 @@ Relative `--ledger`, `--plan`, and `--index` paths resolve against `--project-ro
 each staged item to the published ticket whose body holds the item's full key in backticks, so a ticket
 `to-tickets` renamed, merged, or split still counts. It adds those keys to the cross-run
 index and prints `{ status, tickets, unpublished, unmatched }`. A triage ticket (`keys: []`
-in `tickets.json`) counts as published when a published name is its file name or a published
-body holds its criterion's triage text; it is listed in `tickets` with `keys: []` and adds no
+and its `criterion` in `tickets.json`) counts as published when a published name is its file
+name or a published body holds that criterion's triage text; it is listed in `tickets` with `keys: []` and adds no
 index entry. `status` is `published` (every key and every triage ticket credited), `drafted`
 (none), or `partial`; `unpublished` lists uncredited keys, then the file names of uncredited
 triage tickets, and `unmatched` the published names with no body file. `render` also writes the index back with
@@ -280,7 +280,7 @@ def _triage(tickets):
         by_criterion[t["criterion"]]["items"].extend(t["items"])
     for t in by_criterion.values():
         n = len(t["items"])
-        t["title"] = f"Triage {n} {t['criterion']} test{'s' * (n != 1)} from the review queue"
+        t["title"] = TRIAGE_TITLE.format(n=n, criterion=t["criterion"], s="s" * (n != 1))
     return out
 
 
@@ -359,6 +359,9 @@ _REVIEW_WHAT = {
     "cost": "The run flagged these slow tests for review and did not change them. Each is a coverage-subset test in the top decile by call time; the evidence does not say why it is slow." + _CAVEAT,
     "pinning": "The run flagged these tests for review and did not change them. Each patches internals instead of calling the interface; the note per test says whether one interface test covers its lines (assertions not compared). Decide for each one: keep, or move the assertion to the interface." + _CAVEAT,
 }
+TRIAGE_TITLE = "Triage {n} {criterion} test{s} from the review queue"
+# Only the triage ticket of one criterion holds this text: `record` credits a renamed triage ticket by it.
+TRIAGE_PHRASE = "stands for every {criterion} test it flagged"
 WHAT = {
     "review": _REVIEW_WHAT,  # per criterion; review_what() swaps in the _KIND_WHAT text for a known kind
     "fix": "These tests fail when the suite runs in random order. The order gate moved every planned change that touches them to review. Make each one pass in any order.",
@@ -368,8 +371,8 @@ WHAT = {
                " the fix, because `call_s` order changes.",
     "add": "These confirmed seams have no interface test that reaches them. Add a test at each seam.",
     "skipped": "The run could not apply this change automatically and left the files unchanged. Apply it by hand or record why it stays.",
-    "triage": "The run staged more review tickets than a person can work through, so this one ticket stands for every"
-              " {criterion} test it flagged. Triage them by module and hotspot before any per-test review. The"
+    "triage": "The run staged more review tickets than a person can work through, so this one ticket "
+              + TRIAGE_PHRASE + ". Triage them by module and hotspot before any per-test review. The"
               f" per-test list is in `{QUEUE}`; the counts, the concentration and the hotspots are in `{SUMMARY}`."
               " These tests carry no key here, so the next run queues them again with fresher evidence.",
 }
@@ -664,7 +667,8 @@ def gate_choice(action, choice=None, recorded=None):
     never reused: the gate is computed again, so an interactive resume still asks. With no
     human answer, `triage` and `drafted` record `chosen_by: unattended-default` (choice `b`
     for `triage`, none for `drafted`). Without a tracker (`action` None) there is no gate:
-    an explicit `choice` is only recorded.
+    the action stays None and an explicit `choice` is recorded with `chosen_by: asked`;
+    `render` still stages option (b) for choice `b`.
     """
     recorded = recorded if isinstance(recorded, dict) else {}
     if action is None:
@@ -718,7 +722,8 @@ def render(root, ledger, plan, index, project, stopped_at, stage, *, triage=Fals
             paths.append(rel)
         _write_text(base / "manifest.md", "---\nartifact-type: tickets\n---\n" + "\n".join(paths) + "\n")
         write_atomic(base / "tickets.json", {"slug": slug, "tickets": [
-            {"nn": t["nn"], "slug": t["slug"], "keys": [] if t["category"] == "triage" else [i["key"] for i in t["items"]]}
+            {"nn": t["nn"], "slug": t["slug"], "keys": [], "criterion": t["criterion"]} if t["category"] == "triage"
+            else {"nn": t["nn"], "slug": t["slug"], "keys": [i["key"] for i in t["items"]]}
             for t in tickets]})
     return {
         "slug": slug,
@@ -751,8 +756,9 @@ def record(root, slug, index, refs):
         for f in sorted((base / "issues").glob("*.md")):
             found.setdefault(f.stem, f".scratch/{slug}/issues/{f.name}")
     keys = [k for t in doc["tickets"] for k in t["keys"]]
-    # triage tickets (option (b)) have `keys: []`: credited by name or by their body text, never indexed
-    triage = {f"{t['nn']}-{t['slug']}": t["slug"] for t in doc["tickets"] if not t["keys"]}
+    # triage tickets (option (b)) have `keys: []`: credited by name or by their criterion's
+    # TRIAGE_PHRASE in the body, never indexed
+    triage = {f"{t['nn']}-{t['slug']}": _triage_marker(t.get("criterion")) for t in doc["tickets"] if not t["keys"]}
     credited, unmatched = {}, []  # ref -> keys its body names; names with no body file
     triaged = {}  # triage ticket name -> ref
     for name, ref in found.items():
@@ -765,8 +771,8 @@ def record(root, slug, index, refs):
         mine = [k for k in keys if f"`{k}`" in body]
         if mine:
             credited[ref] = list(dict.fromkeys(credited.get(ref, []) + mine))
-        for tname, tslug in triage.items():
-            if tname not in triaged and (tname == name or _triage_marker(tslug) in body):
+        for tname, marker in triage.items():
+            if tname not in triaged and (tname == name or (marker is not None and marker in body)):
                 triaged[tname] = ref
                 credited.setdefault(ref, [])
     done = {k for ks in credited.values() for k in ks}
@@ -779,13 +785,9 @@ def record(root, slug, index, refs):
     return index, {"status": status, "tickets": tickets, "unpublished": unpublished, "unmatched": unmatched}
 
 
-TRIAGE_SLUG = re.compile(r"triage-\d+-(.+?)-tests(?:-|$)")  # `Triage <n> <criterion> tests from the review queue`
-
-
-def _triage_marker(ticket_slug):
-    """Text only the triage ticket of one criterion holds, so a renamed one still matches its body."""
-    m = TRIAGE_SLUG.match(ticket_slug)
-    return f"stands for every {m.group(1)} test it flagged" if m else f"\0{ticket_slug}"
+def _triage_marker(criterion):
+    """Text only the triage ticket of `criterion` holds, so a renamed one still matches its body; None without one."""
+    return TRIAGE_PHRASE.format(criterion=criterion) if criterion else None
 
 
 def main(argv=None):
