@@ -747,7 +747,8 @@ def test_option_c_publishes_nothing_and_still_writes_the_summary(tmp_path, capsy
     assert _summary(tmp_path)["volume"] == out["volume"] and _summary(tmp_path)["volume"]["over"] is True
     # Step 11 records `declined` and calls neither to-tickets nor record: the drafts stay, nothing is published
     base = tmp_path / ".scratch" / SLUG
-    assert "#" not in (base / "manifest.md").read_text().split("---\n")[-1]
+    assert (base / "manifest.md").read_text() == "---\nartifact-type: tickets\n---\n" + "".join(
+        f".scratch/{SLUG}/draft-issues/{t['nn']}-{t['slug']}.md\n" for t in out["tickets"])  # no tracker ids
     assert not (tmp_path / ".scratch/refactor-tests/review-index.json").exists()
     assert not (base / "issues").exists()
 
@@ -837,3 +838,50 @@ def test_mixed_fix_and_triage_staging_credits_both_and_indexes_only_keys(tmp_pat
     assert out["status"] == "published" and out["unpublished"] == []
     assert out["tickets"] == [{"ref": "#1", "keys": [fix_key]}, {"ref": "#2", "keys": []}]
     assert _read_index(tmp_path) == {fix_key: {"ref": "#1", "slug": SLUG}}
+
+
+def _rename_and_publish(tmp_path, ticket, new_name, ref="#7"):
+    base = tmp_path / ".scratch" / SLUG / "draft-issues"
+    (base / f"{ticket['nn']}-{ticket['slug']}.md").rename(base / f"{new_name}.md")
+    _publish(tmp_path, f"{ref} {new_name}")
+
+
+@pytest.mark.parametrize("n,title", [
+    (1, "Triage 1 dead-test test from the review queue"),  # singular title: its slug has no `-tests`
+    (3, "Triage 3 dead-test tests from the review queue"),
+])
+def test_renamed_triage_ticket_is_credited_by_its_criterion_text(tmp_path, capsys, n, title):
+    _setup(tmp_path, _plan(_many(n)))
+    (t,) = _render(tmp_path, capsys, "--stage", "--triage")["tickets"]
+    assert t["title"] == title
+    doc = json.loads((tmp_path / ".scratch" / SLUG / "tickets.json").read_text())
+    assert doc["tickets"] == [{"nn": t["nn"], "slug": t["slug"], "keys": [], "criterion": "dead-test"}]
+    _rename_and_publish(tmp_path, t, f"{t['nn']}-sort-out-dead-tests")
+    out = _record(tmp_path, capsys)
+    assert out == {"status": "published", "tickets": [{"ref": "#7", "keys": []}], "unpublished": [], "unmatched": []}
+
+
+def test_renamed_triage_ticket_of_another_criterion_is_not_credited(tmp_path, capsys):
+    _setup(tmp_path, _plan([*_many(2), *_many(2, "cost")]))
+    cost, dead = _render(tmp_path, capsys, "--stage", "--triage")["tickets"]
+    assert "cost" in cost["title"] and "dead-test" in dead["title"]
+    _rename_and_publish(tmp_path, cost, f"{cost['nn']}-sort-out-slow-tests")
+    out = _record(tmp_path, capsys)
+    assert out["status"] == "partial" and out["unpublished"] == [f"{dead['nn']}-{dead['slug']}"]
+    assert out["tickets"] == [{"ref": "#7", "keys": []}]
+
+
+def test_triage_entry_without_a_criterion_is_credited_only_by_name(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(1)))
+    (t,) = _render(tmp_path, capsys, "--stage", "--triage")["tickets"]
+    path = tmp_path / ".scratch" / SLUG / "tickets.json"
+    doc = json.loads(path.read_text())
+    del doc["tickets"][0]["criterion"]  # a tickets.json from before the field
+    path.write_text(json.dumps(doc))
+    _rename_and_publish(tmp_path, t, f"{t['nn']}-sort-out-dead-tests")
+    out = _record(tmp_path, capsys)
+    assert out["status"] == "drafted" and out["unpublished"] == [f"{t['nn']}-{t['slug']}"]
+    _publish(tmp_path, f"#8 {t['nn']}-{t['slug']}")
+    (tmp_path / ".scratch" / SLUG / "draft-issues" / f"{t['nn']}-sort-out-dead-tests.md").rename(
+        tmp_path / ".scratch" / SLUG / "draft-issues" / f"{t['nn']}-{t['slug']}.md")
+    assert _record(tmp_path, capsys)["status"] == "published"
