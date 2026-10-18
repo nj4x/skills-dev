@@ -567,7 +567,7 @@ def test_run_summary_of_a_healthy_run(tmp_path, capsys):
     assert s["kinds"] == {"dead-test/no-raise-contract": 1, "dead-test/fail-soft": 1}
     assert s["report_only"] == {"dead-test/no-raise-contract": 1}
     assert s["excluded"] == {"failed": 2, "no-timing": 1}
-    assert s["concentration"]["by_candidates"][0] == {"module": "tests/pkg/adapters", "candidates": 5}
+    assert s["concentration"]["by_candidates"][0] == {"module": "tests/pkg/adapters", "candidates": 4}  # no test_n
     assert s["concentration"]["by_call_s"] == [{"module": "tests/pkg/adapters", "call_s": 2.5},
                                                {"module": "tests/pkg/core", "call_s": 0.25}]  # test_c counted once
     assert [h["function"] for h in s["hotspots"]] == ["src/pkg/db.py:connect"]
@@ -575,6 +575,18 @@ def test_run_summary_of_a_healthy_run(tmp_path, capsys):
     assert s["evidence_tests"] == 4 and s["shares"]["coverage-subset"] == 0.75
     assert len(s["warnings"]) == 1 and s["warnings"][0].startswith("coverage-subset flags 75% of evidence tests")
     assert s["volume"]["tickets"] == 5 and s["volume"]["over"] is False
+
+
+def test_run_summary_leaves_no_raise_contract_tests_out_of_shares_and_warnings(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand(f"test_n{i}", "dead-test", kind="no-raise-contract", call_s=1.0)
+                            for i in range(3)]), HEALTHY_LEDGER)
+    _evidence(tmp_path)  # 3 of 4 evidence tests flagged, all report-only
+    _render(tmp_path, capsys, "--stage")
+    s = _summary(tmp_path)
+    assert s["counts"] == {"dead-test": 3} and s["kinds"] == {"dead-test/no-raise-contract": 3}
+    assert s["report_only"] == {"dead-test/no-raise-contract": 3}
+    assert s["shares"] == {} and s["warnings"] == []
+    assert s["concentration"] == {"by_candidates": [], "by_call_s": []}
 
 
 def test_run_summary_of_a_failed_layout_run_has_nulls_and_notes(tmp_path, capsys):
@@ -630,7 +642,7 @@ def _many(n, criterion="dead-test"):
 def test_volume_gate_counts_staged_tickets_including_hotspots(tmp_path, capsys):
     _setup(tmp_path, _plan(_many(50)))
     assert _render(tmp_path, capsys, "--tracker", "real")["volume"] == {
-        "tickets": 50, "threshold": 50, "over": False, "action": "publish"}
+        "tickets": 50, "threshold": 50, "over": False, "action": "publish", "choice": None, "chosen_by": None}
     _setup(tmp_path, _plan([*_many(50), _hotspot()]))
     volume = _render(tmp_path, capsys, "--tracker", "real")["volume"]
     assert volume["tickets"] == 51 and volume["over"] is True and volume["action"] == "ask"
@@ -648,6 +660,27 @@ def test_volume_gate_unattended_defaults(tmp_path, capsys, tracker, action, tria
     out = _render(tmp_path, capsys, "--tracker", tracker, "--unattended", "--stage")
     assert out["volume"]["action"] == action and out["triage"] is triage
     assert len(out["tickets"]) == (1 if triage else 51)
+    assert (out["volume"]["choice"], out["volume"]["chosen_by"]) == ("b" if triage else None, "unattended-default")
+    assert _summary(tmp_path)["volume"] == out["volume"]
+
+
+@pytest.mark.parametrize("choice,action,tickets", [("a", "publish", 51), ("b", "triage", 1), ("c", "declined", 51)])
+def test_volume_gate_records_the_asked_choice(tmp_path, capsys, choice, action, tickets):
+    _setup(tmp_path, _plan(_many(51)))
+    assert _render(tmp_path, capsys, "--tracker", "real", "--stage")["volume"]["action"] == "ask"
+    out = _render(tmp_path, capsys, "--tracker", "real", "--stage", "--choice", choice)
+    assert out["volume"] == {"tickets": 51, "threshold": 50, "over": True,
+                             "action": action, "choice": choice, "chosen_by": "asked"}
+    assert out["triage"] is (choice == "b") and len(out["tickets"]) == tickets
+    assert _summary(tmp_path)["volume"] == out["volume"]
+
+
+@pytest.mark.parametrize("choice,action", [("a", "publish"), ("b", "triage"), ("c", "declined")])
+def test_volume_gate_resume_with_a_recorded_choice_does_not_ask(tmp_path, capsys, choice, action):
+    recorded = {"tickets": 51, "threshold": 50, "over": True, "action": action, "choice": choice, "chosen_by": "asked"}
+    _setup(tmp_path, _plan(_many(51)), {"publish": {"status": "queued", "volume": recorded}})
+    out = _render(tmp_path, capsys, "--tracker", "real", "--stage")
+    assert out["volume"] == recorded and out["triage"] is (choice == "b")
 
 
 def test_option_a_output_is_unchanged_by_the_gate(tmp_path, capsys):

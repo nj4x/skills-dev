@@ -371,6 +371,22 @@ def test_assemble_failure_records_null_provenance(tmp_path):
     assert doc["git_sha"] is None and doc["dirty"] is None
 
 
+def test_assemble_failure_nulls_provenance_from_an_existing_file():
+    existing = {"schema_version": 1, "id_basis": "post-layout", "languages": {},
+                "git_sha": "3f2c9a1", "dirty": False}
+    doc = assemble({}, {}, tools={}, commands={}, status="failed", reason="pytest exit 3",
+                   id_basis="post-layout", existing=existing)
+    assert doc["git_sha"] is None and doc["dirty"] is None
+
+
+def test_assemble_skipped_keeps_provenance_from_an_existing_file():
+    existing = {"schema_version": 1, "id_basis": "post-layout", "languages": {},
+                "git_sha": "3f2c9a1", "dirty": False}
+    doc = assemble({}, {}, tools={}, commands={}, status="skipped", reason="no tooling for go",
+                   language="go", id_basis="post-layout", existing=existing)
+    assert (doc["git_sha"], doc["dirty"]) == ("3f2c9a1", False)
+
+
 def test_assemble_cli_records_provenance_of_root(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
     out = tmp_path / "e.json"

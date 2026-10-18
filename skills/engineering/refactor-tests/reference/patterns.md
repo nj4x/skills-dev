@@ -369,7 +369,19 @@ Never apply a "delete non-head migration tests" rule as a whole. The classificat
 
 **Grouping.** One ticket per category, criterion, and module. Dead-test and pinning items also split by `kind`: one ticket per criterion, kind, and module, with the kind in the title. A pinning `collaborator-double` ticket is labelled `ready-for-agent`; every other review ticket stays `ready-for-human`. A dead-test `no-raise-contract` item is never ticketed: `render` leaves it out of the queue and counts it in its output under `report_only`. The helper accepts an item with any `kind` value, or none. Any string kind on a dead-test or pinning item splits the ticket, also one the helper has no text for. A kind on another criterion, or a non-string kind, shows in the item line and does not split the ticket. The module is the test file's directory, the source module for add candidates, the cluster for Spring clusters, and the function for a hotspot, so each hotspot gets its own ticket, titled `Fix cost hotspot <function> in the test tier`. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then hotspot, review, add, and skipped, so every hotspot ticket comes before every review ticket. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them; a hotspot item lists its `share`, profiled `tests`, `subprocess_spawns` per test, and `via`. Two blocking edges: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`); a hotspot ticket blocks each `cost` and `coverage-subset` ticket that holds a test in the directory of one of the hotspot's `tests`, because fixing the hotspot changes their `call_s` order (ADR-0080 Decision 2). A hotspot ticket's text (`WHAT["hotspot"]`) says: "Fix this in the test tier (a fixture or stub), never by deleting tests. Re-run the evidence pass after the fix, because `call_s` order changes." A review ticket's "What to build" text depends on its criterion (`WHAT["review"]`): coverage-subset, cost and pinning carry the mutation-gate caveat (see What each criterion proves). A known kind replaces that text (`review_what`): a dead-test ticket states its kind's disposition (no kind reads as `no-assertion`), and a pinning `collaborator-double` ticket says "Re-point the stub (deps injection or a checked patch); do not delete." with no mutation-gate caveat. Other pinning kinds keep the pinning text. A fix ticket ends its text with a `Reproduce:` command built from the ledger `runners.python` command, the `order_gate.plugin` install, and the seed, for example `uv run --with pytest-randomly pytest -p randomly --randomly-seed=<seed> <file>`. Every ticket body, and `spec.md`, carries the line `git_sha: <sha>`, read from the evidence file's `git_sha`, so a later agent can tell whether the list is stale; it reads `git_sha: unknown` when there is no evidence file or its `git_sha` is `null`.
 
-**Volume gate** (ADR-0080 Decision 3). `render` counts the tickets it would stage after dedupe, hotspot tickets included, before any triage, and prints `volume: { tickets, threshold: 50, over, action }`. With `--tracker local|real`, `action` is `publish` (`tickets` at most 50), `ask` (interactive), `triage` (`--unattended` on the local tracker; `render` then stages option (b) itself and prints `triage: true`), or `drafted` (`--unattended` on a real tracker); without `--tracker` it is `null`. `--triage` stages option (b):
+**Volume gate** (ADR-0080 Decision 3). `render` counts the tickets it would stage after dedupe, hotspot tickets included, before any triage, and prints `volume: { tickets, threshold: 50, over, action, choice, chosen_by }`. With `--tracker local|real`, `action` is `publish` (`tickets` at most 50), `ask` (interactive), `triage` (`--unattended` on the local tracker; `render` then stages option (b) itself and prints `triage: true`), or `drafted` (`--unattended` on a real tracker); without `--tracker` it is `null`. The gate's answer is recorded in `choice` and `chosen_by`:
+
+| Gate | `action` | `choice` | `chosen_by` |
+|---|---|---|---|
+| 50 tickets or fewer | `publish` | `null` | `null` |
+| interactive, not yet answered | `ask` | `null` | `null` |
+| interactive, `--choice a` | `publish` | `a` | `asked` |
+| interactive, `--choice b` | `triage` | `b` | `asked` |
+| interactive, `--choice c` | `declined` | `c` | `asked` |
+| unattended, local tracker | `triage` | `b` | `unattended-default` |
+| unattended, real tracker | `drafted` | `null` | `unattended-default` |
+
+Without `--choice`, an `ask` takes the `choice` recorded in ledger `publish.volume`, so a resumed run does not ask again. `--triage` is the same as `--choice b`. Option (b) stages:
 
 | Staged under (b) | Ticket |
 |---|---|
@@ -396,7 +408,7 @@ A triage ticket is titled `Triage <n> <criterion> tests from the review queue`, 
   "report_only": { "dead-test/no-raise-contract": 31 },
   "excluded": { "failed": 2, "skipped": 14, "no-coverage": 1 },
   "evidence_tests": 3120,
-  "shares": { "coverage-subset": 0.132, "cost": 0.0131, "dead-test": 0.0106, "pinning": 0.5811 },
+  "shares": { "coverage-subset": 0.132, "cost": 0.0131, "dead-test": 0.0006, "pinning": 0.5811 },
   "warnings": ["pinning flags 58% of evidence tests: criterion is not discriminating on this suite; triage by module and hotspot before per-test review"],
   "concentration": {
     "by_candidates": [ { "module": "tests/protrading/db", "candidates": 640 } ],
@@ -404,7 +416,7 @@ A triage ticket is titled `Triage <n> <criterion> tests from the review queue`, 
   },
   "hotspots": [ { "criterion": "hotspot", "function": "src/protrading/db/connection.py:connect", "share": 0.84, "tests": ["…"], "subprocess_spawns": {}, "via": [] } ],
   "call_time": { "before_s": 861.7, "after_s": 858.2 },
-  "volume": { "tickets": 765, "threshold": 50, "over": true, "action": "ask" },
+  "volume": { "tickets": 765, "threshold": 50, "over": true, "action": "triage", "choice": "b", "chosen_by": "asked" },
   "notes": []
 }
 ```
@@ -412,11 +424,11 @@ A triage ticket is titled `Triage <n> <criterion> tests from the review queue`, 
 - `git_sha`, `dirty`: from the evidence file, the same source as the ticket bodies; `null` when there is no evidence file or it holds `null`. `runner` is ledger `runners`. `seed` is ledger `order_gate.seed`, `null` when the gate did not run. `stopped_at` is the `--stopped-at` value.
 - `counts` per plan `review_candidates` criterion and `kinds` per `<criterion>/<kind>`, both counted before `no-raise-contract` items are dropped; `report_only` as in the `render` output. `null` with no plan.
 - `excluded`: evidence `excluded` entries per outcome, all languages; `null` with no evidence file.
-- `shares`: per review criterion, distinct flagged tests divided by `evidence_tests` (the entries of the `ok` language blocks). `warnings` holds one line per criterion whose share is above 0.5. Both need evidence `ok`: otherwise `shares` is `null` and `warnings` is empty.
-- `concentration`: top 15 modules (test file directories) by review candidate count, and by the summed `call_s` of their review candidates, a test flagged both coverage-subset and cost counted once. `null` with no plan.
+- `shares`: per review criterion, distinct flagged tests divided by `evidence_tests` (the entries of the `ok` language blocks). `warnings` holds one line per criterion whose share is above 0.5. Both need evidence `ok`: otherwise `shares` is `null` and `warnings` is empty. A dead-test `no-raise-contract` test is never ticketed, so it counts in no share and raises no warning; a criterion whose only candidates are report-only has no `shares` key.
+- `concentration`: top 15 modules (test file directories) by review candidate count, and by the summed `call_s` of their review candidates, a test flagged both coverage-subset and cost counted once. Dead-test `no-raise-contract` candidates are left out, as in `shares`. `null` with no plan.
 - `hotspots`: the plan's hotspot entries; `[]` when the probe found none or did not run.
 - `call_time`: ledger `simplification.call_time` `before_s` and `after_s`; `null` when evidence is not `ok`.
-- `volume`: the volume gate as `render` printed it; `null` after `--rekey-only`.
+- `volume`: the volume gate as `render` printed it, `choice` and `chosen_by` included (see Volume gate); `null` after `--rekey-only`. The last render wins, so after the user answers the gate the file holds the answer.
 - `notes`: one line per field left `null` (or `[]`) and why: no evidence file, evidence not `ok` with each language's reason, no plan, no seed, no hotspot, no call-time totals.
 
 **Staged files** under `.scratch/<slug>/`, where the slug is `refactor-tests-review-<started_at>` lowercased (the `to-tickets` slug rule applied to the title `refactor-tests review <started_at>`):
@@ -427,7 +439,7 @@ A triage ticket is titled `Triage <n> <criterion> tests from the review queue`, 
 
 **Cross-run index** `.scratch/refactor-tests/review-index.json`: `{ schema_version: 1, entries: { <key>: { ref, slug } } }`. `render` maps each entry's id through the ledger's `id_map`, or, when `id_map` has no entry, through its `moves` (old file to new file), before comparing keys. `render` then writes the re-keyed entries back, except after a layout regression (`--stopped-at failed-layout`, whose moves the user may revert; Phase A moves stay in the tree after a later regression), so a test moved in this run still matches its entry when a later ledger no longer holds the move. `render --rekey-only` does only the re-key, for a run with `--no-publish-review`; it needs no `--plan`. If two entries re-key to the same key, the first is kept. Only `record` adds entries, and only for published tickets. A ticket counts as published when `--ref` names it, when a manifest line reads `<tracker-ID> <name>` (`<name>` is `<NN>-<slug>`, any number of digits, `.md` optional), or when `issues/<name>.md` exists. Its body is `issues/<name>.md` or `draft-issues/<name>.md`. Each ticket item line ends with `` key: `<key>` ``. An item is credited to the published ticket whose body holds its full key in backticks, so a ticket `to-tickets` renamed, merged, or split still counts. `record` prints `{ status, tickets, unpublished, unmatched }`: `status` is `published` (every key credited), `drafted` (none), or `partial` (some; Step 11 maps it to the ledger status); `unpublished` lists every key no published body names; `unmatched` lists published names with no body file. An entry suppresses its item whatever the ticket's tracker state; delete the entry to re-ticket the item. `render` reports an earlier `refactor-tests-review-*` directory as superseded when it has `draft-issues/`, no `issues/`, no manifest line with a tracker id, and no index entry.
 
-**Ledger `publish`**: `{ status, slug, parent, tickets: [ { ref, keys } ], already_tracked: [ { key, ref } ] }`.
+**Ledger `publish`**: `{ status, slug, parent, volume, tickets: [ { ref, keys } ], already_tracked: [ { key, ref } ] }`. `volume` is the last `render` output's `volume`; `render` reads its `choice` on resume.
 
 | `status` | Meaning | Final |
 |---|---|---|
@@ -596,7 +608,7 @@ Written by the evidence pass (Phase B, first step). Schema version 1. Python hel
 - `tests` is keyed by test id (node id). Only tests whose call-phase `outcome` is `passed` get an entry; every other test is listed under `excluded` with its outcome: `failed`, `skipped`, `no-coverage` (a passed test with no `|run` context in the coverage data), or `no-timing` (a covered id with no row from the timing run).
 - `call_s` is the call-phase duration in seconds from the serial, untraced timing run. `covered` comes from the traced run, `|run` contexts only. Negative arc endpoints are function entry and exit.
 - A language block with `status` `skipped` or `failed` carries a `reason` and empty `tests`.
-- `git_sha` and `dirty` are the provenance: `git rev-parse HEAD` and whether `git status --porcelain` is not empty, run in `--root`. An `ok` call writes them. Both are `null` outside git or when git fails. A `skipped` or `failed` call keeps the values an `--existing` file holds and otherwise writes `null`, so a failed assembly records no SHA. Step 11 reads `git_sha` from this file for the ticket bodies and `run-summary.json`.
+- `git_sha` and `dirty` are the provenance: `git rev-parse HEAD` and whether `git status --porcelain` is not empty, run in `--root`. An `ok` call writes them. Both are `null` outside git or when git fails. A `failed` call writes `null` to both, also over values an `--existing` file holds, so a failed assembly leaves no SHA. A `skipped` call keeps the values an `--existing` file holds and otherwise writes `null`. Step 11 reads `git_sha` from this file for the ticket bodies and `run-summary.json`.
 - `kill_set` is a reserved top-level key for a later mutation-based check. v1 does not write it, and the mutation deletion gate below does not write it yet.
 
 ## Mutation deletion gate
