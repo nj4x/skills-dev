@@ -332,3 +332,69 @@ def test_assemble_cli_writes_out_and_merges_existing(runs, tmp_path):
         "tests": {}, "excluded": [],
     }
     assert not (tmp_path / "test-evidence.json.tmp").exists()
+
+
+def _git(repo, *args):
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True,
+        env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"},
+    ).stdout.strip()
+
+
+def test_assemble_records_git_sha_and_dirty_inside_git(tmp_path):
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "a.py").write_text("x = 1\n")
+    _git(tmp_path, "add", "a.py")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    head = _git(tmp_path, "rev-parse", "HEAD")
+    clean = assemble({}, {}, tools={}, commands={}, id_basis="post-layout", root=tmp_path)
+    assert (clean["git_sha"], clean["dirty"]) == (head, False)
+    (tmp_path / "b.py").write_text("y = 2\n")
+    dirty = assemble({}, {}, tools={}, commands={}, id_basis="post-layout", root=tmp_path)
+    assert (dirty["git_sha"], dirty["dirty"]) == (head, True)
+
+
+def test_assemble_records_null_provenance_outside_git(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    doc = assemble({}, {}, tools={}, commands={}, id_basis="post-layout", root=tmp_path)
+    assert doc["git_sha"] is None and doc["dirty"] is None
+
+
+def test_assemble_failure_records_null_provenance(tmp_path):
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "a.py").write_text("x = 1\n")
+    _git(tmp_path, "add", "a.py")
+    _git(tmp_path, "commit", "-q", "-m", "init")
+    doc = assemble({}, {}, tools={}, commands={}, status="failed", reason="pytest exit 3",
+                   id_basis="post-layout", root=tmp_path)
+    assert doc["git_sha"] is None and doc["dirty"] is None
+
+
+def test_assemble_failure_nulls_provenance_from_an_existing_file():
+    existing = {"schema_version": 1, "id_basis": "post-layout", "languages": {},
+                "git_sha": "3f2c9a1", "dirty": False}
+    doc = assemble({}, {}, tools={}, commands={}, status="failed", reason="pytest exit 3",
+                   id_basis="post-layout", existing=existing)
+    assert doc["git_sha"] is None and doc["dirty"] is None
+
+
+def test_assemble_skipped_keeps_provenance_from_an_existing_file():
+    existing = {"schema_version": 1, "id_basis": "post-layout", "languages": {},
+                "git_sha": "3f2c9a1", "dirty": False}
+    doc = assemble({}, {}, tools={}, commands={}, status="skipped", reason="no tooling for go",
+                   language="go", id_basis="post-layout", existing=existing)
+    assert (doc["git_sha"], doc["dirty"]) == ("3f2c9a1", False)
+
+
+def test_assemble_cli_records_provenance_of_root(tmp_path, monkeypatch):
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+    out = tmp_path / "e.json"
+    result = subprocess.run(
+        [sys.executable, str(HELPERS / "assemble_evidence.py"), "--id-basis", "pre-layout",
+         "--root", str(tmp_path), "--out", str(out)],
+        capture_output=True, text=True, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    doc = json.loads(out.read_text())
+    assert doc["git_sha"] is None and doc["dirty"] is None

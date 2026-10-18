@@ -4,6 +4,8 @@ Usage:
   python classify_seams.py propose --root PROJECT --source-root src [--source-root ...]
   python classify_seams.py classify --root PROJECT --source-root src \
       --seams seams.json --tests tests [--tests ...] [--evidence test-evidence.json]
+  python classify_seams.py reuse --root PROJECT --proposed seams-proposed.json \
+      [--confirmed .scratch/refactor-tests/seams-confirmed.json]
 
 `propose` prints {"modules": {<source file>: {"seams": [{name, signal, status}]}},
 "warnings": [...]} with status `proposed`. Signals, strongest first: `__all__`;
@@ -25,7 +27,14 @@ module is a seam, and a pinning candidate when it references at least one non-se
 name. Referenced names come from imports, calls, attribute access on imported modules
 and classes, `patch(...)` and `monkeypatch.setattr(...)` string targets, and the
 object forms `patch.object(mod, "name")` and `monkeypatch.setattr(mod, "name", value)`.
-Coverage plays no part in that split.
+Coverage plays no part in that split. A patch or setattr target that names a module
+attribute bound by an import (not defined in the module) is a test double: it is listed
+under `doubles`, not `internals`. Each pinning candidate has a `kind`, the strictest over
+all the test's non-seam references: `public-non-seam` > `private` > `collaborator-double`
+> `constant` > `other`.
+
+`reuse` merges the `propose` output with an earlier run's seams-confirmed file and prints
+the difference the confirm round shows; see `reuse()`.
 
 With --evidence at status `ok`, add_candidates (confirmed seams with no interface test
 whose `covered` lines reach the seam's body) and `covered_through_interface` are
@@ -43,8 +52,11 @@ from pathlib import Path
 
 from refactor_tests_shared import is_variant
 
-NOTE_COVERED = "covered through the interface"
+NOTE_COVERED = "lines covered by one interface test (assertions not compared)"
 NOTE_MOVE = "move the assertion to the interface"
+NOTE_DOUBLE = "re-point the stub (deps injection or a checked patch); do not delete"
+KINDS = ("public-non-seam", "private", "collaborator-double", "constant", "other")  # strictest first
+CONFIRMED = ".scratch/refactor-tests/seams-confirmed.json"
 
 
 def _is_dunder(name):
@@ -212,6 +224,103 @@ def _public_api(tree):
     return names
 
 
+_COMPOUND = (ast.If, ast.Try, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith) + (
+    (ast.TryStar,) if hasattr(ast, "TryStar") else ())
+
+
+def _module_statements(body):
+    """Module-scope statements, also those nested in if/try/for/while/with (not in def or class bodies)."""
+    for node in body:
+        yield node
+        if isinstance(node, _COMPOUND):
+            for field in ("body", "orelse", "finalbody"):
+                yield from _module_statements(getattr(node, field, []))
+            for handler in getattr(node, "handlers", []):
+                yield from _module_statements(handler.body)
+
+
+def _target_names(target):
+    if isinstance(target, ast.Name):
+        yield target.id
+    elif isinstance(target, (ast.Tuple, ast.List)):
+        for e in target.elts:
+            yield from _target_names(e)
+    elif isinstance(target, ast.Starred):
+        yield from _target_names(target.value)
+
+
+_BINDING_RANK = {"import": 0, "constant": 1, "callable": 2}  # a name defined in the module beats its import
+
+
+def module_table(tree):
+    """Top-level name -> how the module binds it: `import`, `callable` (def, class, lambda) or `constant`.
+
+    A name both imported and defined counts as defined: a patch on it replaces the module's own code.
+    """
+    table = {}
+
+    def bind(name, how):
+        if _BINDING_RANK[how] >= _BINDING_RANK.get(table.get(name), -1):
+            table[name] = how
+
+    for node in _module_statements(tree.body):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                bind(a.asname or a.name.split(".")[0], "import")
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                if a.name != "*":
+                    bind(a.asname or a.name, "import")
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bind(node.name, "callable")
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and getattr(node, "value", None) is not None:
+            how = "callable" if isinstance(node.value, ast.Lambda) else "constant"
+            for t in (node.targets if isinstance(node, ast.Assign) else [node.target]):
+                for name in _target_names(t):
+                    bind(name, how)
+    return table
+
+
+def _bound_names(tree):
+    """Every name a seam entry may hold for this module: top-level bindings, `__all__` names, `Class.method`.
+
+    None when the module binds names it does not spell out (`from x import *`, a module
+    `__getattr__`): its seams cannot be checked.
+    """
+    names = set(module_table(tree))
+    names |= set(_all_names(tree)[0] or ())
+    for node in _module_statements(tree.body):
+        if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
+            return None
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "__getattr__":
+            return None
+        if isinstance(node, ast.ClassDef):
+            names |= {f"{node.name}.{i.name}" for i in node.body
+                      if isinstance(i, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    return names
+
+
+def ref_kind(rest, table, patched):
+    """Pinning kind of one non-seam reference `rest` (dotted name inside a module).
+
+    `patched` is True when the test names it as a patch or setattr target.
+    """
+    head = rest.partition(".")[0]
+    bound = table.get(head)
+    if bound == "import":
+        return "collaborator-double" if patched else "other"
+    if bound == "constant":
+        return "constant"
+    if bound == "callable":
+        private = any(p.startswith("_") and not _is_dunder(p) for p in rest.split("."))
+        return "private" if private else "public-non-seam"
+    return "other"
+
+
+def strictest(kinds):
+    return min(kinds, key=KINDS.index)
+
+
 def _defined_top_level(tree):
     return {
         n.name
@@ -309,8 +418,9 @@ class _TestRefs(ast.NodeVisitor):
         self.aliases = dict(aliases)  # local name -> (module, rest or "")
         self.modules = modules
         self.refs = set()
+        self.patched = set()  # the refs named as patch or setattr targets
 
-    def _add(self, dotted):
+    def _add(self, dotted, patched=False):
         # longest project-module prefix, remainder = name inside it
         parts = dotted.split(".")
         for i in range(len(parts), 0, -1):
@@ -319,6 +429,8 @@ class _TestRefs(ast.NodeVisitor):
                 rest = ".".join(parts[i : i + 2])
                 if rest:
                     self.refs.add((mod, rest))
+                    if patched:
+                        self.patched.add((mod, rest))
                 return
 
     def _alias_chain(self, node):
@@ -373,7 +485,7 @@ class _TestRefs(ast.NodeVisitor):
                 if base:
                     target = f"{base}.{node.args[1].value}"
         if target:
-            self._add(target)
+            self._add(target, patched=True)
         self.generic_visit(node)
 
     def _expr_dotted(self, node):
@@ -491,8 +603,13 @@ def _confirmed_seams(seams_doc):
     return out
 
 
-def _split_tests(root, test_paths, files, seam_sets, warnings):
-    """(interface, pinning_raw, all_refs): each test split per source module it references."""
+def _split_tests(root, test_paths, files, seam_sets, tables, warnings):
+    """(interface, pinning_raw, all_refs): each test split per source module it references.
+
+    A non-seam reference that is a patch target bound by an import in the module is a test
+    double: it goes to `doubles`, not `internals`. Each pinning record carries `kind`, the
+    strictest kind of its non-seam references (`classify` then widens it to the whole test).
+    """
     interface, pinning_raw = [], []
     all_refs = set()
     for tpath in sorted(test_paths):
@@ -515,10 +632,17 @@ def _split_tests(root, test_paths, files, seam_sets, warnings):
             for mod, rests in sorted(by_module.items()):
                 if mod not in seam_sets:
                     continue
-                internals = sorted(r for r in rests if not _seam_ok(r, seam_sets[mod]))
+                table = tables.get(mod, {})
+                kinds = {r: ref_kind(r, table, (mod, r) in visitor.patched)
+                         for r in rests if not _seam_ok(r, seam_sets[mod])}
                 rec = {"file": tpath, "test_name": tname, "module": files[mod][0]}
-                if internals:
-                    pinning_raw.append({**rec, "internals": internals})
+                if kinds:
+                    pinning_raw.append({
+                        **rec,
+                        "internals": sorted(r for r, k in kinds.items() if k != "collaborator-double"),
+                        "doubles": sorted(r for r, k in kinds.items() if k == "collaborator-double"),
+                        "kind": strictest(kinds.values()),
+                    })
                 else:
                     interface.append(rec)
     return interface, pinning_raw, all_refs
@@ -578,8 +702,20 @@ def _pinning_candidates(pinning_raw, interface, evidence, evidence_ok, warnings)
             item["note"] = NOTE_COVERED if covered else NOTE_MOVE
         else:
             item["note"] = NOTE_MOVE
+        if not item["internals"] and item["kind"] == "collaborator-double":
+            # only doubles in this module, and no stricter kind elsewhere: nothing to move
+            item["note"] = NOTE_DOUBLE
         pinning.append(item)
     return pinning
+
+
+def _widen_kinds(pinning_raw):
+    """Give every record of one test the strictest kind over all its records (one review item per test)."""
+    per_test = {}
+    for rec in pinning_raw:
+        per_test.setdefault(_test_id(rec), []).append(rec["kind"])
+    for rec in pinning_raw:
+        rec["kind"] = strictest(per_test[_test_id(rec)])
 
 
 def classify(root, source_roots, seams_doc, test_paths, evidence=None):
@@ -600,7 +736,12 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
             "evidence status is not ok: add_candidates and covered_through_interface omitted"
         )
 
-    interface, pinning_raw, all_refs = _split_tests(root, test_paths, files, seam_sets, warnings)
+    tables = {}
+    for mod in seam_sets:
+        tree = _parse(root / files[mod][0])
+        tables[mod] = module_table(tree) if tree is not None else {}
+    interface, pinning_raw, all_refs = _split_tests(root, test_paths, files, seam_sets, tables, warnings)
+    _widen_kinds(pinning_raw)
     out = {"modules": modules_out}
     if evidence_ok:
         out["add_candidates"] = _add_candidates(
@@ -610,6 +751,100 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
         pinning_raw, interface, evidence, evidence_ok, warnings
     )
     return {"seams": out, "interface_tests": interface, "warnings": warnings}
+
+
+def _schema_problem(doc):
+    """Why `doc` is not a seams-confirmed document, or None when it is one."""
+    if not isinstance(doc, dict) or "modules" not in doc:
+        return "no `modules` key"
+    if not isinstance(doc["modules"], dict):
+        return "`modules` is not an object"
+    for rel, entry in doc["modules"].items():
+        if not isinstance(entry, dict) or not isinstance(entry.get("seams"), list):
+            return f"module {rel} has no `seams` list"
+        for s in entry["seams"]:
+            if not isinstance(s, dict) or not isinstance(s.get("name"), str) or not isinstance(s.get("status"), str):
+                return f"module {rel} has a seam without a string `name` and `status`"
+    return None
+
+
+def load_confirmed(path):
+    """(doc, status, warnings) for a seams-confirmed file; status is `ok`, `absent` or `ignored`.
+
+    A file that cannot be read, is not JSON, or has the wrong shape is ignored with a warning,
+    and the run behaves as with no file.
+    """
+    path = Path(path)
+    if not path.exists():
+        return None, "absent", []
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        problem = f"not readable JSON ({e})"
+    else:
+        problem = _schema_problem(doc)
+    if problem:
+        return None, "ignored", [f"{path.name}: {problem}; ignored, the run behaves as with no confirmed seams"]
+    return doc, "ok", []
+
+
+def reuse(root, proposed, confirmed_path):
+    """Merge this run's `propose` output with the confirmed seams of an earlier run.
+
+    Returns {status, modules, diff: {new_modules, added, removed}, review_modules,
+    public_api_modules, warnings}. `modules` keeps each earlier seam with its status
+    (`confirmed` or `rejected`) and adds the newly proposed names as `proposed`. A confirmed
+    module whose file is gone, or a seam name the module no longer binds, is dropped with a
+    warning; a module with a star import or a module `__getattr__` keeps its seams unchecked.
+    `removed` lists confirmed names this run no longer proposes, except `signal: user` names
+    (added by the user, never proposed); they stay confirmed.
+    `review_modules` (new or changed) are the only ones the confirm round shows;
+    `public_api_modules` are those of them with a `public-api` proposal.
+    """
+    doc, status, warnings = load_confirmed(confirmed_path)
+    prev = (doc or {}).get("modules", {})
+    now = proposed.get("modules", {})
+    modules, new_modules, added, removed = {}, [], {}, {}
+    for rel in sorted(set(prev) | set(now)):
+        proposals = (now.get(rel) or {}).get("seams", [])
+        if rel not in prev:
+            new_modules.append(rel)
+            modules[rel] = {"seams": [dict(s) for s in proposals]}
+            continue
+        if not (root / rel).is_file():
+            warnings.append(f"{rel}: confirmed module no longer exists; dropped")
+            continue
+        tree = _parse(root / rel)
+        bound = _bound_names(tree) if tree is not None else None
+        if tree is None:
+            warnings.append(f"{rel}: cannot parse; its confirmed seams are kept unchecked")
+        elif bound is None:
+            warnings.append(f"{rel}: star import or module __getattr__; its confirmed seams are kept unchecked")
+        kept = []
+        for s in prev[rel]["seams"]:
+            if bound is not None and s["name"] not in bound:
+                warnings.append(f"{rel}: {s['status']} seam {s['name']} no longer exists in the module; dropped")
+            else:
+                kept.append(dict(s))
+        known = {s["name"] for s in kept}
+        fresh = [dict(s) for s in proposals if s["name"] not in known]
+        proposed_names = {p["name"] for p in proposals}
+        # a `user` name was never proposed: its absence from the proposal is no change
+        gone = [s["name"] for s in kept if s["status"] == "confirmed" and s.get("signal") != "user"
+                and s["name"] not in proposed_names]
+        if fresh:
+            added[rel] = [s["name"] for s in fresh]
+        if gone:
+            removed[rel] = gone
+        if kept or fresh:
+            modules[rel] = {"seams": kept + fresh}
+    review = sorted(set(new_modules) | set(added) | set(removed))
+    public_api = [rel for rel in review
+                  if any(s.get("signal") == "public-api" and s.get("status") == "proposed"
+                         for s in modules.get(rel, {}).get("seams", []))]
+    return {"status": status, "modules": modules,
+            "diff": {"new_modules": new_modules, "added": added, "removed": removed},
+            "review_modules": review, "public_api_modules": public_api, "warnings": warnings}
 
 
 def _find_tests(root, entries):
@@ -635,10 +870,17 @@ def main(argv=None):
             p.add_argument("--seams", required=True)
             p.add_argument("--tests", action="append", required=True)
             p.add_argument("--evidence")
+    r = sub.add_parser("reuse")
+    r.add_argument("--root", required=True)
+    r.add_argument("--proposed", required=True, help="the `propose` output (seams-proposed.json)")
+    r.add_argument("--confirmed", default=CONFIRMED, help="relative paths resolve against --root")
     args = ap.parse_args(argv)
     root = Path(args.root).resolve()
     if args.cmd == "propose":
         result = propose(root, args.source_root)
+    elif args.cmd == "reuse":
+        proposed = json.loads((root / args.proposed).read_text())
+        result = reuse(root, proposed, root / args.confirmed)
     else:
         seams_doc = json.loads(Path(args.seams).read_text())
         evidence = None

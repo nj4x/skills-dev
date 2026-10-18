@@ -1,9 +1,10 @@
-"""Shared test-id parsing and JSON output for the refactor-tests helpers.
+"""Shared test-id parsing, source line split and JSON output for the refactor-tests helpers.
 
 Test ids are pytest node ids (`<file>::<test>`, `<file>::<Class>::<test>`), optionally
 with a parameter suffix (`<id>[<params>]`). The suffix starts at the first `[`, so a
 parameter holding `::`, `.` or `[` never splits the id.
 """
+import io
 import json
 import os
 
@@ -26,6 +27,15 @@ def is_variant(test_id, base_id):
     A bare `<file>::<test>` names a top-level test only, never `<file>::<Class>::<test>`.
     """
     return test_id == base_id or test_id.startswith(base_id + "[")
+
+
+def source_lines(text):
+    """`text` split into lines the way `ast` line numbers count them, line ends kept.
+
+    Only `\\n`, `\\r\\n` and `\\r` end a line. `str.splitlines` also splits on form feed,
+    `\\x0b`, `\\x1c`-`\\x1e`, `\\x85`, U+2028 and U+2029, which shifts every later index.
+    """
+    return io.StringIO(text, newline="").readlines()
 
 
 def write_atomic(path, doc):
