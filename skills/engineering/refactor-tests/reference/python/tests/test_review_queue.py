@@ -739,10 +739,101 @@ def test_option_b_has_no_triage_ticket_for_a_criterion_without_tickets(tmp_path,
 def test_option_c_publishes_nothing_and_still_writes_the_summary(tmp_path, capsys):
     _setup(tmp_path, _plan(_many(51)), HEALTHY_LEDGER)
     _evidence(tmp_path)
-    out = _render(tmp_path, capsys, "--stage", "--tracker", "real")
-    assert out["volume"]["action"] == "ask" and out["staged"] is True
+    assert _render(tmp_path, capsys, "--stage", "--tracker", "real")["volume"]["action"] == "ask"
+    out = _render(tmp_path, capsys, "--stage", "--tracker", "real", "--choice", "c")
+    assert (out["volume"]["action"], out["volume"]["choice"], out["volume"]["chosen_by"]) == ("declined", "c", "asked")
+    assert out["triage"] is False
     assert (tmp_path / ".scratch/refactor-tests/review-queue.md").exists()
-    assert _summary(tmp_path)["volume"]["over"] is True
-    # the user picks (c): Step 11 records `declined` and calls neither to-tickets nor record
+    assert _summary(tmp_path)["volume"] == out["volume"] and _summary(tmp_path)["volume"]["over"] is True
+    # Step 11 records `declined` and calls neither to-tickets nor record: the drafts stay, nothing is published
+    base = tmp_path / ".scratch" / SLUG
+    assert "#" not in (base / "manifest.md").read_text().split("---\n")[-1]
     assert not (tmp_path / ".scratch/refactor-tests/review-index.json").exists()
-    assert not (tmp_path / ".scratch" / SLUG / "issues").exists()
+    assert not (base / "issues").exists()
+
+
+# --- volume gate answers: who chose, explicit flags, resume (ADR-0080) ---------
+
+def _volume(out):
+    return out["volume"]["action"], out["volume"]["choice"], out["volume"]["chosen_by"]
+
+
+def test_unattended_default_record_does_not_suppress_the_interactive_ask(tmp_path, capsys):
+    recorded = {"tickets": 51, "threshold": 50, "over": True, "action": "triage", "choice": "b",
+                "chosen_by": "unattended-default"}
+    _setup(tmp_path, _plan(_many(51)), {"publish": {"status": "queued", "volume": recorded}})
+    out = _render(tmp_path, capsys, "--tracker", "local", "--stage")
+    assert _volume(out) == ("ask", None, None) and out["triage"] is False
+
+
+def test_asked_record_is_not_overridden_by_the_unattended_default(tmp_path, capsys):
+    recorded = {"tickets": 51, "threshold": 50, "over": True, "action": "publish", "choice": "a", "chosen_by": "asked"}
+    _setup(tmp_path, _plan(_many(51)), {"publish": {"status": "queued", "volume": recorded}})
+    out = _render(tmp_path, capsys, "--tracker", "local", "--unattended", "--stage")
+    assert _volume(out) == ("publish", "a", "asked") and out["triage"] is False and len(out["tickets"]) == 51
+
+
+@pytest.mark.parametrize("flag", [("--choice", "b"), ("--triage",)])
+def test_explicit_answer_wins_over_the_unattended_real_tracker_default(tmp_path, capsys, flag):
+    _setup(tmp_path, _plan(_many(51)))
+    out = _render(tmp_path, capsys, "--tracker", "real", "--unattended", "--stage", *flag)
+    assert _volume(out) == ("triage", "b", "asked") and out["triage"] is True and len(out["tickets"]) == 1
+
+
+def test_triage_and_choice_are_mutually_exclusive(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(3)))
+    with pytest.raises(SystemExit):
+        _render(tmp_path, capsys, "--tracker", "real", "--triage", "--choice", "a")
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("choice,action,titles", [
+    ("a", "publish", ["Review 1 dead-test test in tests/m000", "Review 1 dead-test test in tests/m001"]),
+    ("b", "triage", ["Triage 2 dead-test tests from the review queue"]),
+    ("c", "declined", ["Review 1 dead-test test in tests/m000", "Review 1 dead-test test in tests/m001"]),
+])
+def test_explicit_choice_at_50_tickets_or_fewer_applies_and_staging_matches(tmp_path, capsys, choice, action, titles):
+    _setup(tmp_path, _plan(_many(2)))
+    out = _render(tmp_path, capsys, "--tracker", "real", "--stage", "--choice", choice)
+    assert _volume(out) == (action, choice, "asked") and out["volume"]["over"] is False
+    assert out["triage"] is (action == "triage") and [t["title"] for t in out["tickets"]] == titles
+
+
+# --- record: triage tickets have no keys (option (b)) -------------------------
+
+def _publish(tmp_path, *lines):
+    (tmp_path / ".scratch" / SLUG / "manifest.md").write_text("---\nartifact-type: tickets\n---\n" + "".join(f"{ln}\n" for ln in lines))
+
+
+def test_triage_only_staging_with_the_triage_ticket_published_is_published(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(3)))
+    (t,) = _render(tmp_path, capsys, "--stage", "--triage")["tickets"]
+    _publish(tmp_path, f"#9 {t['nn']}-{t['slug']}")
+    out = _record(tmp_path, capsys)
+    assert out == {"status": "published", "tickets": [{"ref": "#9", "keys": []}], "unpublished": [], "unmatched": []}
+    assert _read_index(tmp_path) == {}  # triage items stay out of the cross-run index
+
+
+def test_triage_only_staging_with_nothing_published_is_not_published(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(3)))
+    (t,) = _render(tmp_path, capsys, "--stage", "--triage")["tickets"]
+    out = _record(tmp_path, capsys)
+    assert out["status"] == "drafted" and out["tickets"] == []
+    assert out["unpublished"] == [f"{t['nn']}-{t['slug']}"]
+
+
+def test_mixed_fix_and_triage_staging_credits_both_and_indexes_only_keys(tmp_path, capsys):
+    _setup(tmp_path, _plan([*_many(3), _cand("test_f", "flaky", seed=3, file="tests/m009/test_x.py")]))
+    fix, tri = _render(tmp_path, capsys, "--stage", "--triage")["tickets"]
+    fix_key = "fix|flaky|tests/m009/test_x.py::test_f"
+    _publish(tmp_path, f"#1 {fix['nn']}-{fix['slug']}")
+    out = _record(tmp_path, capsys)
+    assert out["status"] == "partial" and out["unpublished"] == [f"{tri['nn']}-{tri['slug']}"]
+    # to-tickets renamed the triage ticket: its body still holds the criterion's triage text
+    base = tmp_path / ".scratch" / SLUG / "draft-issues"
+    (base / f"{tri['nn']}-{tri['slug']}.md").rename(base / f"{tri['nn']}-triage-dead-tests.md")
+    _publish(tmp_path, f"#1 {fix['nn']}-{fix['slug']}", f"#2 {tri['nn']}-triage-dead-tests")
+    out = _record(tmp_path, capsys)
+    assert out["status"] == "published" and out["unpublished"] == []
+    assert out["tickets"] == [{"ref": "#1", "keys": [fix_key]}, {"ref": "#2", "keys": []}]
+    assert _read_index(tmp_path) == {fix_key: {"ref": "#1", "slug": SLUG}}
