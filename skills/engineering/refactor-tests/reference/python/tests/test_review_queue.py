@@ -4,6 +4,8 @@ Run: uv run --with pytest pytest reference/python/tests
 """
 import json
 
+import pytest
+
 from render_review_queue import main, slugify  # conftest.py puts HELPERS on sys.path
 
 STARTED = "2026-10-16T19-26-00"
@@ -320,3 +322,199 @@ def test_hand_edited_index_entries_do_not_abort_the_run(tmp_path, capsys):
     _setup(tmp_path, _plan([_cand("test_a", "dead-test")]))
     out = _render(tmp_path, capsys)
     assert out["already_tracked"] == [{"key": f"review|dead-test|{A}::test_a", "ref": "?"}]
+
+
+def test_review_text_is_criterion_specific_and_coverage_criteria_do_not_offer_bare_remove():
+    from render_review_queue import WHAT
+    for crit in ("coverage-subset", "cost", "pinning"):
+        text = WHAT["review"][crit]
+        assert "keep, rewrite at the interface, or remove" not in text
+        assert "Follow-up: mutation deletion gate (optional)" in text
+        assert "Coverage shows execution, not assertion strength" in text
+    assert "Follow-up: mutation deletion gate" not in WHAT["review"]["dead-test"]
+
+
+def _draft(tmp_path, ticket):
+    return (tmp_path / ".scratch" / SLUG / "draft-issues" / f"{ticket['nn']}-{ticket['slug']}.md").read_text()
+
+
+def test_staged_review_ticket_uses_its_criterion_text(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_s", "coverage-subset")]))
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert "Follow-up: mutation deletion gate (optional)" in _draft(tmp_path, ticket)
+
+
+def test_fix_ticket_carries_reproduce_line_with_seed_and_plugin(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
+           {"runners": {"python": "pytest"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
+
+
+def test_fix_ticket_reproduce_line_for_random_order_plugin_needs_no_install(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "order-dependent", seed=7)]),
+           {"order_gate": {"plugin": "pytest-random-order", "seed": 7}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"pytest --random-order-bucket=global --random-order-seed=7 {A}" in _draft(tmp_path, ticket)
+
+
+def test_reproduce_line_replaces_recorded_no_randomly_flag_and_does_not_nest_uv(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
+           {"runners": {"python": "uv run pytest -p no:randomly"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
+    assert "no:randomly" not in _draft(tmp_path, ticket)
+
+
+@pytest.mark.parametrize("flag", ["-pno:randomly", "-p=no:randomly"])
+def test_reproduce_line_drops_joined_no_randomly_forms(tmp_path, capsys, flag):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=99)]),
+           {"runners": {"python": f"uv run pytest {flag}"}, "order_gate": {"plugin": "pytest-randomly", "seed": 99}})
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"uv run --with pytest-randomly pytest -p randomly --randomly-seed=99 {A}" in _draft(tmp_path, ticket)
+    assert "no:randomly" not in _draft(tmp_path, ticket)
+
+
+def test_reproduce_line_installs_for_a_venv_launcher_and_omits_line_without_seed(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_f", "flaky", seed=5), _cand("test_g", "order-dependent")]),
+           {"runners": {"python": ".venv/bin/python -m pytest"}, "order_gate": {"plugin": "pytest-randomly"}})
+    tickets = _render(tmp_path, capsys, "--stage")["tickets"]
+    bodies = [_draft(tmp_path, t) for t in tickets]
+    with_seed = [b for b in bodies if "--randomly-seed=5" in b]
+    assert len(with_seed) == 1
+    assert (".scratch/refactor-tests/pytest-randomly pytest-randomly && PYTHONPATH=.scratch/refactor-tests/pytest-randomly"
+            f"${{PYTHONPATH:+:$PYTHONPATH}} .venv/bin/python -m pytest -p randomly --randomly-seed=5 {A}") in with_seed[0]
+    assert "uv run" not in with_seed[0]
+    assert all("Reproduce:" not in b for b in bodies if b is not with_seed[0])
+
+
+def test_no_raise_contract_is_counted_never_ticketed_and_kind_shows_in_the_item_line(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_valid", "dead-test", kind="no-raise-contract"),
+                            _cand("test_soft", "dead-test", kind="fail-soft")]))
+    out = _render(tmp_path, capsys, "--stage")
+    assert out["items"] == 1
+    assert out["report_only"] == {"dead-test/no-raise-contract": 1}
+    (ticket,) = out["tickets"]
+    body = _draft(tmp_path, ticket)
+    assert "test_valid" not in body
+    assert f"`{A}::test_soft` — kind: fail-soft — " in body
+    assert "test_valid" not in (tmp_path / ".scratch/refactor-tests/review-queue.md").read_text()
+
+
+def test_dead_test_and_pinning_group_by_kind_and_collaborator_double_is_for_an_agent(tmp_path, capsys):
+    _setup(tmp_path, _plan([
+        _cand("test_a", "dead-test", kind="fail-soft"), _cand("test_b", "dead-test", kind="never-fails"),
+        _cand("test_c", "dead-test", kind="fail-soft"),
+        _cand("test_d", "pinning", kind="collaborator-double"), _cand("test_e", "pinning", kind="private"),
+        _cand("test_f", "pinning"),
+    ]))
+    tickets = _render(tmp_path, capsys)["tickets"]
+    assert [(t["title"], t["label"], t["ids"]) for t in tickets] == [
+        ("Review 2 dead-test tests (fail-soft) in tests/pkg/adapters", "ready-for-human", 2),
+        ("Review 1 dead-test test (never-fails) in tests/pkg/adapters", "ready-for-human", 1),
+        ("Review 1 pinning test in tests/pkg/adapters", "ready-for-human", 1),
+        ("Review 1 pinning test (collaborator-double) in tests/pkg/adapters", "ready-for-agent", 1),
+        ("Review 1 pinning test (private) in tests/pkg/adapters", "ready-for-human", 1),
+    ]
+
+
+def test_review_text_follows_the_kind():
+    from render_review_queue import WHAT, review_what
+    double = review_what("pinning", "collaborator-double")
+    assert "Re-point the stub (deps injection or a checked patch); do not delete." in double
+    assert "Remove a test only when a mutation check" not in double
+    for kind in ("private", "constant", "public-non-seam", "other", None):
+        assert review_what("pinning", kind) == WHAT["review"]["pinning"]
+    assert "Add an assertion on the log or the return value" in review_what("dead-test", "fail-soft")
+    assert "Replace the skip with an assertion, or remove the test." in review_what("dead-test", "never-fails")
+    assert review_what("dead-test", None) == review_what("dead-test", "no-assertion") == WHAT["review"]["dead-test"]
+    assert "keep, rewrite at the interface, or remove" not in WHAT["review"]["dead-test"]
+
+
+def test_staged_collaborator_double_ticket_says_do_not_delete(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_d", "pinning", kind="collaborator-double")]))
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    body = _draft(tmp_path, ticket)
+    assert "do not delete" in body
+    assert "Remove a test only when a mutation check of its module shows no lost kill" not in body
+    assert "label: ready-for-agent" in body and "## Status\nready-for-agent" in body
+
+
+def test_items_with_any_kind_or_none_pass_through(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_a", "cost", kind="hotspot-blocked", call_s=1.0),
+                            _cand("test_b", "dead-test", kind=["odd"]),
+                            _cand("test_c", "pinning", kind=7),
+                            _cand("test_d", "coverage-subset")]))
+    out = _render(tmp_path, capsys, "--stage")
+    assert out["items"] == 4 and out["report_only"] == {}
+    titles = [t["title"] for t in out["tickets"]]
+    assert "Review 1 cost test in tests/pkg/adapters" in titles  # kind does not split other criteria
+    assert "Review 1 dead-test test in tests/pkg/adapters" in titles  # a non-string kind does not split
+    queue = (tmp_path / ".scratch/refactor-tests/review-queue.md").read_text()
+    assert "kind: hotspot-blocked" in queue and "kind: ['odd']" in queue and "kind: 7" in queue
+
+
+def test_unknown_string_kind_splits_dead_test_and_keeps_the_criterion_text(tmp_path, capsys):
+    from render_review_queue import WHAT
+    _setup(tmp_path, _plan([_cand("test_a", "dead-test", kind="weird"), _cand("test_b", "dead-test")]))
+    tickets = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert [t["title"] for t in tickets] == ["Review 1 dead-test test in tests/pkg/adapters",
+                                             "Review 1 dead-test test (weird) in tests/pkg/adapters"]
+    assert WHAT["review"]["dead-test"] in _draft(tmp_path, tickets[1])
+
+
+def _hotspot(function="src/pkg/db.py:connect", tests=(f"{A}::test_slow",), **extra):
+    spawns = {t: 3 for t in tests}
+    return {"criterion": "hotspot", "function": function, "share": 0.84, "tests": list(tests),
+            "subprocess_spawns": spawns, "via": ["subprocess.py:run"], **extra}
+
+
+def test_hotspot_is_for_an_agent_and_numbered_after_fix_and_before_review_tickets(tmp_path, capsys):
+    from render_review_queue import LABELS, WHAT
+    assert LABELS["hotspot"] == "ready-for-agent"
+    assert "Fix this in the test tier (a fixture or stub), never by deleting tests." in WHAT["hotspot"]
+    assert "Re-run the evidence pass after the fix, because `call_s` order changes." in WHAT["hotspot"]
+    _setup(tmp_path, _plan([_cand("test_c", "cost", call_s=2.0), _cand("Cls::test_f", "flaky", seed=3),
+                            _hotspot(), _cand("test_s", "coverage-subset", call_s=2.0)],
+                           [{"module": "src/pkg/core.py", "seam": "run"}]))
+    tickets = _render(tmp_path, capsys)["tickets"]
+    assert [(t["nn"], t["title"].split(" ")[:2], t["label"]) for t in tickets] == [
+        ("01", ["Fix", "1"], "ready-for-agent"),
+        ("02", ["Fix", "cost"], "ready-for-agent"),
+        ("03", ["Review", "1"], "ready-for-human"),
+        ("04", ["Review", "1"], "ready-for-human"),
+        ("05", ["Add", "interface"], "ready-for-agent"),
+    ]
+    assert tickets[1]["title"] == "Fix cost hotspot src/pkg/db.py:connect in the test tier"
+
+
+def test_hotspot_blocks_only_cost_and_coverage_subset_tickets_in_its_test_directories(tmp_path, capsys):
+    core = "tests/pkg/core/test_core.py"
+    _setup(tmp_path, _plan([
+        _hotspot(tests=(f"{A}::test_slow[1]", f"{A}::Cls::test_slower")),
+        _cand("test_c", "cost", call_s=2.0), _cand("test_s", "coverage-subset", call_s=1.0),
+        _cand("test_d", "dead-test"), _cand("test_p", "pinning"),
+        _cand("test_c", "cost", file=core, call_s=2.0), _cand("test_s", "coverage-subset", file=core),
+    ]))
+    tickets = _render(tmp_path, capsys)["tickets"]
+    hot = next(t for t in tickets if t["title"].startswith("Fix cost hotspot"))
+    edge = f"{hot['nn']}-{hot['slug']}"
+    blocked = {t["title"] for t in tickets if edge in t["blocked_by"]}
+    assert blocked == {"Review 1 cost test in tests/pkg/adapters", "Review 1 coverage-subset test in tests/pkg/adapters"}
+
+
+def test_hotspot_ticket_body_lists_share_tests_and_subprocess_spawns(tmp_path, capsys):
+    from render_review_queue import WHAT
+    tests = (f"{A}::test_a", "tests/pkg/core/test_core.py::test_b")
+    _setup(tmp_path, _plan([_hotspot(tests=tests)]))
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    body = _draft(tmp_path, ticket)
+    assert "label: ready-for-agent" in body and WHAT["hotspot"] in body
+    assert f"subprocess_spawns: `{tests[0]}` 3, `{tests[1]}` 3" in body
+    assert "share 0.84" in body and "via: `subprocess.py:run`" in body
+    assert "key: `hotspot|hotspot|src/pkg/db.py:connect`" in body
+
+
+def test_hotspot_entry_without_a_function_is_ignored(tmp_path, capsys):
+    _setup(tmp_path, _plan([{"criterion": "hotspot", "share": 0.9}, _hotspot(function=7)]))
+    assert _render(tmp_path, capsys)["tickets"] == []

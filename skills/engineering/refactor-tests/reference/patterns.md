@@ -94,11 +94,20 @@ The dead-test criterion flags tests with no assertion statements. Use this vocab
 
 | Language | Assertion keywords |
 |---|---|
-| Python | `assert`, `pytest.raises`, `pytest.warns` |
+| Python | `assert`, `raise`, `pytest.raises`, `pytest.warns`, `pytest.fail`, `pytest.deprecated_call`; a call to any function whose name starts with `assert`, `_assert`, `check`, `_check`, `expect`, `_expect`, `verify`, or `_verify`; a fixture the test requests, or a helper it calls, that is defined in the test file or `conftest.py` and whose body asserts |
 | TypeScript/JavaScript | `expect`, `assert` (chai), `should` (should.js), `.to.throw` (chai), `.toThrow` (jest) |
 | Go | `t.Error`, `t.Errorf`, `t.Fatal`, `t.Fatalf`, `require.*`, `assert.*` (testify) |
 | Java | `assertThat`, `assertTrue`, `assertEquals`, `fail` (JUnit/AssertJ) |
 | Kotlin | `assertThat`, `assertTrue`, `assertEquals`, `fail` (same as Java) |
+
+**Dead-test kinds.** Each dead-test entry carries `kind`, from this ordered list. The order is the precedence: when several kinds match, the first one wins.
+
+| Order | `kind` | Matches | Disposition |
+|---|---|---|---|
+| 1 | `no-raise-contract` | The last statement calls a documented raiser (bare `validate(` or `*.validate(` on any receiver, or a name the project lists with `--raiser`: a bare call matches any raiser with that last name, a dotted call matches only when one dotted name ends with the other, so `config.load(` matches `pkg.config.load`, never `other.load`), or the test name or docstring says "does not raise" or "must not raise". | Keep. It is the only guard against an over-strict validator. Counted in the Final report, never ticketed. |
+| 2 | `fail-soft` | The body sets up an error (`side_effect=…Error`) and calls the code under test. | Add an assertion on the log or the return value. Check it by hand-mutating the function to a silent no-op: the test must fail. |
+| 3 | `never-fails` | The only outcome other than a pass is `pytest.skip` (or `pytest.importorskip`). | Replace the skip with an assertion, or remove the test. |
+| 4 | `no-assertion` | Everything else. | Add an assertion, or remove the test. |
 
 ## Import rewriting (AST-based, per language)
 
@@ -154,6 +163,8 @@ This preserves the package (compilation works) and allows filtering: `go test ./
   },
   "seams": {
     "status": "confirmed",
+    "confirmed_file": "ok",
+    "confirm_path": "per-module",
     "modules": { "src/protrading/adapters/instruments.py": { "seams": [ { "name": "parse_instrument", "signal": "__all__", "status": "confirmed" } ] } },
     "propose_warnings": [ "src/protrading/adapters/__init__.py: __all__ is computed or mutated, not a literal list; only its literal names are proposed under __all__ and public-api is not used" ],
     "warnings": [ "src/protrading/adapters/__init__.py: __all__ is computed or mutated, not a literal list; only its literal names are proposed under __all__ and public-api is not used" ]
@@ -174,7 +185,8 @@ This preserves the package (compilation works) and allows filtering: `go test ./
       { "file": "tests/protrading/adapters/test_instruments.py", "replaced": ["test_parse_1", "test_parse_2", "test_parse_3"], "consolidated_name": "test_parse_parametrized" },
       { "file": "tests/protrading/adapters/test_instruments.py", "tests": ["test_fmt_a", "test_fmt_b", "test_fmt_c"], "consolidated_name": "test_fmt_parametrized", "skipped": "composite edit failed: decorator order differs" }
     ],
-    "call_time": { "label": "serial call time, not wall time", "before_s": 41.2, "after_s": 37.9, "delta_s": -3.3, "removed": [ { "id": "tests/protrading/adapters/test_instruments.py::test_parse_duplicate", "call_s": 0.012 } ], "warning": null }
+    "hotspot_probe": { "status": "ok", "reason": null, "n": 2, "profiled": ["tests/protrading/db/test_store.py::test_roundtrip", "tests/protrading/db/test_store.py::test_query"], "failed": [ { "id": "tests/protrading/db/test_store.py::test_bulk", "reason": "pytest exit 1" } ], "hotspots": 1, "warnings": ["profile of tests/protrading/db/test_store.py::test_bulk failed (pytest exit 1); left out of n"] },
+    "call_time": { "label": "serial call time, not wall time", "before_s": 41.2, "after_s": 37.9, "delta_s": -3.3, "attributable_s": 0.012, "removed": [ { "id": "tests/protrading/adapters/test_instruments.py::test_parse_duplicate", "call_s": 0.012 } ], "warning": null }
   },
   "spring": {
     "baseline": { "context_count": 5, "wall_time_seconds": 42.5 },
@@ -270,33 +282,79 @@ This preserves the package (compilation works) and allows filtering: `go test ./
 }
 ```
 
-`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch.
+`simplification-plan.json` is the Phase B artifact. Note: the `consolidated_body` field contains concrete parametrized code, not a sketch. Every parametrization carries `class` (the test class; `null` for top-level tests), and its `tests` and `consolidated_name` take the `Class::test` form. An `unanalyzable` entry holds `{ file, reason }`; one for a cluster the helper skipped also carries that cluster's `tests`. `reference/python/scan_static.py` builds the `removals`, the dead-test `review_candidates`, and the `parametrizations` for Python; `reference/python/apply_param.py` applies the parametrizations (SKILL.md Step 9).
 
 The top-level `schema_version` is `2`.
 
-Every `review_candidates` entry has the base fields `{ file, test_name, criterion, evidence }`. Some criteria add optional fields:
+Every `review_candidates` entry except `hotspot` (below) has the base fields `{ file, test_name, criterion, evidence }`. Some criteria add optional fields:
 
 | Field | Type | Criteria that set it |
 |---|---|---|
 | `call_s` | number, seconds | coverage-subset, cost |
 | `time_saved_s` | number, seconds | coverage-subset, cost |
 | `note` | string | pinning |
+| `kind` | string | dead-test (see Assertion vocabulary → Dead-test kinds), pinning (see Seam classification → Pinning kinds) |
 | `seed` | integer | order-dependent, flaky |
 | `failing_ids` | array of test ids | order-dependent, flaky |
 
 A test that meets several criteria gets one entry per criterion, not one merged entry.
 
+A `hotspot` entry has no `file` or `test_name`: it names a function, not a test. `reference/python/hotspot_probe.py analyze` builds it from the Step 8 profiles (SKILL.md Step 8 → Hotspot probe):
+
+```json
+{
+  "criterion": "hotspot",
+  "function": "src/protrading/db/connection.py:connect",
+  "share": 0.84,
+  "tests": ["tests/protrading/db/test_store.py::test_roundtrip", "tests/protrading/db/test_store.py::test_query"],
+  "subprocess_spawns": { "tests/protrading/db/test_store.py::test_query": 12, "tests/protrading/db/test_store.py::test_roundtrip": 12 },
+  "via": ["keyring/core.py:get_password", "subprocess.py:run"]
+}
+```
+
+`function` is `<path>:<name>`, the path relative to `site-packages`, the standard library, or the project root; a built-in reads as its pstats name, except `builtins` dispatchers such as `next`, which never count. The probe tells functions apart by path, line and name: when two functions print the same `<path>:<name>` (two `__init__` methods in one file), each prints as `<path>:<name>:<line>`, and their hits are never added together. `share` is the mean, over the profiles where the function itself holds at least 0.5, of its cumulative time divided by the test's profiled time (setup, call, teardown; a session-scoped fixture set up by the profiled test counts, so read a hotspot that sits in fixture setup with that in mind). `tests` are the tests where it or a `via` function holds at least 0.5. `subprocess_spawns` maps every usable profiled test id to the processes it started (`_posixsubprocess.fork_exec`, `posix_spawn`, `system`, `_winapi.CreateProcess` calls). `via` lists the other hotspots this one reaches through calls: a hotspot that another hotspot calls is folded into the hotspot at the top of that call chain, so one shared cause makes one entry.
+
+**Hotspot rule.** With n usable profiles, a function is a hotspot when its share is at least 0.5 in at least max(2, ceil(n / 2)) of them: n=2 needs 2 hits, n=3 needs 2, n=4 needs 2, n=5 needs 3. One hit is never a hotspot. pytest and pluggy frames, the test function, and every caller of the test function (a decorator, an async runner) are wrappers and never count. A profile that is missing, unreadable, or empty, or a test whose profile run exited non-zero, is excluded from n and is listed under `failed`. With fewer than 2 usable profiles no hotspot is emitted and `warnings` says so.
+
 `test_name` is the test id after the file path. Its form follows what the criterion judges. Coverage-subset and cost judge evidence ids, so their `test_name` keeps the parameter suffix (`Class::test[param]`): each parametrized id is its own candidate, with its own `call_s`. Dead-test and pinning judge test functions in the source, so their `test_name` has no suffix (`Class::test`). Order-dependent and flaky take `test_name` from each test a demoted change involves: the removal's own `test_name`, a kept duplicate's `duplicate_of`, or each name in a parametrization's `tests`. Stripping the suffix from coverage-subset entries would merge distinct candidates into duplicate names, so the two forms stay.
 
-`reference/python/select_candidates.py` builds the coverage-subset and cost entries from `test-evidence.json`; `time_saved_s` equals the test's own `call_s` (serial time, not wall time). `reference/python/calltime_delta.py` builds ledger `simplification.call_time`: total `call_s` before (evidence pass) and after (simplify validation run), `delta_s = after_s - before_s`, and `call_s` per removed test id (ids are node ids; an id matches its evidence entry exactly or through its parametrized ids `<id>[...]`). A bare `<file>::<test>` names a top-level test only. With no exact match it gets `call_s: null` and is never charged a class method's `call_s`, even when only one `<file>::<Class>::<test>` has that name; when same-name class methods exist, `warning` names them so the caller can pass the full node id. A missing validation-run calltime file also gives null figures and a warning. With evidence status other than `ok`, every figure is `null` and `warning` names the reason.
+`reference/python/select_candidates.py` builds the coverage-subset and cost entries from `test-evidence.json`; `time_saved_s` equals the test's own `call_s` (serial time, not wall time). `reference/python/calltime_delta.py` builds ledger `simplification.call_time`: total `call_s` before (evidence pass) and after (simplify validation run), `delta_s = after_s - before_s`, `attributable_s` (the sum of `call_s` of the removed and replaced tests), and `call_s` per removed test id (ids are node ids; an id matches its evidence entry exactly or through its parametrized ids `<id>[...]`). A bare `<file>::<test>` names a top-level test only. With no exact match it gets `call_s: null` and is never charged a class method's `call_s`, even when only one `<file>::<Class>::<test>` has that name; when same-name class methods exist, `warning` names them so the caller can pass the full node id. A missing validation-run calltime file also gives null figures and a warning. With evidence status other than `ok`, every figure is `null` and `warning` names the reason. When |`delta_s`| > 2 × `attributable_s` + 2% of `before_s`, `warning` is "delta exceeds what the changes can explain; treat it as run-to-run variance". When `before_s` is zero the check is not computed and `warning` says so.
 
 An `exact-duplicate` removal also carries `duplicate_of`: the name of the test that stays, and `duplicate_of_file` when that test is in another file (default: the removal's `file`). Step 8b reads both to treat that kept test as involved in the change.
 
 `evidence.<lang>.status` is `ok`, `skipped`, or `failed`; `reason` is a one-line string when not `ok`; `tests` is the number of entries written. Resume reuses a recorded status rather than re-running. The top-level `evidence` object in `simplification-plan.json` is `{ "file": ".scratch/refactor-tests/test-evidence.json", "status": "ok|skipped|failed" }`: `ok` when any language is `ok`, else `failed` when any is `failed`, else `skipped`.
 
+## What each criterion proves
+
+Each evidence-based criterion shows less than its name suggests. A review ticket is a prompt to look, never a deletion order.
+
+| Criterion | Proves | Does not prove |
+|---|---|---|
+| dead-test | No assertion statement in the body. | That no exception path asserts. See [Schema-migration tests](#schema-migration-tests-hint) for a kind that often looks dead. |
+| coverage-subset | The test's lines and arcs are covered by other passing tests. | Anything about assertions. The result is one greedy set cover. See [Schema-migration tests](#schema-migration-tests-hint). |
+| cost | Slow and coverage-subset. | Why it is slow. Its `time_saved_s` is an upper bound if the test is deleted; a hotspot fix often saves the time with no test deleted. |
+| hotspot | One function holds at least half the profiled time of at least half the profiled cost candidates. | That it is the only cause, or that tests outside the profiled ones share it. |
+| pinning, `covered_through_interface` | Lines are a subset of one interface test's lines. | Arcs, assertions, or the same behaviour. |
+
+- **Greedy single set cover.** The coverage-subset result comes from one greedy pass: it names tests whose coverage the rest of the suite holds, not the smallest or the only such set. Order decides which of two mutually covering tests is flagged: the slower one, since flagged tests leave the pool. Removing all flagged tests keeps line and arc coverage, but says nothing about assertions.
+- **Parametrized cases.** One case of a table-driven test is almost always wrong to flag alone: the cases share one body and differ by input. Judge the whole test, not the case.
+- **Several modules.** A test with entries for several modules is removable only when every entry allows it.
+- **Removal gate.** Remove a test on this evidence only when a mutation check of its module shows no lost kill. See `SKILL.md` → Follow-up: mutation deletion gate (optional).
+
+### Schema-migration tests (hint)
+
+Schema-migration tests (Alembic, Flyway, Liquibase, Django) mix four kinds:
+
+- static revision or source checks: deletable;
+- head-schema invariants: move to a schema test;
+- data movement on legacy rows: deletable only once every persistent database is past that revision (an operator fact);
+- misfiled repo or model tests: move.
+
+Never apply a "delete non-head migration tests" rule as a whole. The classification needs project knowledge, so treat this as a hint for the reviewer, not a step of the run.
+
 ## Review queue (Step 11)
 
-`reference/python/render_review_queue.py` turns the run's human-action items into `.scratch/refactor-tests/review-queue.md` and, with `--stage`, into `to-tickets` drafts. Decisions: ADR-0079.
+`reference/python/render_review_queue.py` turns the run's human-action items into `.scratch/refactor-tests/review-queue.md` and, with `--stage`, into `to-tickets` drafts. Decisions: ADR-0079, amended by ADR-0080.
 
 **Items and keys.** Each item belongs to one category and has the key `<category>|<criterion>|<id>`:
 
@@ -304,11 +362,12 @@ An `exact-duplicate` removal also carries `duplicate_of`: the name of the test t
 |---|---|---|---|---|
 | review | plan `review_candidates` | `dead-test`, `coverage-subset`, `cost`, `pinning` | `<file>::<test_name>` | `ready-for-human` |
 | fix | plan `review_candidates` | `order-dependent`, `flaky` | `<file>::<test_name>` | `ready-for-agent` |
+| hotspot | plan `review_candidates` | `hotspot` | `<function>` | `ready-for-agent` |
 | add | plan `seams.add_candidates` | `untested-seam` | `<module>::<seam>` | `ready-for-agent` |
 | skipped | ledger `simplification.parametrizations` with `skipped` | `skipped-parametrization` | `<file>::<consolidated_name>` | `ready-for-human` |
 | skipped | ledger `spring.skipped_clusters` | `skipped-spring-cluster` | `<cluster>` | `ready-for-human` |
 
-**Grouping.** One ticket per category, criterion, and module. The module is the test file's directory, the source module for add candidates, and the cluster for Spring clusters. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then review, add, and skipped. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them. The only blocking edge: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`).
+**Grouping.** One ticket per category, criterion, and module. Dead-test and pinning items also split by `kind`: one ticket per criterion, kind, and module, with the kind in the title. A pinning `collaborator-double` ticket is labelled `ready-for-agent`; every other review ticket stays `ready-for-human`. A dead-test `no-raise-contract` item is never ticketed: `render` leaves it out of the queue and counts it in its output under `report_only`. The helper accepts an item with any `kind` value, or none. Any string kind on a dead-test or pinning item splits the ticket, also one the helper has no text for. A kind on another criterion, or a non-string kind, shows in the item line and does not split the ticket. The module is the test file's directory, the source module for add candidates, the cluster for Spring clusters, and the function for a hotspot, so each hotspot gets its own ticket, titled `Fix cost hotspot <function> in the test tier`. A group over 25 ids splits into tickets titled `(part i of n)`. Tickets are numbered fix first, then hotspot, review, add, and skipped, so every hotspot ticket comes before every review ticket. Each ticket lists its ids with an evidence excerpt of at most two lines, plus `call_s` and `time_saved_s`, `note`, `failing_ids`, the skipped `tests`, or the Spring `classes` when the item has them; a hotspot item lists its `share`, profiled `tests`, `subprocess_spawns` per test, and `via`. Two blocking edges: a fix ticket blocks each review ticket that holds a test matching one of its ids (`order_gate.matches`); a hotspot ticket blocks each `cost` and `coverage-subset` ticket that holds a test in the directory of one of the hotspot's `tests`, because fixing the hotspot changes their `call_s` order (ADR-0080 Decision 2). A hotspot ticket's text (`WHAT["hotspot"]`) says: "Fix this in the test tier (a fixture or stub), never by deleting tests. Re-run the evidence pass after the fix, because `call_s` order changes." A review ticket's "What to build" text depends on its criterion (`WHAT["review"]`): coverage-subset, cost and pinning carry the mutation-gate caveat (see What each criterion proves). A known kind replaces that text (`review_what`): a dead-test ticket states its kind's disposition (no kind reads as `no-assertion`), and a pinning `collaborator-double` ticket says "Re-point the stub (deps injection or a checked patch); do not delete." with no mutation-gate caveat. Other pinning kinds keep the pinning text. A fix ticket ends its text with a `Reproduce:` command built from the ledger `runners.python` command, the `order_gate.plugin` install, and the seed, for example `uv run --with pytest-randomly pytest -p randomly --randomly-seed=<seed> <file>`.
 
 **Staged files** under `.scratch/<slug>/`, where the slug is `refactor-tests-review-<started_at>` lowercased (the `to-tickets` slug rule applied to the title `refactor-tests review <started_at>`):
 - `spec.md`: that title as H1, `Project: <name>`, item counts, already-tracked items, and a "Proposed tickets" table (NN, title, label, blocked by).
@@ -333,7 +392,7 @@ An `exact-duplicate` removal also carries `duplicate_of`: the name of the test t
 
 ## Seam classification (Python)
 
-Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
+Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `reuse`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
 
 **Seam signals**, per source module, strongest first. A name takes the first signal that proposes it, and the proposal records that signal.
 
@@ -351,9 +410,23 @@ Names with a leading underscore are never proposed. Test files and `conftest.py`
 - **Pinning candidate**: at least one reference is not a seam (`internals` lists them, e.g. `_tokenize`, or a mock patched at an internal path).
 - One test can be an interface test for one module and a pinning candidate for another.
 
-**Coverage against the interface** (needs evidence status `ok`). A seam's body lines are the lines of its body statements (decorators and the `def`/`class` header excluded: the header runs at import, outside any `|run` context). A seam is **reached** when an interface test's `covered` lines for the module intersect its body lines; parametrized ids merge by their base id. A confirmed seam no interface test reaches is an **add candidate**; pinning tests never count. A seam whose name has no function or class body in its module (a re-export or a constant in `__all__`) is never an add candidate; the report warns. A test that imports a name through a package `__init__` re-export (`from pkg import run`, where `pkg/__init__.py` has `from .mod import run`) is linked to the `__init__`, not to `mod.py`, so it is not an interface test of `mod.py` and its coverage does not count toward reaching `mod.py`'s seam. When such a seam is an add candidate, the helper adds a warning that the candidate needs a check by hand. Re-exports are followed through every package level: when `pkg/sub/__init__.py` re-exports `run` from `.mod` and `pkg/__init__.py` re-exports it from `.sub`, a test importing `from pkg import run` is linked to `pkg/__init__.py` the same way: it does not reach the seam in `pkg/sub/mod.py`, and that add candidate gets the warning. A pinning candidate has `covered_through_interface: true` when some interface test of the same module covers a superset of its lines in that module (a pinning test with no coverage in the evidence gets `false`, with a warning); the note is then "covered through the interface", otherwise "move the assertion to the interface". With evidence status other than `ok`, `add_candidates` and `covered_through_interface` are omitted (keys absent) and the note is "move the assertion to the interface".
+**Test doubles.** `classify` reads, per source module, which top-level names the module binds by an import and which it defines (`def`, `class`, or an assignment, also inside a module-level `if` or `try`; a name both imported and defined counts as defined). A `patch(...)`, `patch.object(...)`, or `monkeypatch.setattr(...)` target that names an imported name is a **test double**: the test replaces a collaborator, not the module's own code. It is listed under `doubles`, not `internals`. A test whose only non-seam references in a module are doubles is an interface test with doubles: it stays a pinning candidate with `kind: collaborator-double` and the note "re-point the stub (deps injection or a checked patch); do not delete". When the same test takes a stricter kind in another module, every record of it carries that kind and the move or covered note instead. (`codebase-design` has no term for this; it names an in-memory fake or a mock adapter, which a test double may be.)
 
-**`seams` object** in `simplification-plan.json` (only confirmed seams are listed; under `--dry-run` or unattended runs seams stay `proposed` in the ledger and the plan carries no `pinning_candidates`):
+**Pinning kinds.** Each non-seam reference has a kind, and each pinning candidate carries `kind`:
+
+| `kind` | Reference | Workflow |
+|---|---|---|
+| `public-non-seam` | A public name defined in the module that is not a confirmed seam. | A human seam decision: confirm it as a seam, or move the test to one. |
+| `private` | A `def`, `class`, or lambda name with a leading-underscore part (`_tokenize`, `Acc._drain`). | Merge the assertion into the closest existing interface test as parametrized cases, keep the original, run the mutation check (`SKILL.md` → Follow-up: mutation deletion gate (optional)), then delete. |
+| `collaborator-double` | A patch target bound by an import (a test double). | Re-point the stub: deps injection or a checked patch. Do not delete. |
+| `constant` | A module-level name bound by an assignment, not a `def`, `class`, or lambda, with or without a leading underscore (`TIMEOUT`, `_cache`). | Re-point the stub. |
+| `other` | Anything else, for example an imported name the test uses without patching it. | Look by hand. |
+
+When a test has several kinds, it follows the strictest: `public-non-seam` > `private` > `collaborator-double` > `constant` > `other`. `kind` is the strictest over every non-seam reference of the test, in every module, so all entries of one test carry the same kind and the test is grouped under it. Writing one new interface test per pinning test is not the goal.
+
+**Coverage against the interface** (needs evidence status `ok`). A seam's body lines are the lines of its body statements (decorators and the `def`/`class` header excluded: the header runs at import, outside any `|run` context). A seam is **reached** when an interface test's `covered` lines for the module intersect its body lines; parametrized ids merge by their base id. A confirmed seam no interface test reaches is an **add candidate**; pinning tests never count. A seam whose name has no function or class body in its module (a re-export or a constant in `__all__`) is never an add candidate; the report warns. A test that imports a name through a package `__init__` re-export (`from pkg import run`, where `pkg/__init__.py` has `from .mod import run`) is linked to the `__init__`, not to `mod.py`, so it is not an interface test of `mod.py` and its coverage does not count toward reaching `mod.py`'s seam. When such a seam is an add candidate, the helper adds a warning that the candidate needs a check by hand. Re-exports are followed through every package level: when `pkg/sub/__init__.py` re-exports `run` from `.mod` and `pkg/__init__.py` re-exports it from `.sub`, a test importing `from pkg import run` is linked to `pkg/__init__.py` the same way: it does not reach the seam in `pkg/sub/mod.py`, and that add candidate gets the warning. A pinning candidate has `covered_through_interface: true` when some interface test of the same module covers a superset of its lines in that module (a pinning test with no coverage in the evidence gets `false`, with a warning); the note is then "lines covered by one interface test (assertions not compared)", otherwise "move the assertion to the interface". With evidence status other than `ok`, `add_candidates` and `covered_through_interface` are omitted (keys absent) and the note is "move the assertion to the interface".
+
+**`seams` object** in `simplification-plan.json` (only confirmed seams are listed; under `--dry-run` or unattended runs with no readable `seams-confirmed.json`, seams stay `proposed` in the ledger and the plan carries no `pinning_candidates`):
 
 ```json
 "seams": {
@@ -369,14 +442,34 @@ Names with a leading underscore are never proposed. Test files and `conftest.py`
       "test_name": "test_tokenize_directly",
       "module": "src/protrading/adapters/instruments.py",
       "internals": ["_tokenize"],
+      "doubles": ["load_config"],
+      "kind": "private",
       "covered_through_interface": true,
-      "note": "covered through the interface"
+      "note": "lines covered by one interface test (assertions not compared)"
     }
   ]
 }
 ```
 
-Each pinning candidate also goes to `review_candidates` as `{ file, test_name, criterion: "pinning", evidence, note }`.
+Each pinning candidate also goes to `review_candidates` as `{ file, test_name, criterion: "pinning", kind, evidence, note }`.
+
+**Seam sidecars**, all under `.scratch/refactor-tests/`:
+
+| File | Written by | Holds |
+|---|---|---|
+| `seams-proposed.json` | Step 7b item 1 | the `propose` output of this run |
+| `seams-classified.json` | Step 7b item 3 | the `classify` output of this run |
+| `seams-confirmed.json` | Step 7b item 2, when a round confirms | `{ schema_version: 1, modules }` in the `propose` shape; each seam has `status: confirmed`, or `rejected` for a name the user removed |
+
+Step 1 never archives `seams-confirmed.json`: it carries the confirmed seams from run to run. A `--dry-run` never writes it.
+
+**Reuse across runs.** `classify_seams.py reuse --root P --proposed .scratch/refactor-tests/seams-proposed.json` reads `seams-confirmed.json` (`--confirmed` overrides the path) and prints `{ status, modules, diff: { new_modules, added, removed }, review_modules, public_api_modules, warnings }`:
+
+- `status` is `ok`, `absent` (no file), or `ignored`. A file that cannot be read, is not JSON, or has the wrong shape (no `modules` key, `modules` not an object, or a module without a `seams` list of entries with string `name` and `status`) is `ignored` with a warning; the run then behaves as with no file.
+- `modules` keeps each earlier seam with its status and adds this run's new proposals as `proposed`. A rejected name is not proposed again.
+- A confirmed module whose file no longer exists, or a seam name its module no longer binds (top-level name or `Class.method`), is dropped with a warning naming it. A module that cannot be parsed, or that has a star import or a module `__getattr__`, keeps its seams unchecked, with a warning. Literal `__all__` names count as bound.
+- `diff`: `new_modules` (not in the file), `added` (newly proposed names per module), `removed` (confirmed names this run no longer proposes, except `signal: user` names, which were never proposed; they stay confirmed until the user removes them).
+- `review_modules` are the new or changed modules: the only ones the confirm round shows. `public_api_modules` are those of them with a `public-api` proposal, the weakest signal.
 
 ## Random-order gate
 
@@ -450,7 +543,25 @@ Written by the evidence pass (Phase B, first step). Schema version 1. Python hel
 - `tests` is keyed by test id (node id). Only tests whose call-phase `outcome` is `passed` get an entry; every other test is listed under `excluded` with its outcome: `failed`, `skipped`, `no-coverage` (a passed test with no `|run` context in the coverage data), or `no-timing` (a covered id with no row from the timing run).
 - `call_s` is the call-phase duration in seconds from the serial, untraced timing run. `covered` comes from the traced run, `|run` contexts only. Negative arc endpoints are function entry and exit.
 - A language block with `status` `skipped` or `failed` carries a `reason` and empty `tests`.
-- `kill_set` is a reserved top-level key for a later mutation-based check. v1 does not write it.
+- `kill_set` is a reserved top-level key for a later mutation-based check. v1 does not write it, and the mutation deletion gate below does not write it yet.
+
+## Mutation deletion gate
+
+Optional follow-up, per module; see `SKILL.md` → Follow-up: mutation deletion gate (optional). Coverage-subset is not redundancy: on one pro-trading module, deleting the flagged set would have dropped the mutation score from 26/28 to 11/28. A first summary also counted excluded `no-coverage` tests as non-killers, which turned "15 of 26" into "21 of 26". Neither mutmut nor Cosmic Ray records which test killed a mutant, so the gate compares two runs.
+
+**Contract.** Delete test T only if every mutant T kills is also killed by some kept test. Tests listed under evidence `excluded` are kept tests: they count as killers, never as candidates.
+
+**Recipe.**
+
+1. Run mutmut twice on module M, scoped to M's covering tests: once as is, once with the candidate batch deselected. A mutant killed in the first run and surviving the second is a lost kill.
+2. A timeout counts as killed in both runs. A mutant with a non-deterministic outcome counts as lost.
+3. Re-run only the lost mutants without fail-fast, to build the restore list: the tests to keep.
+4. Use batches of 25 candidates.
+5. Leave migrations and generated code out of the count. mutmut reads `mutate_only_covered_lines` and `do_not_mutate` only from project config: rely on them if the project already sets them; otherwise drop mutants in those files from both runs when comparing.
+6. Install mutmut ephemerally, as Step 7 does. Edit no project config.
+7. Run the gate after the hotspot fixes. It is about 9.6x cheaper once a shared cost is gone.
+
+The gate is advice, not a build dependency. It does not write the reserved `kill_set` key of the evidence file. Porting a helper waits until pro-trading #843 proves its tool.
 
 ## AST editor guidance (per language)
 
