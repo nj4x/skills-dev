@@ -279,7 +279,7 @@ def test_rekey_only_rekeys_without_writing_the_queue(tmp_path, capsys):
     _index(tmp_path, {f"review|dead-test|{A}::test_a": {"ref": "#5", "slug": "x"}})
     _setup(tmp_path, _plan(), {"moves": [{"from": A, "to": "tests/new.py"}]})
     main(["render", "--project-root", str(tmp_path), "--ledger", "ledger.json", "--rekey-only"])
-    assert json.loads(capsys.readouterr().out) == {"rekeyed": True}
+    assert json.loads(capsys.readouterr().out) == {"rekeyed": True, "summary": ".scratch/refactor-tests/run-summary.json"}
     assert list(_read_index(tmp_path)) == ["review|dead-test|tests/new.py::test_a"]
     assert not (tmp_path / ".scratch/refactor-tests/review-queue.md").exists()
 
@@ -313,7 +313,7 @@ def test_rekey_only_after_a_layout_regression_leaves_the_index_alone(tmp_path, c
     _setup(tmp_path, _plan(), {"moves": [{"from": A, "to": "tests/new.py"}]})
     main(["render", "--project-root", str(tmp_path), "--ledger", "ledger.json", "--rekey-only",
           "--stopped-at", "failed-layout"])
-    assert json.loads(capsys.readouterr().out) == {"rekeyed": False}
+    assert json.loads(capsys.readouterr().out) == {"rekeyed": False, "summary": ".scratch/refactor-tests/run-summary.json"}
     assert _read_index(tmp_path) == entries
 
 
@@ -518,3 +518,198 @@ def test_hotspot_ticket_body_lists_share_tests_and_subprocess_spawns(tmp_path, c
 def test_hotspot_entry_without_a_function_is_ignored(tmp_path, capsys):
     _setup(tmp_path, _plan([{"criterion": "hotspot", "share": 0.9}, _hotspot(function=7)]))
     assert _render(tmp_path, capsys)["tickets"] == []
+
+
+# --- run summary, provenance and volume gate (G7, G8; ADR-0080) ---------------
+
+SHA = "0123456789abcdef0123456789abcdef01234567"
+EVIDENCE = ".scratch/refactor-tests/test-evidence.json"
+
+
+def _evidence(tmp_path, status="ok", git_sha=SHA, tests=4):
+    block = {"status": status, "tools": {}, "commands": {}, "excluded": [
+        {"id": f"{A}::test_x", "outcome": "failed"}, {"id": f"{A}::test_y", "outcome": "no-timing"},
+        {"id": f"{A}::test_z", "outcome": "failed"}],
+        "tests": {f"{A}::t{i}": {"outcome": "passed", "call_s": 0.1, "covered": {}} for i in range(tests)}}
+    if status != "ok":
+        block.update(reason="pytest exit 3", tests={}, excluded=[])
+    path = tmp_path / EVIDENCE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"schema_version": 1, "id_basis": "post-layout", "git_sha": git_sha,
+                                "dirty": False if git_sha else None, "languages": {"python": block}}))
+
+
+def _summary(tmp_path):
+    return json.loads((tmp_path / ".scratch/refactor-tests/run-summary.json").read_text())
+
+
+HEALTHY_LEDGER = {
+    "runners": {"python": "uv run pytest"},
+    "order_gate": {"status": "ok", "plugin": "pytest-randomly", "seed": 1234},
+    "simplification": {"call_time": {"before_s": 41.2, "after_s": 37.9}},
+}
+
+
+def test_run_summary_of_a_healthy_run(tmp_path, capsys):
+    core = "tests/pkg/core/test_core.py"
+    _setup(tmp_path, _plan([
+        _cand("test_c", "coverage-subset", call_s=2.0), _cand("test_c", "cost", call_s=2.0),
+        _cand("test_d", "coverage-subset", call_s=0.5), _cand("test_e", "coverage-subset", file=core, call_s=0.25),
+        _cand("test_n", "dead-test", kind="no-raise-contract"), _cand("test_f", "dead-test", kind="fail-soft"),
+        _hotspot(),
+    ]), HEALTHY_LEDGER)
+    _evidence(tmp_path)
+    _render(tmp_path, capsys, "--stage")
+    s = _summary(tmp_path)
+    assert (s["started_at"], s["git_sha"], s["dirty"], s["seed"]) == (STARTED, SHA, False, 1234)
+    assert s["runner"] == {"python": "uv run pytest"} and s["stopped_at"] is None
+    assert s["counts"] == {"coverage-subset": 3, "cost": 1, "dead-test": 2, "hotspot": 1}
+    assert s["kinds"] == {"dead-test/no-raise-contract": 1, "dead-test/fail-soft": 1}
+    assert s["report_only"] == {"dead-test/no-raise-contract": 1}
+    assert s["excluded"] == {"failed": 2, "no-timing": 1}
+    assert s["concentration"]["by_candidates"][0] == {"module": "tests/pkg/adapters", "candidates": 5}
+    assert s["concentration"]["by_call_s"] == [{"module": "tests/pkg/adapters", "call_s": 2.5},
+                                               {"module": "tests/pkg/core", "call_s": 0.25}]  # test_c counted once
+    assert [h["function"] for h in s["hotspots"]] == ["src/pkg/db.py:connect"]
+    assert s["call_time"] == {"before_s": 41.2, "after_s": 37.9}
+    assert s["evidence_tests"] == 4 and s["shares"]["coverage-subset"] == 0.75
+    assert len(s["warnings"]) == 1 and s["warnings"][0].startswith("coverage-subset flags 75% of evidence tests")
+    assert s["volume"]["tickets"] == 5 and s["volume"]["over"] is False
+
+
+def test_run_summary_of_a_failed_layout_run_has_nulls_and_notes(tmp_path, capsys):
+    _setup(tmp_path, _plan(), {"runners": {"python": "pytest"}})
+    (tmp_path / "plan.json").unlink()  # Phase B never ran
+    out = _render(tmp_path, capsys, "--stage", "--stopped-at", "failed-layout")
+    assert out["staged"] is False
+    s = _summary(tmp_path)
+    assert s["stopped_at"] == "failed-layout" and s["started_at"] == STARTED
+    for field in ("git_sha", "dirty", "seed", "counts", "kinds", "excluded", "shares", "concentration", "call_time"):
+        assert s[field] is None, field
+    assert s["hotspots"] == [] and s["warnings"] == []
+    notes = " | ".join(s["notes"])
+    assert "no evidence file" in notes and "no simplification plan" in notes and "seed is null" in notes
+
+
+def test_run_summary_is_written_with_no_publish_review(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_a", "dead-test")]), HEALTHY_LEDGER)
+    _evidence(tmp_path, status="failed")
+    main(["render", "--project-root", str(tmp_path), "--ledger", "ledger.json", "--rekey-only", "--plan", "plan.json"])
+    assert json.loads(capsys.readouterr().out)["summary"] == ".scratch/refactor-tests/run-summary.json"
+    assert not (tmp_path / ".scratch/refactor-tests/review-queue.md").exists()
+    s = _summary(tmp_path)
+    assert s["counts"] == {"dead-test": 1} and s["volume"] is None
+    assert s["call_time"] is None and s["shares"] is None and s["warnings"] == []
+    assert any("evidence is not ok (python: failed (pytest exit 3))" in n for n in s["notes"])
+
+
+def test_ticket_body_carries_the_evidence_git_sha_and_matches_the_summary(tmp_path, capsys):
+    _setup(tmp_path, _plan([_cand("test_a", "dead-test")]))
+    _evidence(tmp_path)
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert f"git_sha: {SHA} " in _draft(tmp_path, ticket)
+    assert _summary(tmp_path)["git_sha"] == SHA
+    assert f"git_sha: {SHA}" in (tmp_path / ".scratch" / SLUG / "spec.md").read_text()
+
+
+@pytest.mark.parametrize("evidence", ["missing", "null"])
+def test_ticket_body_says_git_sha_unknown_without_a_recorded_sha(tmp_path, capsys, evidence):
+    _setup(tmp_path, _plan([_cand("test_a", "dead-test")]))
+    if evidence == "null":
+        _evidence(tmp_path, git_sha=None)
+    (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
+    assert "git_sha: unknown " in _draft(tmp_path, ticket)
+    assert _summary(tmp_path)["git_sha"] is None
+
+
+def _many(n, criterion="dead-test"):
+    """n review tickets of one criterion: one test in each of n test directories."""
+    return [_cand("test_a", criterion, file=f"tests/m{i:03d}/test_x.py", call_s=1.0) for i in range(n)]
+
+
+def test_volume_gate_counts_staged_tickets_including_hotspots(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(50)))
+    assert _render(tmp_path, capsys, "--tracker", "real")["volume"] == {
+        "tickets": 50, "threshold": 50, "over": False, "action": "publish"}
+    _setup(tmp_path, _plan([*_many(50), _hotspot()]))
+    volume = _render(tmp_path, capsys, "--tracker", "real")["volume"]
+    assert volume["tickets"] == 51 and volume["over"] is True and volume["action"] == "ask"
+
+
+def test_volume_gate_counts_after_dedupe(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(51)))
+    _index(tmp_path, {"review|dead-test|tests/m000/test_x.py::test_a": {"ref": "#1", "slug": "s"}})
+    assert _render(tmp_path, capsys, "--tracker", "local")["volume"]["tickets"] == 50
+
+
+@pytest.mark.parametrize("tracker,action,triage", [("local", "triage", True), ("real", "drafted", False)])
+def test_volume_gate_unattended_defaults(tmp_path, capsys, tracker, action, triage):
+    _setup(tmp_path, _plan(_many(51)))
+    out = _render(tmp_path, capsys, "--tracker", tracker, "--unattended", "--stage")
+    assert out["volume"]["action"] == action and out["triage"] is triage
+    assert len(out["tickets"]) == (1 if triage else 51)
+
+
+def test_option_a_output_is_unchanged_by_the_gate(tmp_path, capsys):
+    _setup(tmp_path, _plan([*_many(51), _hotspot()]))
+    plain = _render(tmp_path, capsys, "--stage")
+    drafts = {p.name: p.read_text() for p in (tmp_path / ".scratch" / SLUG / "draft-issues").iterdir()}
+    gated = _render(tmp_path, capsys, "--stage", "--tracker", "real")
+    assert plain["tickets"] == gated["tickets"] and plain["triage"] is gated["triage"] is False
+    assert drafts == {p.name: p.read_text() for p in (tmp_path / ".scratch" / SLUG / "draft-issues").iterdir()}
+    assert all("Triage" not in t["title"] for t in gated["tickets"])
+
+
+def test_option_b_keeps_fix_hotspot_add_and_moves_edges_to_triage_tickets(tmp_path, capsys):
+    ledger = {"simplification": {"parametrizations": [
+        {"file": A, "consolidated_name": "test_p", "tests": ["test_p1"], "skipped": "AST edit failed"}]},
+        "spring": {"skipped_clusters": [{"cluster": "WebMvcTest+X", "classes": ["ATest"], "reason": "r"}]}}
+    plan = _plan([
+        *_many(30, "cost"), *_many(30, "dead-test"),
+        _hotspot(tests=("tests/m001/test_x.py::test_slow",)),
+        _cand("test_a", "flaky", seed=3, file="tests/m002/test_x.py"),
+    ], [{"module": "src/pkg/core.py", "seam": "run"}])
+    _setup(tmp_path, plan, ledger)
+    out = _render(tmp_path, capsys, "--stage", "--triage")
+    titles = [t["title"] for t in out["tickets"]]
+    assert titles == [
+        "Fix 1 flaky test in tests/m002 (seed 3)",
+        "Fix cost hotspot src/pkg/db.py:connect in the test tier",
+        "Triage 30 cost tests from the review queue",
+        "Triage 30 dead-test tests from the review queue",
+        "Add interface tests for 1 untested seam in src/pkg/core.py",
+    ]
+    fix, hot, cost, dead, add = out["tickets"]
+    assert add["blocked_by"] == [] and add["label"] == "ready-for-agent"
+    assert cost["blocked_by"] == [f"{fix['nn']}-{fix['slug']}", f"{hot['nn']}-{hot['slug']}"]
+    assert dead["blocked_by"] == [f"{fix['nn']}-{fix['slug']}"]  # a hotspot blocks only cost and coverage-subset
+    assert cost["label"] == dead["label"] == "ready-for-human" and hot["label"] == "ready-for-agent"
+    body = _draft(tmp_path, cost)
+    assert "key:" not in body and "review-queue.md" in body and "run-summary.json" in body
+    assert "- tests/m000: 1 test" in body
+    assert "key: `hotspot|hotspot|src/pkg/db.py:connect`" in _draft(tmp_path, hot)
+    keys = {t["nn"]: t["keys"] for t in json.loads((tmp_path / ".scratch" / SLUG / "tickets.json").read_text())["tickets"]}
+    assert keys[cost["nn"]] == [] and keys[hot["nn"]] == ["hotspot|hotspot|src/pkg/db.py:connect"]
+    queue = (tmp_path / ".scratch/refactor-tests/review-queue.md").read_text()
+    assert "Merge 1 skipped parametrization" in queue and "Consolidate skipped Spring cluster" in queue
+    assert "Review 1 cost test in tests/m000" in queue  # the queue file keeps every per-test ticket
+
+
+def test_option_b_has_no_triage_ticket_for_a_criterion_without_tickets(tmp_path, capsys):
+    _setup(tmp_path, _plan([*_many(51, "dead-test"), _hotspot(tests=("tests/m001/test_x.py::test_slow",))]))
+    out = _render(tmp_path, capsys, "--stage", "--triage")
+    assert [t["title"] for t in out["tickets"]] == [
+        "Fix cost hotspot src/pkg/db.py:connect in the test tier", "Triage 51 dead-test tests from the review queue"]
+    assert all(t["blocked_by"] == [] for t in out["tickets"])  # no cost/coverage-subset triage ticket: edge dropped
+
+
+def test_option_c_publishes_nothing_and_still_writes_the_summary(tmp_path, capsys):
+    _setup(tmp_path, _plan(_many(51)), HEALTHY_LEDGER)
+    _evidence(tmp_path)
+    out = _render(tmp_path, capsys, "--stage", "--tracker", "real")
+    assert out["volume"]["action"] == "ask" and out["staged"] is True
+    assert (tmp_path / ".scratch/refactor-tests/review-queue.md").exists()
+    assert _summary(tmp_path)["volume"]["over"] is True
+    # the user picks (c): Step 11 records `declined` and calls neither to-tickets nor record
+    assert not (tmp_path / ".scratch/refactor-tests/review-index.json").exists()
+    assert not (tmp_path / ".scratch" / SLUG / "issues").exists()
