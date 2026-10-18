@@ -4,7 +4,7 @@ Usage:
   python assemble_evidence.py --arcs arcs.json --calltime calltime.json \
       --id-basis post-layout|pre-layout \
       --tool coverage=7.16.2 --command coverage='<cmd>' --command timing='<cmd>' \
-      [--status ok|skipped|failed --reason TEXT] [--existing FILE] --out FILE
+      [--status ok|skipped|failed --reason TEXT] [--existing FILE] [--root DIR] --out FILE
 
 Only tests whose call outcome is `passed` get an entry; the others are listed
 under `excluded` with their outcome. Ids seen by only one run are excluded too:
@@ -18,10 +18,16 @@ file counts as empty. --id-basis is required: `post-layout` when ledger
 Read the ledger, not the flags. An --existing file with another id_basis is
 refused. --out is written atomically (temp file, then rename).
 `kill_set` is reserved for a later version and not written in v1.
+
+Provenance: an `ok` call records top-level `git_sha` (`git rev-parse HEAD` in --root,
+default the working directory) and `dirty` (`git status --porcelain` not empty). Both
+are null outside git or when git fails. A `skipped` or `failed` call keeps the values
+an --existing file holds, null when it holds none: a failed assembly records no SHA.
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 
 from refactor_tests_shared import write_atomic
@@ -52,8 +58,21 @@ def _language_block(arcs, calltime, tools, commands, status, reason):
     return block
 
 
+def git_provenance(root=None):
+    """(git_sha, dirty) of the tree at `root`; (None, None) outside git or when git fails."""
+    def git(*args):
+        return subprocess.run(["git", "-C", str(root or "."), *args], capture_output=True, text=True,
+                              check=True, timeout=60).stdout
+    try:
+        sha = git("rev-parse", "HEAD").strip()
+        dirty = bool(git("status", "--porcelain").strip())
+    except (OSError, subprocess.SubprocessError):
+        return None, None
+    return (sha, dirty) if sha else (None, None)
+
+
 def assemble(arcs, calltime, *, tools, commands, id_basis, status="ok", reason=None,
-             language="python", existing=None):
+             language="python", existing=None, root=None):
     if id_basis not in ID_BASES:
         raise ValueError(f"id_basis {id_basis!r} is not one of {ID_BASES}")
     if status != "ok" and not reason:
@@ -70,6 +89,11 @@ def assemble(arcs, calltime, *, tools, commands, id_basis, status="ok", reason=N
     doc["languages"][language] = _language_block(
         arcs or {}, calltime or {}, tools, commands, status, reason
     )
+    if status == "ok":
+        doc["git_sha"], doc["dirty"] = git_provenance(root)
+    else:
+        doc.setdefault("git_sha", None)
+        doc.setdefault("dirty", None)
     return doc
 
 
@@ -95,6 +119,7 @@ if __name__ == "__main__":
     ap.add_argument("--status", default="ok", choices=["ok", "skipped", "failed"])
     ap.add_argument("--reason")
     ap.add_argument("--existing")
+    ap.add_argument("--root", help="project root for git provenance (default: working directory)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     existing = _load(a.existing) or None
@@ -103,7 +128,7 @@ if __name__ == "__main__":
             _load(a.arcs), _load(a.calltime),
             tools=_pairs(a.tool), commands=_pairs(a.command),
             id_basis=a.id_basis, status=a.status, reason=a.reason,
-            language=a.language, existing=existing,
+            language=a.language, existing=existing, root=a.root,
         )
     except ValueError as e:
         sys.exit(f"assemble_evidence: {e}")

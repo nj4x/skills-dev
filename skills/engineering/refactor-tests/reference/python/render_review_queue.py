@@ -1,9 +1,24 @@
 """Turn the human-action items of a refactor-tests run into a review queue and ticket drafts (ADR-0079).
 
 Usage:
-  python render_review_queue.py render --project-root P --ledger L (--plan SP | --rekey-only) \\
-      [--index IDX] [--project-name NAME] [--stopped-at PHASE] [--stage]
+  python render_review_queue.py render --project-root P --ledger L (--plan SP | --rekey-only [--plan SP]) \\
+      [--index IDX] [--project-name NAME] [--stopped-at PHASE] [--stage] [--evidence EV] \\
+      [--tracker local|real] [--unattended] [--triage]
   python render_review_queue.py record --project-root P --slug SLUG [--index IDX] [--ref NN-slug=REF ...]
+
+Both `render` forms also write `.scratch/refactor-tests/run-summary.json`, the committable
+summary of the run (`run_summary`). A field that cannot be computed (no plan, no evidence
+file, evidence not `ok`) is null, and its `notes` say why. Every staged ticket body carries
+`git_sha: <sha>` read from the evidence file, `git_sha: unknown` when there is none.
+
+Volume gate (ADR-0080 Decision 3): `render` counts the tickets it would stage after dedupe,
+hotspot tickets included, and prints `volume: { tickets, threshold, over, action }`. With
+`--tracker`, `action` is `publish` (at most 50), `ask` (interactive), `triage` (unattended,
+local tracker; `render` then applies `--triage` itself), or `drafted` (unattended, real
+tracker). `--triage` (option (b)) stages fix, hotspot and add tickets unchanged and replaces
+the review tickets with one triage ticket per review criterion, with no `key:` lines; the
+review tickets' blocking edges move to it, and skipped tickets are not staged. The queue
+file lists every ticket in either mode.
 
 `render` reads the ledger and `simplification-plan.json`, re-keys the cross-run index through
 the ledger's moves (not after `--stopped-at failed-layout`), and always writes
@@ -51,9 +66,12 @@ from refactor_tests_shared import split_file, strip_params, write_atomic
 
 REVIEW = ("dead-test", "coverage-subset", "cost", "pinning")
 FIX = ("order-dependent", "flaky")
-CATEGORY_ORDER = ("fix", "hotspot", "review", "add", "skipped")
-LABELS = {"review": "ready-for-human", "skipped": "ready-for-human",
+CATEGORY_ORDER = ("fix", "hotspot", "review", "triage", "add", "skipped")
+LABELS = {"review": "ready-for-human", "skipped": "ready-for-human", "triage": "ready-for-human",
           "fix": "ready-for-agent", "hotspot": "ready-for-agent", "add": "ready-for-agent"}
+VOLUME_THRESHOLD = 50  # more staged tickets than this asks the volume gate (ADR-0080 Decision 3)
+NOT_DISCRIMINATING = 0.5  # a criterion flagging more than this share of evidence tests gets a warning
+TOP_N = 15
 HOTSPOT_BLOCKS = ("cost", "coverage-subset")  # review criteria whose `call_s` order a hotspot fix changes
 KIND_GROUPED = ("dead-test", "pinning")  # criteria whose tickets split by item `kind`
 KIND_LABELS = {("pinning", "collaborator-double"): "ready-for-agent"}
@@ -61,6 +79,8 @@ REPORT_ONLY = {("dead-test", "no-raise-contract")}  # counted in the Final repor
 MAX_IDS = 25
 QUEUE = ".scratch/refactor-tests/review-queue.md"
 INDEX = ".scratch/refactor-tests/review-index.json"
+SUMMARY = ".scratch/refactor-tests/run-summary.json"
+EVIDENCE = ".scratch/refactor-tests/test-evidence.json"
 
 
 def slugify(text):
@@ -199,10 +219,12 @@ def _kind(it):
     return kind if isinstance(kind, str) else ""
 
 
-def group_tickets(items):
+def group_tickets(items, triage=False):
     """One ticket per (category, criterion, kind, module); a group over MAX_IDS ids splits into parts.
 
     `kind` splits dead-test and pinning items only; it is "" for every other criterion.
+    With `triage` (volume gate option (b)), the review tickets of each criterion become one
+    triage ticket, and skipped tickets are left out; fix, hotspot and add tickets stay.
     """
     groups = {}
     for it in items:
@@ -219,11 +241,37 @@ def group_tickets(items):
                 title += f" (part {n} of {len(parts)})"
             tickets.append({"category": category, "criterion": criterion, "kind": kind or None, "module": module,
                             "title": title, "label": label, "items": part, "blocked_by": []})
+    if triage:
+        tickets = _triage(tickets)
     for nn, t in enumerate(tickets, 1):
         t["nn"] = f"{nn:02d}"
         t["slug"] = slugify(t["title"])[:60].strip("-")
     _wire_blocking(tickets)
     return tickets
+
+
+def _triage(tickets):
+    """Option (b): one triage ticket per review criterion that has a ticket, in the review tickets' place.
+
+    A triage ticket keeps every item of the review tickets it replaces, so the blocking edges
+    move to it; it lists its items per module and never by key.
+    """
+    out, by_criterion = [], {}
+    for t in tickets:
+        if t["category"] == "skipped":
+            continue
+        if t["category"] != "review":
+            out.append(t)
+            continue
+        if t["criterion"] not in by_criterion:
+            by_criterion[t["criterion"]] = {"category": "triage", "criterion": t["criterion"], "kind": None,
+                                            "module": None, "label": LABELS["triage"], "items": [], "blocked_by": []}
+            out.append(by_criterion[t["criterion"]])
+        by_criterion[t["criterion"]]["items"].extend(t["items"])
+    for t in by_criterion.values():
+        n = len(t["items"])
+        t["title"] = f"Triage {n} {t['criterion']} test{'s' * (n != 1)} from the review queue"
+    return out
 
 
 def _test_dir(test_id):
@@ -234,9 +282,10 @@ def _wire_blocking(tickets):
     """A fix ticket blocks every review ticket that shares a test with it.
 
     A hotspot ticket blocks every cost and coverage-subset ticket with a test in the directory
-    of one of the hotspot's tests: fixing the hotspot changes their `call_s` order.
+    of one of the hotspot's tests: fixing the hotspot changes their `call_s` order. A triage
+    ticket takes the edges of the review tickets it replaced.
     """
-    reviews = [t for t in tickets if t["category"] == "review"]
+    reviews = [t for t in tickets if t["category"] in ("review", "triage")]
     for fix in (t for t in tickets if t["category"] == "fix"):
         fix_ids = [i["id"] for i in fix["items"]]
         for rev in reviews:
@@ -309,9 +358,14 @@ WHAT = {
                " the fix, because `call_s` order changes.",
     "add": "These confirmed seams have no interface test that reaches them. Add a test at each seam.",
     "skipped": "The run could not apply this change automatically and left the files unchanged. Apply it by hand or record why it stays.",
+    "triage": "The run staged more review tickets than a person can work through, so this one ticket stands for every"
+              " {criterion} test it flagged. Triage them by module and hotspot before any per-test review. The"
+              f" per-test list is in `{QUEUE}`; the counts, the concentration and the hotspots are in `{SUMMARY}`."
+              " These tests carry no key here, so the next run queues them again with fresher evidence.",
 }
 CHECK = {
     "review": "Each listed test is kept, rewritten, or removed, and the decision is recorded in the PR",
+    "triage": "Each listed module's tests are triaged (kept, fixed in a batch, or left for a later run), and the decision is recorded",
     "fix": "Each listed test passes under the random-order run{seed}",
     "hotspot": "The listed tests no longer spend most of their time in the hotspot, no test is deleted, and the evidence pass is re-run",
     "add": "Each listed seam has an interface test that reaches its body",
@@ -350,12 +404,25 @@ def reproduce_line(ledger, item):
     return prefix + shlex.join([*tokens, *args, item.get("file", "")])
 
 
-def ticket_body(t, slug, ledger=None):
+def _module_lines(items):
+    """A triage ticket's item list: tests per module, most first, with no key."""
+    per = {}
+    for it in items:
+        per[it["module"]] = per.get(it["module"], 0) + 1
+    return "\n".join(f"- {m}: {n} test{'s' * (n != 1)}" for m, n in sorted(per.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def ticket_body(t, slug, ledger=None, git_sha=None):
     blocked = "\n".join(" — ".join(b.split("-", 1)) for b in t["blocked_by"]) or "none"
     seed = t["items"][0].get("seed")
     check = CHECK[t["category"]].format(seed=f" with seed {seed}" if seed is not None else "")
-    items = "\n".join(_item_line(i, with_key=True) for i in t["items"])
-    what = review_what(t["criterion"], t.get("kind")) if t["category"] == "review" else WHAT[t["category"]]
+    if t["category"] == "triage":  # no `key:` lines: these items stay out of the cross-run index
+        items = _module_lines(t["items"])
+        what = WHAT["triage"].format(criterion=t["criterion"])
+    else:
+        items = "\n".join(_item_line(i, with_key=True) for i in t["items"])
+        what = review_what(t["criterion"], t.get("kind")) if t["category"] == "review" else WHAT[t["category"]]
+    items += f"\n\ngit_sha: {git_sha or 'unknown'} (the commit the evidence was taken at; a later commit may make this list stale)"
     if t["category"] == "fix":
         lines = dict.fromkeys(filter(None, (reproduce_line(ledger or {}, i) for i in t["items"])))
         if lines:
@@ -384,9 +451,9 @@ def _counts(items):
     return out
 
 
-def spec_body(started_at, project, tickets, tracked):
+def spec_body(started_at, project, tickets, tracked, git_sha=None):
     items = [i for t in tickets for i in t["items"]]
-    lines = [f"# {run_title(started_at)}", "", f"Project: {project}", "",
+    lines = [f"# {run_title(started_at)}", "", f"Project: {project}", "", f"git_sha: {git_sha or 'unknown'}", "",
              ("Human-action items from a refactor-tests run (ADR-0079). The ledger under "
               "`.scratch/refactor-tests/` holds the full evidence."), "", "## Items", ""]
     lines += [f"- {crit}: {n}" for crit, n in sorted(_counts(items).items())]
@@ -459,7 +526,120 @@ def superseded_slugs(root, slug, index):
     return out
 
 
-def render(root, ledger, plan, index, project, stopped_at, stage):
+# --- run summary ------------------------------------------------------------
+
+def evidence_ok(evidence):
+    """True when any language block of the evidence file has status `ok`."""
+    return any(isinstance(b, dict) and b.get("status") == "ok"
+               for b in ((evidence or {}).get("languages") or {}).values())
+
+
+def _top(totals, field):
+    rows = sorted(totals.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_N]
+    return [{"module": m, field: round(v, 6) if isinstance(v, float) else v} for m, v in rows]
+
+
+def run_summary(ledger, plan, evidence, stopped_at=None, volume=None):
+    """The committable `run-summary.json` of one run; a field it cannot compute is null and `notes` says why.
+
+    `plan` and `evidence` are None when their file is missing. `git_sha` and `dirty` come from
+    the evidence file only, the same source the ticket bodies read.
+    """
+    notes = []
+    gate = ledger.get("order_gate") or {}
+    ok = evidence_ok(evidence)
+    if evidence is None:
+        notes.append("no evidence file: git_sha, dirty and excluded are null")
+    elif not ok:
+        reasons = "; ".join(f"{lang}: {b.get('status')} ({b.get('reason')})"
+                            for lang, b in sorted((evidence.get("languages") or {}).items()) if isinstance(b, dict))
+        notes.append(f"evidence is not ok ({reasons or 'no language block'}): shares and call time are null")
+    if gate.get("seed") is None:
+        notes.append("the random-order gate did not run: seed is null")
+    summary = {
+        "schema_version": 1,
+        "started_at": ledger.get("started_at"),
+        "stopped_at": stopped_at,
+        "git_sha": (evidence or {}).get("git_sha"),
+        "dirty": (evidence or {}).get("dirty"),
+        "runner": ledger.get("runners"),
+        "seed": gate.get("seed"),
+        "evidence_status": None if evidence is None else ("ok" if ok else "not ok"),
+        "counts": None, "kinds": None, "report_only": None,
+        "excluded": None, "evidence_tests": None, "shares": None, "warnings": [],
+        "concentration": None, "hotspots": [], "call_time": None, "volume": volume, "notes": notes,
+    }
+    if evidence is not None:
+        excluded = {}
+        for b in (evidence.get("languages") or {}).values():
+            for e in (b.get("excluded") or []) if isinstance(b, dict) else []:
+                excluded[e.get("outcome")] = excluded.get(e.get("outcome"), 0) + 1
+        summary["excluded"] = excluded
+    if ok:
+        summary["evidence_tests"] = sum(len(b.get("tests") or {}) for b in evidence["languages"].values()
+                                        if isinstance(b, dict) and b.get("status") == "ok")
+        ct = (ledger.get("simplification") or {}).get("call_time") or {}
+        summary["call_time"] = {"before_s": ct.get("before_s"), "after_s": ct.get("after_s")}
+        if ct.get("before_s") is None or ct.get("after_s") is None:
+            notes.append("ledger simplification.call_time has no before or after total (Step 10 did not measure it)")
+    if plan is None:
+        notes.append("no simplification plan (Phase B did not plan): counts, kinds and concentration are null")
+        return summary
+    cands = [c for c in plan.get("review_candidates", []) if isinstance(c, dict)]
+    counts, kinds, ids = {}, {}, {}
+    for c in cands:
+        crit = c.get("criterion")
+        counts[crit] = counts.get(crit, 0) + 1
+        if isinstance(c.get("kind"), str):
+            name = f"{crit}/{c['kind']}"
+            kinds[name] = kinds.get(name, 0) + 1
+        if crit in REVIEW and c.get("file") and c.get("test_name"):
+            ids.setdefault(crit, set()).add(f"{c['file']}::{c['test_name']}")
+    summary.update(counts=counts, kinds=kinds, report_only=report_only_counts(plan))
+    summary["hotspots"] = [c for c in cands if c.get("criterion") == "hotspot"]
+    if not summary["hotspots"]:
+        notes.append("no hotspot entry (the probe found none or did not run): hotspots is []")
+    by_count, by_call, seen = {}, {}, set()
+    for c in cands:
+        if c.get("criterion") not in REVIEW or not c.get("file") or not c.get("test_name"):
+            continue
+        module = _module(c["file"])
+        by_count[module] = by_count.get(module, 0) + 1
+        tid = f"{c['file']}::{c['test_name']}"
+        if isinstance(c.get("call_s"), (int, float)) and tid not in seen:  # a test in coverage-subset and cost counts once
+            seen.add(tid)
+            by_call[module] = by_call.get(module, 0.0) + c["call_s"]
+    summary["concentration"] = {"by_candidates": _top(by_count, "candidates"), "by_call_s": _top(by_call, "call_s")}
+    total = summary["evidence_tests"]
+    if ok and total:
+        summary["shares"] = {crit: round(len(s) / total, 4) for crit, s in sorted(ids.items())}
+        summary["warnings"] = [
+            f"{crit} flags {share:.0%} of evidence tests: criterion is not discriminating on this suite;"
+            " triage by module and hotspot before per-test review"
+            for crit, share in summary["shares"].items() if share > NOT_DISCRIMINATING]
+    elif ok:
+        notes.append("evidence holds no test: shares are null")
+    return summary
+
+
+def volume_gate(count, tracker=None, unattended=False):
+    """The Step 11 volume gate for `count` staged tickets (ADR-0080 Decision 3).
+
+    `publish` at or under the threshold; above it `ask` in an interactive run, `triage`
+    (option (b)) in an unattended run on the local tracker, and `drafted` in an unattended
+    run on a real tracker. None when the tracker kind is not given.
+    """
+    if tracker is None:
+        return None
+    if count <= VOLUME_THRESHOLD:
+        return "publish"
+    if not unattended:
+        return "ask"
+    return "triage" if tracker == "local" else "drafted"
+
+
+def render(root, ledger, plan, index, project, stopped_at, stage, *, triage=False, tracker=None,
+           unattended=False, git_sha=None):
     started_at = ledger.get("started_at")
     if not started_at:
         raise SystemExit("render_review_queue: ledger has no started_at (Step 1 records it, also on resume)")
@@ -473,9 +653,13 @@ def render(root, ledger, plan, index, project, stopped_at, stage):
             tracked.append((it["key"], known[it["key"]].get("ref", "?")))
         else:
             items.append(it)
-    tickets = group_tickets(items)
+    full = group_tickets(items)  # the queue file always lists every ticket
+    volume = {"tickets": len(full), "threshold": VOLUME_THRESHOLD, "over": len(full) > VOLUME_THRESHOLD,
+              "action": volume_gate(len(full), tracker, unattended)}
+    triage = bool(triage or volume["action"] == "triage")
+    tickets = group_tickets(items, triage=True) if triage else full
     superseded = superseded_slugs(root, slug, index)
-    _write_text(root / QUEUE, queue_body(started_at, project, tickets, tracked, superseded, stopped_at))
+    _write_text(root / QUEUE, queue_body(started_at, project, full, tracked, superseded, stopped_at))
     staged = bool(stage and not stopped_at and tickets)
     if staged:
         base = root / ".scratch" / slug
@@ -483,20 +667,24 @@ def render(root, ledger, plan, index, project, stopped_at, stage):
         if drafts.is_dir():
             for old in drafts.glob("*.md"):
                 old.unlink()
-        _write_text(base / "spec.md", spec_body(started_at, project, tickets, tracked))
+        _write_text(base / "spec.md", spec_body(started_at, project, tickets, tracked, git_sha))
         paths = []
         for t in tickets:
             rel = f".scratch/{slug}/draft-issues/{t['nn']}-{t['slug']}.md"
-            _write_text(root / rel, ticket_body(t, slug, ledger))
+            _write_text(root / rel, ticket_body(t, slug, ledger, git_sha))
             paths.append(rel)
         _write_text(base / "manifest.md", "---\nartifact-type: tickets\n---\n" + "\n".join(paths) + "\n")
         write_atomic(base / "tickets.json", {"slug": slug, "tickets": [
-            {"nn": t["nn"], "slug": t["slug"], "keys": [i["key"] for i in t["items"]]} for t in tickets]})
+            {"nn": t["nn"], "slug": t["slug"], "keys": [] if t["category"] == "triage" else [i["key"] for i in t["items"]]}
+            for t in tickets]})
     return {
         "slug": slug,
         "title": run_title(started_at),
         "queue": QUEUE,
+        "summary": SUMMARY,
         "staged": staged,
+        "triage": triage,
+        "volume": volume,
         "items": len(items),
         "tickets": [{"nn": t["nn"], "slug": t["slug"], "title": t["title"], "label": t["label"],
                      "blocked_by": t["blocked_by"], "ids": len(t["items"])} for t in tickets],
@@ -553,6 +741,10 @@ def main(argv=None):
     r.add_argument("--project-name")
     r.add_argument("--stopped-at")
     r.add_argument("--stage", action="store_true")
+    r.add_argument("--evidence", help=f"evidence file (default: ledger evidence.file, else {EVIDENCE})")
+    r.add_argument("--tracker", choices=["local", "real"], help="tracker kind, for the volume gate")
+    r.add_argument("--unattended", action="store_true", help="the run is unattended (volume gate defaults)")
+    r.add_argument("--triage", action="store_true", help="volume gate option (b): one triage ticket per review criterion")
     c = sub.add_parser("record")
     c.add_argument("--project-root", required=True)
     c.add_argument("--slug", required=True)
@@ -566,16 +758,25 @@ def main(argv=None):
         if not (root / a.ledger).exists():
             raise SystemExit(f"render_review_queue: no ledger at {root / a.ledger}")
         before = dict(index.get("entries", {}))
+        ledger = _load(root / a.ledger, {})
+        # A missing plan is normal when Phase B never ran: it holds no items.
+        plan = _load(root / a.plan, None) if a.plan else None
+        evidence = _load(root / (a.evidence or (ledger.get("evidence") or {}).get("file") or EVIDENCE), None)
+        git_sha = (evidence or {}).get("git_sha")
         if a.rekey_only:
             if should_rekey(a.stopped_at):
-                index["entries"] = rekey_index(index, _load(root / a.ledger, {}))
-            out = {"rekeyed": index.get("entries", {}) != before}
+                index["entries"] = rekey_index(index, ledger)
+            out = {"rekeyed": index.get("entries", {}) != before, "summary": SUMMARY}
+            volume = None
         else:
             if not a.plan:
                 ap.error("render needs --plan unless --rekey-only")
-            # A missing plan is normal when Phase B never ran: it holds no items.
-            out = render(root, _load(root / a.ledger, {}), _load(root / a.plan, {}), index,
-                         a.project_name or root.name, a.stopped_at, a.stage)
+            out = render(root, ledger, plan or {}, index, a.project_name or root.name, a.stopped_at, a.stage,
+                         triage=a.triage, tracker=a.tracker, unattended=a.unattended, git_sha=git_sha)
+            volume = out["volume"]
+        summary_path = root / SUMMARY  # written on every Step 11 path
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(summary_path, run_summary(ledger, plan, evidence, a.stopped_at, volume))
         if index.get("entries", {}) != before:
             write_atomic(index_path, index)
     else:
