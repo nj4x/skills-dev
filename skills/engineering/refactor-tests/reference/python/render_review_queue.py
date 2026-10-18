@@ -15,10 +15,13 @@ Volume gate (ADR-0080 Decision 3): `render` counts the tickets it would stage af
 hotspot tickets included, and prints `volume: { tickets, threshold, over, action, choice,
 chosen_by }`. With `--tracker`, `action` is `publish` (at most 50), `ask` (interactive),
 `triage` (unattended, local tracker; `render` then applies `--triage` itself), or `drafted`
-(unattended, real tracker). `--choice a|b|c` passes the user's answer to an `ask`: the
-action becomes `publish`, `triage` or `declined`, and `choice` and `chosen_by: asked` record
-it. Without `--choice`, an `ask` takes the choice recorded in ledger `publish.volume`, so a
-resume does not ask again. An unattended default records `chosen_by: unattended-default`.
+(unattended, real tracker). `--choice a|b|c` passes the user's answer: the action becomes
+`publish`, `triage` or `declined` at any ticket count, also in an unattended run, and
+`choice` and `chosen_by: asked` record it. Without `--choice`, `render` reuses a choice
+recorded in ledger `publish.volume` only when its `chosen_by` is `asked`, so a resume does
+not ask again; a recorded unattended default is computed again, never reused. An unattended
+default records `chosen_by: unattended-default`. `--triage` and `--choice` are mutually
+exclusive.
 `--triage` (option (b), the same as `--choice b`) stages fix, hotspot and add tickets unchanged and replaces
 the review tickets with one triage ticket per review criterion, with no `key:` lines; the
 review tickets' blocking edges move to it, and skipped tickets are not staged. The queue
@@ -35,9 +38,12 @@ Relative `--ledger`, `--plan`, and `--index` paths resolve against `--project-ro
 `<tracker-ID> <name>`, promoted `issues/<name>.md` files, or `--ref` overrides) and credits
 each staged item to the published ticket whose body holds the item's full key in backticks, so a ticket
 `to-tickets` renamed, merged, or split still counts. It adds those keys to the cross-run
-index and prints `{ status, tickets, unpublished, unmatched }`. `status` is `published` (every
-key credited), `drafted` (none), or `partial`; `unpublished` lists uncredited keys and
-`unmatched` the published names with no body file. `render` also writes the index back with
+index and prints `{ status, tickets, unpublished, unmatched }`. A triage ticket (`keys: []`
+in `tickets.json`) counts as published when a published name is its file name or a published
+body holds its criterion's triage text; it is listed in `tickets` with `keys: []` and adds no
+index entry. `status` is `published` (every key and every triage ticket credited), `drafted`
+(none), or `partial`; `unpublished` lists uncredited keys, then the file names of uncredited
+triage tickets, and `unmatched` the published names with no body file. `render` also writes the index back with
 ids re-keyed through the run's moves, except after a layout regression (`--stopped-at failed-layout`);
 `render --rekey-only` does only that, for a run with `--no-publish-review`.
 
@@ -650,22 +656,26 @@ CHOICE_ACTIONS = {"a": "publish", "b": "triage", "c": "declined"}  # volume gate
 def gate_choice(action, choice=None, recorded=None):
     """(action, choice, chosen_by) once the volume gate's answer is applied.
 
-    `choice` is the answer given now (`--choice`); `recorded` is ledger `publish.volume`
-    from an earlier render of this run. An `ask` takes the answer given now, else the
-    recorded one, so a resume does not ask again; `chosen_by` is then `asked`. An
-    unattended default records `chosen_by: unattended-default`, with choice `b` for
-    `triage` and none for `drafted`. Any other action keeps an explicit `choice`.
+    `action` is `volume_gate`'s; `choice` is the answer given now (`--choice`, or `b` for
+    `--triage`); `recorded` is ledger `publish.volume` from an earlier render of this run.
+    A human answer wins: the answer given now, else a recorded one with `chosen_by: asked`
+    (so a resume does not ask again), sets the action from `CHOICE_ACTIONS` at any ticket
+    count and in any attendance, with `chosen_by: asked`. A recorded unattended default is
+    never reused: the gate is computed again, so an interactive resume still asks. With no
+    human answer, `triage` and `drafted` record `chosen_by: unattended-default` (choice `b`
+    for `triage`, none for `drafted`). Without a tracker (`action` None) there is no gate:
+    an explicit `choice` is only recorded.
     """
     recorded = recorded if isinstance(recorded, dict) else {}
+    if action is None:
+        return None, choice, ("asked" if choice else None)
+    if choice is None and recorded.get("chosen_by") == "asked" and recorded.get("choice") in CHOICE_ACTIONS:
+        choice = recorded["choice"]
+    if choice is not None:
+        return CHOICE_ACTIONS[choice], choice, "asked"
     if action in ("triage", "drafted"):
         return action, ("b" if action == "triage" else None), "unattended-default"
-    if action == "ask":
-        if choice is None and recorded.get("choice") in CHOICE_ACTIONS:
-            choice = recorded["choice"]
-        if choice is None:
-            return action, None, None
-        return CHOICE_ACTIONS[choice], choice, "asked"
-    return action, choice, ("asked" if choice else None)
+    return action, None, None
 
 
 def render(root, ledger, plan, index, project, stopped_at, stage, *, triage=False, tracker=None,
@@ -741,7 +751,10 @@ def record(root, slug, index, refs):
         for f in sorted((base / "issues").glob("*.md")):
             found.setdefault(f.stem, f".scratch/{slug}/issues/{f.name}")
     keys = [k for t in doc["tickets"] for k in t["keys"]]
+    # triage tickets (option (b)) have `keys: []`: credited by name or by their body text, never indexed
+    triage = {f"{t['nn']}-{t['slug']}": t["slug"] for t in doc["tickets"] if not t["keys"]}
     credited, unmatched = {}, []  # ref -> keys its body names; names with no body file
+    triaged = {}  # triage ticket name -> ref
     for name, ref in found.items():
         body_file = next((p for p in (base / "issues" / f"{name}.md", base / "draft-issues" / f"{name}.md")
                           if p.exists()), None)
@@ -752,14 +765,27 @@ def record(root, slug, index, refs):
         mine = [k for k in keys if f"`{k}`" in body]
         if mine:
             credited[ref] = list(dict.fromkeys(credited.get(ref, []) + mine))
+        for tname, tslug in triage.items():
+            if tname not in triaged and (tname == name or _triage_marker(tslug) in body):
+                triaged[tname] = ref
+                credited.setdefault(ref, [])
     done = {k for ks in credited.values() for k in ks}
     for ref, ks in credited.items():
         for key in ks:
             index.setdefault("entries", {})[key] = {"ref": ref, "slug": slug}
-    unpublished = [k for k in keys if k not in done]
-    status = "published" if not unpublished else ("drafted" if not done else "partial")
+    unpublished = [k for k in keys if k not in done] + [n for n in triage if n not in triaged]
+    status = "published" if not unpublished else ("drafted" if not credited else "partial")
     tickets = [{"ref": ref, "keys": ks} for ref, ks in credited.items()]
     return index, {"status": status, "tickets": tickets, "unpublished": unpublished, "unmatched": unmatched}
+
+
+TRIAGE_SLUG = re.compile(r"triage-\d+-(.+?)-tests(?:-|$)")  # `Triage <n> <criterion> tests from the review queue`
+
+
+def _triage_marker(ticket_slug):
+    """Text only the triage ticket of one criterion holds, so a renamed one still matches its body."""
+    m = TRIAGE_SLUG.match(ticket_slug)
+    return f"stands for every {m.group(1)} test it flagged" if m else f"\0{ticket_slug}"
 
 
 def main(argv=None):
@@ -777,8 +803,9 @@ def main(argv=None):
     r.add_argument("--evidence", help=f"evidence file (default: ledger evidence.file, else {EVIDENCE})")
     r.add_argument("--tracker", choices=["local", "real"], help="tracker kind, for the volume gate")
     r.add_argument("--unattended", action="store_true", help="the run is unattended (volume gate defaults)")
-    r.add_argument("--triage", action="store_true", help="volume gate option (b): one triage ticket per review criterion")
-    r.add_argument("--choice", choices=sorted(CHOICE_ACTIONS), help="the user's volume gate answer; b also stages --triage")
+    answer = r.add_mutually_exclusive_group()  # --triage is an alias of --choice b
+    answer.add_argument("--triage", action="store_true", help="volume gate option (b), the same as --choice b")
+    answer.add_argument("--choice", choices=sorted(CHOICE_ACTIONS), help="the user's volume gate answer; wins over the gate's default")
     c = sub.add_parser("record")
     c.add_argument("--project-root", required=True)
     c.add_argument("--slug", required=True)
