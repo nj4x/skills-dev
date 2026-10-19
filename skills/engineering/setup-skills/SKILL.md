@@ -96,7 +96,7 @@ If the user declines the migration, record in `docs/agents/domain.md` that this 
 Show one draft of the file from the [testing.md](./testing.md) seed, every heading filled. Tag each value by source:
 
 - **detected** — found in the repo (exploration);
-- **default** — proposed from `../refactor-tests/reference/patterns.md` for the language (path template, integration directory, assertion prefixes). Read it from there every run; never copy a default into this skill. The cost budget has no default there: it stays **not set** unless the user gives one. When `refactor-tests` isn't installed, the value is **not set**;
+- **default** — proposed from `../refactor-tests/reference/patterns.md` for the language (path template, integration directory from its "Integration directory targets (cross-cutting tests)" section, assertion prefixes). Read it from there every run; never copy a default into this skill. The cost budget has no default there: it stays **not set** unless the user gives one. When `refactor-tests` isn't installed, the value is **not set**;
 - **not set** — nothing found and no default.
 
 Ask only these, one question each, recommended answer first:
@@ -188,4 +188,4 @@ For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch us
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. When Section E ran, `tdd`, `testing`, `code-review`, `implement`, `implement-spec`, and `refactor-tests` now read `docs/agents/testing.md`: `testing` only Commands, `tdd` all seven headings, `code-review` the whole file, `implement` and `implement-spec` Seam declaration, `refactor-tests` Test layout and Assertion idiom. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-run this skill to sync those files with the current templates, switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these files. When Section E ran, `tdd`, `testing`, `code-review`, `implement`, `implement-spec`, and `refactor-tests` now read `docs/agents/testing.md`: `testing` only Commands, `tdd` all seven headings, `code-review` the whole file, `implement` and `implement-spec` Seam declaration, `refactor-tests` Test layout (including the `Integration directory:` line) and Assertion idiom. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-run this skill to sync those files with the current templates, switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
