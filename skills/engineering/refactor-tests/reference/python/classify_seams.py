@@ -29,9 +29,11 @@ and classes, `patch(...)` and `monkeypatch.setattr(...)` string targets, and the
 object forms `patch.object(mod, "name")` and `monkeypatch.setattr(mod, "name", value)`.
 Coverage plays no part in that split. A patch or setattr target that names a module
 attribute bound by an import (not defined in the module) is a test double: it is listed
-under `doubles`, not `internals`. Each pinning candidate has a `kind`, the strictest over
-all the test's non-seam references: `public-non-seam` > `private` > `collaborator-double`
-> `constant` > `other`.
+under `doubles`, not `internals`. A double of a name imported from outside the project's
+source files (third-party or stdlib: a system boundary) has kind `boundary-double`; a double
+of a name imported from a project module keeps `collaborator-double`. Each pinning candidate
+has a `kind`, the strictest over all the test's non-seam references: `public-non-seam` >
+`private` > `collaborator-double` > `constant` > `boundary-double` > `other`.
 
 `reuse` merges the `propose` output with an earlier run's seams-confirmed file and prints
 the difference the confirm round shows; see `reuse()`.
@@ -55,7 +57,9 @@ from refactor_tests_shared import is_variant
 NOTE_COVERED = "lines covered by one interface test (assertions not compared)"
 NOTE_MOVE = "move the assertion to the interface"
 NOTE_DOUBLE = "re-point the stub (deps injection or a checked patch); do not delete"
-KINDS = ("public-non-seam", "private", "collaborator-double", "constant", "other")  # strictest first
+NOTE_BOUNDARY = "double of a system boundary: keep, no deletion"
+DOUBLE_KINDS = ("collaborator-double", "boundary-double")
+KINDS = ("public-non-seam", "private", "collaborator-double", "constant", "boundary-double", "other")  # strictest first
 CONFIRMED = ".scratch/refactor-tests/seams-confirmed.json"
 
 
@@ -300,15 +304,40 @@ def _bound_names(tree):
     return names
 
 
-def ref_kind(rest, table, patched):
+def boundary_names(tree, importer, importer_is_pkg, files):
+    """Names the module binds only by imports whose source is not a project module (third-party or stdlib).
+
+    A source counts as a project module when it is a source file, or a package (also a namespace
+    package without `__init__.py`) holding one. A name rebound from a project source is not a boundary.
+    """
+    def project(module):
+        return module is not None and (module in files or any(k.startswith(module + ".") for k in files))
+
+    external, internal = set(), set()
+    for node in _module_statements(tree.body):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                (internal if project(a.name) else external).add(a.asname or a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            src = _resolve_from(importer, importer_is_pkg, node.level, node.module)
+            for a in node.names:
+                if a.name != "*":
+                    (internal if project(src) else external).add(a.asname or a.name)
+    return external - internal
+
+
+def ref_kind(rest, table, patched, boundary=()):
     """Pinning kind of one non-seam reference `rest` (dotted name inside a module).
 
-    `patched` is True when the test names it as a patch or setattr target.
+    `patched` is True when the test names it as a patch or setattr target. `boundary` holds
+    the imported names whose source lies outside the project: patching one is a `boundary-double`.
     """
     head = rest.partition(".")[0]
     bound = table.get(head)
     if bound == "import":
-        return "collaborator-double" if patched else "other"
+        if not patched:
+            return "other"
+        return "boundary-double" if head in boundary else "collaborator-double"
     if bound == "constant":
         return "constant"
     if bound == "callable":
@@ -603,12 +632,14 @@ def _confirmed_seams(seams_doc):
     return out
 
 
-def _split_tests(root, test_paths, files, seam_sets, tables, warnings):
+def _split_tests(root, test_paths, files, seam_sets, tables, warnings, boundaries):
     """(interface, pinning_raw, all_refs): each test split per source module it references.
 
     A non-seam reference that is a patch target bound by an import in the module is a test
     double: it goes to `doubles`, not `internals`. Each pinning record carries `kind`, the
     strictest kind of its non-seam references (`classify` then widens it to the whole test).
+    `boundaries` maps a module to its imported names that come from outside the project
+    (kind `boundary-double` when patched).
     """
     interface, pinning_raw = [], []
     all_refs = set()
@@ -633,14 +664,14 @@ def _split_tests(root, test_paths, files, seam_sets, tables, warnings):
                 if mod not in seam_sets:
                     continue
                 table = tables.get(mod, {})
-                kinds = {r: ref_kind(r, table, (mod, r) in visitor.patched)
+                kinds = {r: ref_kind(r, table, (mod, r) in visitor.patched, boundaries.get(mod, ()))
                          for r in rests if not _seam_ok(r, seam_sets[mod])}
                 rec = {"file": tpath, "test_name": tname, "module": files[mod][0]}
                 if kinds:
                     pinning_raw.append({
                         **rec,
-                        "internals": sorted(r for r, k in kinds.items() if k != "collaborator-double"),
-                        "doubles": sorted(r for r, k in kinds.items() if k == "collaborator-double"),
+                        "internals": sorted(r for r, k in kinds.items() if k not in DOUBLE_KINDS),
+                        "doubles": sorted(r for r, k in kinds.items() if k in DOUBLE_KINDS),
                         "kind": strictest(kinds.values()),
                     })
                 else:
@@ -702,9 +733,9 @@ def _pinning_candidates(pinning_raw, interface, evidence, evidence_ok, warnings)
             item["note"] = NOTE_COVERED if covered else NOTE_MOVE
         else:
             item["note"] = NOTE_MOVE
-        if not item["internals"] and item["kind"] == "collaborator-double":
+        if not item["internals"] and item["kind"] in DOUBLE_KINDS:
             # only doubles in this module, and no stricter kind elsewhere: nothing to move
-            item["note"] = NOTE_DOUBLE
+            item["note"] = NOTE_DOUBLE if item["kind"] == "collaborator-double" else NOTE_BOUNDARY
         pinning.append(item)
     return pinning
 
@@ -736,11 +767,12 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
             "evidence status is not ok: add_candidates and covered_through_interface omitted"
         )
 
-    tables = {}
+    tables, boundaries = {}, {}
     for mod in seam_sets:
         tree = _parse(root / files[mod][0])
         tables[mod] = module_table(tree) if tree is not None else {}
-    interface, pinning_raw, all_refs = _split_tests(root, test_paths, files, seam_sets, tables, warnings)
+        boundaries[mod] = boundary_names(tree, mod, files[mod][1], files) if tree is not None else set()
+    interface, pinning_raw, all_refs = _split_tests(root, test_paths, files, seam_sets, tables, warnings, boundaries)
     _widen_kinds(pinning_raw)
     out = {"modules": modules_out}
     if evidence_ok:
