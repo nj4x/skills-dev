@@ -1,6 +1,6 @@
-Examples use TypeScript; the rules are language-neutral. This repo's idioms are in `docs/agents/testing.md`.
-
 # When to Mock
+
+Examples use TypeScript; the rules are language-neutral. This repo's idioms are in `docs/agents/testing.md`.
 
 Double ports and system boundaries. Never double the project's own logic.
 

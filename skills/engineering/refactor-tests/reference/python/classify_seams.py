@@ -71,8 +71,11 @@ def _public(name):
     return not name.startswith("_")
 
 
+_SKIP_NAMES = {"vendor", "node_modules", ".venv", "build", ".scratch", ".reference-projects", "__pycache__"}
+
+
 def _skip_dir(parts):
-    return any(p in {"vendor", "node_modules", ".venv", "build", ".scratch", ".reference-projects", "__pycache__"} for p in parts)
+    return any(p in _SKIP_NAMES for p in parts)
 
 
 def _is_test_file(path):
@@ -305,11 +308,20 @@ def _bound_names(tree):
 
 
 def _resolves_under_source(root, source_roots, module):
-    """True when `module` is a file or directory under a source root, also one `_skip_dir` leaves out of `files`."""
+    """True when `module` is a `.py` file or a directory holding one under a source root, though `files` omits it.
+
+    Only `build` (first-party generated code) overrides `_skip_dir`: `vendor`, `node_modules`, `.venv`
+    and the other skipped names stay outside the project. A directory with no `.py` file is no module.
+    """
     parts = module.split(".")
+    if any(p in _SKIP_NAMES - {"build"} for p in parts):
+        return False
     for sr in source_roots:
         base = root / sr
-        if base.joinpath(*parts).is_dir() or base.joinpath(*parts[:-1], parts[-1] + ".py").is_file():
+        folder = base.joinpath(*parts)
+        if folder.is_dir() and next(folder.rglob("*.py"), None) is not None:
+            return True
+        if base.joinpath(*parts[:-1], parts[-1] + ".py").is_file():
             return True
     return False
 
@@ -318,9 +330,9 @@ def boundary_names(tree, importer, importer_is_pkg, files, root=None, source_roo
     """Names the module binds only by imports whose source is not a project module (third-party or stdlib).
 
     A source counts as a project module when it is a source file, or a package (also a namespace
-    package without `__init__.py`) holding one, or, given `root` and `source_roots`, a path that exists
-    under a source root (a subpackage named like a skipped directory, such as `build`, is absent from
-    `files` but still the project's own). A name rebound from a project source is not a boundary.
+    package without `__init__.py`) holding one, or, given `root` and `source_roots`, a `.py` file or a
+    directory holding one under a source root (a subpackage named like `build`, absent from `files`,
+    is still the project's own; `vendor` is not). A name rebound from a project source is not a boundary.
     """
     def project(module):
         if module is None:

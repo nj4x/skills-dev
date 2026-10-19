@@ -788,3 +788,23 @@ def test_project_subpackage_named_like_a_skipped_dir_is_not_a_boundary(tmp_path)
     assert "pkg.build.steps" not in files  # `build` is a skipped directory name
     tree = ast.parse("import json\nfrom pkg.build import steps\nfrom pkg.build.steps import run\nimport pkg.build.steps as s\n")
     assert boundary_names(tree, "pkg.svc", False, files, proj, ["src"]) == {"json"}
+
+
+def test_vendored_package_under_a_source_root_stays_a_boundary(tmp_path):
+    import ast
+
+    from classify_seams import boundary_names, source_files
+    proj = _proj_with(tmp_path, {"src/pkg/__init__.py": "", "src/pkg/svc.py": "", "src/pkg/vendor/requests/__init__.py": ""})
+    files = source_files(proj, ["src"])
+    tree = ast.parse("from pkg.vendor import requests\n")
+    assert boundary_names(tree, "pkg.svc", False, files, proj, ["src"]) == {"requests"}
+
+
+def test_directory_without_a_py_file_is_not_a_project_module(tmp_path):
+    import ast
+
+    from classify_seams import boundary_names, source_files
+    proj = _proj_with(tmp_path, {"svc.py": "", "docs/index.md": ""})
+    files = source_files(proj, ["."])
+    tree = ast.parse("import docs\n")
+    assert boundary_names(tree, "svc", False, files, proj, ["."]) == {"docs"}

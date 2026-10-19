@@ -37,7 +37,7 @@ Where `docs/agents/testing.md` holds the repo's concrete fact, the line cites it
 2. **Parametrize over copies.** Grow an existing parametrized test only when all four hold: the same seam, the same setup and doubles, the same assertion shape, and a difference in data only. Convert on the second case, in the mirrored file. Add one row per cycle, each with a named id ("Parametrize idiom").
 3. **Behavior runs in the test body.** The code under test runs in the test body, not in a fixture or setup.
 4. **Assertion helpers.** Name assertion helpers with the repo's assertion prefix ("Assertion idiom", `Prefix:` line).
-5. **"Does not raise" tests.** The name or docstring says "does not raise", or the test's only check is a call to a name on the `Raisers:` line ("Assertion idiom").
+5. **"Does not raise" tests.** The name or docstring says "does not raise", or the test's only check is a call to a name on the `Raisers:` line; a test that uses a fixture on the `Fixtures that assert:` line needs no assertion of its own ("Assertion idiom").
 6. **Order independence.** Each test owns its state and passes in any order ("Order independence").
 7. **Call-time budget.** Stay under the budget; stub the slow boundary, not the test ("Cost budget").
 8. **Assertion strength.** Each test asserts something no other test asserts. Give each property the code enforces (a boundary, an anchor, a case rule, a type guard) its own case, even when that case covers no new lines.
