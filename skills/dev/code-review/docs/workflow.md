@@ -575,7 +575,7 @@ Prompt:
 > - Kotlin idioms: `data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`, named constants
 > - Simplification: dead code, over-engineering, redundant abstractions, unused variables
 > - Efficiency: unnecessary allocations, repeated computations, missing batching
-> - Testing standards: correct framework (Kotlin Test over JUnit), MockK type-erasure pitfall (`match {}` vs `any<T>()`), test naming conventions, test independence, event exhaustiveness checks
+> - Testing standards: the neutral checks in `testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`kotlin-standards.md` → Testing: Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`, naming, event exhaustiveness)
 > - Altitude cleanup: magic strings, TODO comments without tracking, stale/misleading comments
 >
 > For each finding, return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE).
@@ -694,7 +694,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Business logic** (when SRS provided, for UseCase/validator/event-handler changes): business rules enforced; authorization correct; state transitions respected; events published correctly. Apply 2x severity multiplier for UseCase findings.
 >
-> **Testing standards**: Kotlin Test over JUnit; MockK `match {}` vs `any<T>()` pitfall; backtick descriptive names; correct test types per class; event exhaustiveness checks; test independence.
+> **Testing standards**: the neutral checks in `testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`kotlin-standards.md` → Testing: Kotlin Test over JUnit, `match {}` vs `any<T>()`, backtick names, test types per class, event exhaustiveness).
 >
 > **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >
@@ -1029,11 +1029,11 @@ Documents are discovered dynamically in Step 0 using `find` commands. The 5 docu
 
 | Topic | Document | Description |
 |-------|----------|-------------|
-| Kotlin Standards | [kotlin-standards.md](kotlin-standards.md) | Kotlin idioms, vertical-slice architecture, three-tier models, DynamoDB patterns |
+| Kotlin Standards | [kotlin-standards.md](kotlin-standards.md) | Kotlin idioms, vertical-slice architecture, three-tier models, DynamoDB patterns, Kotlin/MockK/Spring testing |
 | Python Standards | [python-standards.md](python-standards.md) | Python idioms, pydantic v2, DRY patterns, SQL safety, testing |
 | Security Patterns | [security-patterns.md](security-patterns.md) | Security review patterns |
 | Architecture Patterns | [architecture-patterns.md](architecture-patterns.md) | Module boundary and architecture patterns |
-| Testing Standards | [testing-standards.md](testing-standards.md) | Test framework conventions and patterns |
+| Testing Standards | [testing-standards.md](testing-standards.md) | Language-neutral test checks; Kotlin/Spring test conventions are in kotlin-standards.md → Testing |
 
 ### Modules
 - **git-commands.md** — Git command reference for large changesets
