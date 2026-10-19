@@ -12,7 +12,7 @@ Edit values freely. Heading names and line keys (`covering tests for changed fil
 
 ## Commands
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 - full suite: `{command}`
 - one file: `{command} <path>`
@@ -21,7 +21,7 @@ No fact for this repo: write `not set` here.
 
 ## Test layout
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 One line per language present:
 
@@ -33,13 +33,13 @@ Guard: `{meta-test or CI check that enforces the rule}` (omit when none)
 
 ## Seam declaration
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 A seam that a ticket agrees is declared public by: {mechanism per language, for example "listed in the module's `__all__`", "`export`ed", "capitalized name", "`public`"}.
 
 ## Stub helper
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 - Injection point: {how a port or boundary is passed in: deps object, constructor argument, parameter}
 - Checked patch, fallback only: `{helper}` (for example `autospec=True`)
@@ -47,7 +47,7 @@ No fact for this repo: write `not set` here.
 
 ## Assertion idiom
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 - Prefix: `{prefix}` (the assertion helper prefix, for example `assert_`)
 - Raisers: {name}, … (documented "does not raise" helpers; `refactor-tests` passes each name as `--raiser`)
@@ -56,7 +56,7 @@ No fact for this repo: write `not set` here.
 
 ## Parametrize idiom
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 `{runner's table-driven construct}`, for example `@pytest.mark.parametrize`, `test.each`, a table with `t.Run`, `@ParameterizedTest`.
 
@@ -64,14 +64,14 @@ Named case id: `{how a row gets an id that names the behavior it pins}`, for exa
 
 ## Order independence
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 - Shuffler: `{plugin}` installed | planned | none
 - Shared state a test must not leak: {database, environment, cache path, port, …}, isolated by {fixture or mechanism}
 
 ## Cost budget
 
-No fact for this repo: write `not set` here.
+<!-- No fact for this repo: replace this comment with `not set`. Fact filled: delete this comment. -->
 
 - Per-test call time: under `{limit}`
 - Slow tier: marker `{name}`, excluded from the default run by `{command}` (omit when none)
