@@ -1,6 +1,6 @@
 # Testing Standards
 
-Language-neutral standard for test files in the diff. It states the same properties as the `tdd` Test shape section. Read the repo's `docs/agents/testing.md` for the concrete facts each check cites by heading; where it is absent or a heading reads `not set`, follow the neighbouring tests. Language specifics live in the language file (`kotlin-standards.md` → `## Testing`, `python-standards.md` → Testing Patterns).
+Language-neutral standard for test files in the diff. It states the same properties as the `tdd` Test shape section. Read the repo's `docs/agents/testing.md` for the concrete facts each check cites by heading; where it is absent, a heading reads `not set`, or a line key reads `Key: not set` (`Prefix:`, `Raisers:`, `Fixtures that assert:`), follow the neighbouring tests. Language specifics live in the language file (`kotlin-standards.md` → `## Testing`, `python-standards.md` → Testing Patterns).
 
 Review reads the diff only. Review never runs a shuffle and never measures call time.
 

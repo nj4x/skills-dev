@@ -10,7 +10,7 @@ How this repo runs and writes tests. Skills read these headings:
 
 Edit values freely. Heading names and line keys are fixed: skills cite them by name. The line keys are `full suite:`, `one file:`, `covering tests for changed files:` (the Commands keys), `Integration directory:`, `Guard:`, `Prefix:`, `Raisers:`, `Fixtures that assert:`, `Named case id:`, `Shuffler:` and `Slow tier:`.
 
-A heading with no fact for this repo reads `not set`; a line key with no fact reads `Key: not set`. Each reader states its own fallback:
+**`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one. Each reader states its own fallback:
 
 - `testing` falls back per Commands line (one-file included) to the repo's AGENTS.md, then its runner config.
 - `tdd` and `code-review` follow the neighbouring tests. `tdd` keeps the language's public-export marker for Seam declaration, and runs no budget check when Cost budget reads `not set`.
@@ -19,7 +19,7 @@ A heading with no fact for this repo reads `not set`; a line key with no fact re
 
 ## Commands
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 - full suite: `{command}`
 - one file: `{command} <path>`
@@ -27,25 +27,25 @@ A heading with no fact for this repo reads `not set`; a line key with no fact re
 
 ## Test layout
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 One line per language present:
 
 - {language}: `{source path template}` → `{test path template}`
 
-Integration directory: `{dir}` (or one `{language}: {dir}` per language; a bare value applies to the repo's primary test language). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
+Integration directory: `{dir}` (a bare value applies to the primary test language, the one with the most test files; write one `{language}: {dir}` per language when the repo has more than one test language). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
 
-Guard: `{meta-test or CI check that enforces the rule}` (omit when none)
+Guard: `{meta-test or CI check that enforces the rule}`
 
 ## Seam declaration
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 A seam that a ticket agrees is declared public by: {mechanism per language, for example "listed in the module's `__all__`", "`export`ed", "capitalized name", "`public`"}.
 
 ## Stub helper
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 - Injection point: {how a port or boundary is passed in: deps object, constructor argument, parameter}
 - Checked patch, fallback only: `{helper}` (for example `autospec=True`)
@@ -53,7 +53,7 @@ A seam that a ticket agrees is declared public by: {mechanism per language, for 
 
 ## Assertion idiom
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 - Prefix: `{prefix}` (the assertion helper prefix, for example `assert_`)
 - Raisers: {name}, … (documented "does not raise" helpers; `refactor-tests` passes each name as `--raiser`)
@@ -62,7 +62,7 @@ A seam that a ticket agrees is declared public by: {mechanism per language, for 
 
 ## Parametrize idiom
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 `{runner's table-driven construct}`, for example `@pytest.mark.parametrize`, `test.each`, a table with `t.Run`, `@ParameterizedTest`.
 
@@ -70,15 +70,15 @@ Named case id: `{how a row gets an id that names the behavior it pins}`, for exa
 
 ## Order independence
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 - Shuffler: `{plugin}` installed | planned | none
 - Shared state a test must not leak: {database, environment, cache path, port, …}, isolated by {fixture or mechanism}
 
 ## Cost budget
 
-<!-- No fact for this repo: replace this comment and every {placeholder} line under it with `not set`. Fact filled: delete this comment, replace each {placeholder} with its value, and write `Key: not set` for a line key with no fact (delete a line marked "omit when none"). -->
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
 
 - Per-test call time: under `{limit}`
-- Slow tier: marker `{name}`, excluded from the default run by `{command}` (omit when none)
+- Slow tier: marker `{name}`, excluded from the default run by `{command}`
 - Known expensive setup: `{fixture}`, which stubs {what} because {why}

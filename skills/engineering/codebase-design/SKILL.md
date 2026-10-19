@@ -59,7 +59,7 @@ When designing an interface, ask:
 
 ## Principles
 
-- **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, swappable parts — they just aren't part of the interface. A module can have **internal seams** (substitution points its own implementation uses) as well as the **external seam** at its interface. Tests reach an internal seam only through the interface. The exception is a local-substitutable stand-in (PGLite for Postgres, see DEEPENING.md), which substitutes a boundary dependency rather than an internal part.
+- **Depth is a property of the interface, not the implementation.** A deep module can be internally composed of small, swappable parts — they just aren't part of the interface. A module can have **internal seams** (substitution points its own implementation uses) as well as the **external seam** at its interface. Tests reach an internal seam only through the interface. The exception is a local-substitutable stand-in (kind 2 in DEEPENING.md, such as PGLite for Postgres), which substitutes a boundary dependency rather than an internal part.
 - **The deletion test.** Imagine deleting the module. If complexity vanishes, it was a pass-through. If complexity reappears across N callers, it was earning its keep.
 - **The interface is the test surface.** Callers and tests cross the same seam. If you want to test *past* the interface, the module is probably the wrong shape.
 - **One adapter means a hypothetical seam. Two adapters means a real one.** Don't introduce a seam unless something actually varies across it.

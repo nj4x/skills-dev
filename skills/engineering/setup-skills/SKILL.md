@@ -96,7 +96,7 @@ If the user declines the migration, record in `docs/agents/domain.md` that this 
 Show one draft of the file from the [testing.md](./testing.md) seed, every heading filled. Tag each value by source:
 
 - **detected** — found in the repo (exploration);
-- **default** — proposed from `../refactor-tests/reference/patterns.md` for the language (path template, integration directory from its "Integration directory targets (cross-cutting tests)" section, assertion prefixes). Read it from there every run; never copy a default into this skill. The cost budget has no default there: it stays **not set** unless the user gives one. When `refactor-tests` isn't installed, the value is **not set**;
+- **default** — proposed from `../refactor-tests/reference/patterns.md` for the language (path template, integration directory from its "Integration directory targets (cross-cutting tests)" section, assertion prefixes from its "Assertion vocabulary (dead-test detection)" section). Read it from there every run; never copy a default into this skill. The cost budget has no default there: it stays **not set** unless the user gives one. When `refactor-tests` isn't installed, the value is **not set**;
 - **not set** — nothing found and no default.
 
 Ask only these, one question each, recommended answer first:
@@ -104,11 +104,11 @@ Ask only these, one question each, recommended answer first:
 1. A **detected** value that differs from the default (for example a flat test tree, not mirrored): keep the repo's convention, or adopt the default for new tests? Recommend the default for new tests.
 2. **Seam declaration**, when not detected: propose the language's own public marker.
 
-Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. A heading with no fact reads `not set`; a line key with no fact reads `Key: not set` (for example `Raisers: not set`). A heading or key that gets a fact drops the template's comment and the `{placeholder}` lines under it. The written file holds no `{placeholder}` text.
+Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. Write every missing fact by the seed's `not set` rule. A heading that gets a fact drops the template's comment and the `{placeholder}` lines under it. The written file holds no `{placeholder}` text. When exploration detects more than one test language, write `Integration directory:` as one `{language}: {dir}` per language.
 
 **Existing guide.** Copy each fact it holds as one line under its heading and link the guide for the detail. Move or rewrite nothing in the guide.
 
-**Gates.** Record each gate exploration found in its line: the layout guard in "Test layout" `Guard:`, the shuffler in "Order independence" `Shuffler:`, the slow-tier exclusion in the "Cost budget" `Slow tier:` line. Where none was found, omit `Guard:` and the `Slow tier:` line, and write `Shuffler: none`. Recommend no gate. Write no CI, hook, or runner config.
+**Gates.** Record each gate exploration found in its line: the layout guard in "Test layout" `Guard:`, the shuffler in "Order independence" `Shuffler:`, the slow-tier exclusion in the "Cost budget" `Slow tier:` line. Where none was found, `Guard:` and `Slow tier:` follow the `not set` rule and the shuffler reads `Shuffler: none`. Recommend no gate. Write no CI, hook, or runner config.
 
 ### 3. Confirm and edit
 
@@ -168,7 +168,7 @@ When Section B ran on GitHub or GitLab, create each configured label the tracker
 - **Same tracker only.** The `# Issue tracker: <name>` heading names the tracker. When it differs from the Section A choice, or the file is a freeform "Other" one, redo the Section A write for it.
 - **Compare per operation or section:** present locally, missing, or differing from the template.
 - **Local wins on settings and customizations:** the PR flag value, label names, added operations, the `## Requirements corpus` block. The template wins on operations the local file lacks or holds in an older form. Put each real conflict to the user.
-- **`testing.md`:** the seven fixed headings plus Commands are the template's structure; values stay local. A heading the local file lacks is added from the template as `not set` (its keys as `Key: not set`) unless Section E detects a value; the sync never writes `{placeholder}` lines into the repo's file. A heading the user renamed is a conflict: put it to the user, since `tdd` finds a heading only by its fixed name.
+- **`testing.md`:** the seven fixed headings plus Commands are the template's structure; values stay local. A heading the local file lacks is added from the template by its `not set` rule unless Section E detects a value; the sync never writes `{placeholder}` lines into the repo's file. A heading the user renamed is a conflict: put it to the user, since `tdd` finds a heading only by its fixed name.
 - **Compose the merged text with `Skill("writing-for-agents")`.** Each meaning appears once: a section the template replaced is removed, not kept beside its successor. When that skill is absent, merge section by section.
 - **Sync the `## Agent skills` block** by the same rules.
 
