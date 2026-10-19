@@ -50,6 +50,7 @@ import argparse
 import ast
 import functools
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -310,25 +311,29 @@ def _bound_names(tree):
 
 @functools.cache
 def _holds_module(base, parts):
-    """True when `base/<parts>` is a directory holding a `.py` file at any depth, or a `<parts>.py` file."""
+    """True when `base/<parts>` is a directory holding a `.py` file at any depth outside skipped directories, or a `<parts>.py` file."""
     folder = base.joinpath(*parts)
-    if folder.is_dir() and next(folder.rglob("*.py"), None) is not None:
-        return True
+    if folder.is_dir():
+        for _, dirs, names in os.walk(folder):
+            dirs[:] = [d for d in dirs if d not in _SKIP_NAMES]
+            if any(n.endswith(".py") for n in names):
+                return True
     return base.joinpath(*parts[:-1], parts[-1] + ".py").is_file()
 
 
 def _is_vendored(segment):
-    return segment in ("vendor", "vendored") or segment.endswith("_vendor")
+    return segment in ("vendor", "vendored", "_vendor", "_vendored")
 
 
 def _resolves_under_source(root, source_roots, module):
     """True when `module` is a `.py` file or a directory holding one under a source root, though `files` omits it.
 
-    Only `build` (first-party generated code) overrides `_skip_dir`: `vendor`, `node_modules`, `.venv`
-    and the other skipped names stay outside the project. A directory with no `.py` file is no module.
+    Only a `build` segment below the first (first-party generated code) overrides `_skip_dir`: a
+    top-level `build` (setuptools output, the PyPA frontend), `vendor`, `node_modules`, `.venv` and the
+    other skipped names stay outside the project. A directory with no `.py` file is no module.
     """
     parts = tuple(module.split("."))
-    if any(p in _SKIP_NAMES - {"build"} for p in parts):
+    if parts[0] in _SKIP_NAMES or any(p in _SKIP_NAMES - {"build"} for p in parts[1:]):
         return False
     return any(_holds_module(root / sr, parts) for sr in source_roots)
 
@@ -339,7 +344,7 @@ def boundary_names(tree, importer, importer_is_pkg, files, root, source_roots):
     A name refers to a project module when it is a source file, or a package (also a namespace
     package without `__init__.py`) holding one, or a `.py` file or a directory holding one under a
     source root of `root` (a subpackage named like `build`, absent from `files`, is still the
-    project's own). A vendored segment (`vendor`, `vendored`, `*_vendor`) marks third-party code.
+    project's own). A vendored segment (`vendor`, `vendored`, `_vendor`, `_vendored`, matched whole) marks third-party code.
     `import a.b.c` binds `a`, so `a` decides; `import a.b.c as x` and `from a.b import c` bind the
     full module. A name rebound from a project source is not a boundary.
     """

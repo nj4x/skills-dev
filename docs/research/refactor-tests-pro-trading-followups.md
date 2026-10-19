@@ -218,7 +218,7 @@ Fill the reserved `kill_set` slot ([PAT]:453) with a check that runs per module,
 
 ## Contracts to preserve when editing
 
-- **Seam definition quote.** Step 7b quotes `skills/engineering/tdd/SKILL.md:20` word for word and reads `codebase-design` terms (`docs/agents/skill-dependencies.md:12`). G5 adds the "test double" term. Check `codebase-design` for an existing word before inventing one.
+- **Seam definition quote.** Step 7b quotes `skills/engineering/tdd/SKILL.md` `## Seams — where tests go` word for word and reads `codebase-design` terms (`docs/agents/skill-dependencies.md:12`). G5 adds the "test double" term. Check `codebase-design` for an existing word before inventing one.
 - **Step 11 and `to-tickets`** (`docs/agents/skill-dependencies.md:13`; ADR-0079). Any edit must keep these: the slug rule, the `` key: `…` `` lines, the `label:` field, and headless mode. A new category (G3 `hotspot`) or status (G8 `declined`) changes the [PAT] tables and `render_review_queue.py` together, and needs an ADR-0079 amendment for the new status and edge.
 - **Path templates.** `testing` reads the [PAT] path templates (`docs/agents/skill-dependencies.md:14`). None of the proposals touch them.
 - **Audio cues.** `say_skill_start` / `say_skill_done` / `say_skill_cancel` on every exit path ([SKILL]:36, :40-44, :394-401; `docs/agents/hooks.md`). A new interactive question (G6 bulk confirm, G8 volume gate) sits inside the run's suppression window. Check `docs/agents/hooks.md` for whether a mid-run question needs a permission or idle cue.

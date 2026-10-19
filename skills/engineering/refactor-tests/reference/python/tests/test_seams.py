@@ -760,23 +760,9 @@ def test_boundary_and_own_logic():
     assert both["kind"] == "collaborator-double"  # own-logic double is stricter
 
 
-def test_ref_kind_keeps_a_patched_constant_and_an_unpatched_import_out_of_boundary_double():
+def test_ref_kind_keeps_a_constant_named_in_the_boundary_set_a_constant():
     from classify_seams import ref_kind
-    assert ref_kind("TIMEOUT", {"TIMEOUT": "constant"}, True, {"json"}) == "constant"
-    assert ref_kind("json", {"json": "import"}, False, {"json"}) == "other"
-
-
-def test_boundary_names_treat_namespace_packages_and_rebinds_as_project(tmp_path):
-    import ast
-
-    from classify_seams import boundary_names, source_files
-    proj = _proj_with(tmp_path, {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""})  # pkg has no __init__.py
-    files = source_files(proj, ["src"])
-    tree = ast.parse(
-        "import json\nimport pkg.cfg\nfrom pkg import cfg as c1\nfrom . import cfg as c2\n"
-        "try:\n    import ujson as fast\nexcept ImportError:\n    from pkg.cfg import fast\n"
-    )
-    assert boundary_names(tree, "pkg.svc", False, files, proj, ["src"]) == {"json"}
+    assert ref_kind("yaml", {"yaml": "constant"}, True, {"yaml"}) == "constant"
 
 
 _PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
@@ -791,10 +777,10 @@ _PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
             {"json"}, id="build-subpackage-is-project"),
         pytest.param(
             {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
-            "from pkg.vendor import requests\n", {"requests"}, id="vendor-from-module-import"),
+            "from pkg.vendor import requests\n", {"requests"}, id="vendored-from-source"),
         pytest.param(
             {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
-            "from pkg import vendor\n", {"vendor"}, id="vendor-from-package-import"),
+            "from pkg import vendor\n", {"vendor"}, id="vendored-imported-name"),
         pytest.param(
             {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
             "import pkg.vendor.requests\n", set(), id="vendor-bare-import-binds-project-root"),
@@ -805,17 +791,37 @@ _PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
             {**_PKG, "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
             "from pkg._vendor import requests\n", {"requests"}, id="underscore-vendor"),
         pytest.param(
+            {"svc.py": "", "pkg/payment_vendor.py": ""}, ".", "svc",
+            "from pkg import payment_vendor\n", set(), id="first-party-module-ending-in-vendor"),
+        pytest.param(
+            {"svc.py": "", "build/lib/pkg/mod.py": ""}, ".", "svc",
+            "import build\n", {"build"}, id="top-level-build-directory-is-not-a-module"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",  # pkg has no __init__.py
+            "import json\nimport pkg.cfg\n", {"json"}, id="namespace-package-bare-import"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",
+            "import json\nfrom pkg import cfg as c1\n", {"json"}, id="namespace-package-from-import"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",
+            "import json\nfrom . import cfg as c2\n", {"json"}, id="namespace-package-relative-import"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",
+            "import json\ntry:\n    import ujson as fast\nexcept ImportError:\n    from pkg.cfg import fast\n",
+            {"json"}, id="name-rebound-from-project-source"),
+        pytest.param(
             {"svc.py": "", "docs/index.md": ""}, ".", "svc",
             "import docs\n", {"docs"}, id="directory-without-py-file"),
         pytest.param(
-            {**_PKG, "src/ns/build/x.py": ""}, "src", "pkg.svc",
+            {**_PKG, "src/ns/sub/x.py": ""}, "src", "pkg.svc",
             "import ns\n", set(), id="py-file-only-deeper-in-directory"),
     ],
 )
 def test_boundary_names_decide_project_vs_boundary_by_the_bound_name(tmp_path, layout, source_root, importer, code, expected):
     import ast
 
-    from classify_seams import boundary_names, source_files
+    from classify_seams import _SKIP_NAMES, boundary_names, source_files
+    assert "build" in _SKIP_NAMES  # the build rows pin the code only while source_files skips build
     proj = _proj_with(tmp_path, layout)
     files = source_files(proj, [source_root])
     assert boundary_names(ast.parse(code), importer, False, files, proj, [source_root]) == expected
