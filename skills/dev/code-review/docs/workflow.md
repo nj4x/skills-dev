@@ -194,12 +194,16 @@ fd -H -E .git -d 5 -t f -t l '^(CODING_STANDARDS|CONTRIBUTING)\.md$'
 
 # Agent instruction files, scanned for coding sections below
 fd -d 1 -t f -t l '^(AGENTS|CLAUDE)\.md$'
+
+# Testing conventions, read whole
+[ -f docs/agents/testing.md ] && echo docs/agents/testing.md
 ```
 
 `-t f -t l` keeps symlinked files, so a symlinked `CLAUDE.md` reaches the dedupe in 0.5.2. The `docs/` search does not use `fd -p`: that flag matches the absolute path, so a checkout path such as `~/standards/repo` would match every file under `docs/`. Filtering fd's output, which is relative to the root, anchors the match at the root `docs/` and leaves a nested `vendor/x/docs/` out.
 
 - `CODING_STANDARDS.md` and `CONTRIBUTING.md`: when either exists, it must be on the list.
 - `docs/**/standards*`: every match goes on the list.
+- `docs/agents/testing.md`: when it exists, it goes on the list as a whole-file entry and wins over the bundled testing standard on conflict. Its headings are the facts [testing-standards.md](testing-standards.md) cites.
 - `AGENTS.md` / `CLAUDE.md`: read each file and follow its `@<path>` imports. Only the coding sections count: sections whose heading names code, coding, or style rules (for example `## Coding standards`, `## Code style`, `## Style`). List each such section as `<path>#<heading>`. A file with no such heading adds nothing.
 
 ### 0.5.2 Dedupe by resolved path and heading
@@ -208,13 +212,17 @@ Resolve the path part of every candidate with `realpath`, and keep one entry per
 
 ### 0.5.3 Precedence
 
-`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
+`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. With no `docs/agents/testing.md`, the bundled neutral testing rules apply, with neighbouring tests supplying the facts. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
 
 Report the result as one line under the Step 0.4 block:
 
 ```
-📏 Repo Standards: [comma-separated paths, or "none found — bundled Kotlin/Python/Testing standards apply"]
+📏 Repo Standards: [comma-separated paths (include docs/agents/testing.md when present), or "none found — bundled Kotlin/Python/Testing standards apply"]
 ```
+
+### 0.5.4 Test scope
+
+Review grades the new or changed tests in the diff. A finding on a test the diff does not touch is dropped in Synthesis, which adds the one pointer Note.
 
 Proceed to Step 1.
 
@@ -595,7 +603,7 @@ Prompt:
 After all 4 finder reports return inline:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
-3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval.
+3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a finding on a test the diff does not touch is dropped, not reported; when Finder C dropped one or more, add one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". At most one such Note per report.
 4. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
 5. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
 6. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
