@@ -66,7 +66,7 @@ For each source file in each detected source root:
 3. If the existing test path differs from the target path, record a move entry `{ from, to, language, source_file }`.
 4. If no test file exists for this source file, skip — do not create empty test files.
 
-**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: e2e tests and tests whose import list spans packages with no dominant module. **Exception: location-scoped fixtures** (`conftest.py`, jest setup files referenced in config paths, Go `TestMain` functions) are pinned in place — do not relocate them, even if not assigned to a source. For each cross-cutting file: compute its target path in the language's integration directory (from `reference/patterns.md`), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`.
+**Cross-cutting classification:** a test file is cross-cutting when it cannot be cleanly attributed to a single source file. Use `search-codebase` to check whether the test exercises 2+ distinct non-mocked methods from different classes; if yes, classify as cross-cutting. Also treat as cross-cutting: e2e tests and tests whose import list spans packages with no dominant module. **Exception: location-scoped fixtures** (`conftest.py`, jest setup files referenced in config paths, Go `TestMain` functions) are pinned in place — do not relocate them, even if not assigned to a source. For each cross-cutting file: compute its target path in the integration directory (`reference/patterns.md` table, or the `Integration directory:` value under `docs/agents/testing.md` → Test layout for the file's language, when set; a bare value applies to the primary test language only, defined in `reference/patterns.md` Language detection), preserving the filename. Record in `plan.json` `cross_cutting` array as `{ from, to, language, reason }`.
 
 **When a mapping is ambiguous** (test plausibly belongs to two modules), pick the one whose module name appears first in the test file's import list. Record the decision in the ledger `notes` field; do not stop to ask.
 
@@ -183,11 +183,11 @@ The pass is Python-only for now; other languages get `status: skipped` with reas
 
 ### Step 7b — Seam classification
 
-Set ledger `phase: seams`. Runs after the evidence pass and before Step 8 writes the plan. Python only: other languages get no seams and no pinning classification. Read `codebase-design` for the terms module, interface, seam, and adapter. This skill uses the seam definition from `skills/engineering/tdd/SKILL.md:20` word for word:
+Set ledger `phase: seams`. Runs after the evidence pass and before Step 8 writes the plan. Python only: other languages get no seams and no pinning classification. Read `codebase-design` for the terms module, interface, seam, and adapter. This skill uses the seam definition from `skills/engineering/tdd/SKILL.md` `## Seams — where tests go` word for word:
 
-> A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
+> A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals. Here "seam" means the module's external seam, its public interface; `codebase-design` also defines internal seams, which are not test surfaces.
 
-Keep that quote and `tdd/SKILL.md:20` in step; `docs/agents/skill-dependencies.md` lists the dependency. Rules, schema, and signal definitions: `reference/patterns.md` → Seam classification. Helper: `$SKILL_DIR/reference/python/classify_seams.py`.
+Keep that quote and `tdd/SKILL.md` `## Seams — where tests go` in step; `docs/agents/skill-dependencies.md` lists the dependency. Rules, schema, and signal definitions: `reference/patterns.md` → Seam classification. Helper: `$SKILL_DIR/reference/python/classify_seams.py`.
 
 **Ledger resume.** Ledger `seams.status: confirmed` is final: reuse `seams.modules`, never ask again, and skip to item 3. Item 3 then runs `classify` again: rebuild `seams.warnings` from `seams.propose_warnings` and the new `classify` warnings, so the earlier `classify` warnings are replaced, not appended twice. A `proposed` record is re-proposed.
 
@@ -209,7 +209,7 @@ Parse every test file (post-layout) using the language's AST parser. For each te
 
 Apply criteria in order: exact duplicate → dead → trivially true → coverage subset → cost → hotspot probe → parametrize cluster → parametrize pair.
 
-**Evidence-free criteria (Python).** The helper applies exact duplicate, dead, trivially true, parametrize cluster and parametrize pair, with the "Do NOT flag" rules of Redundancy criteria. Pass one `--source-root` per ledger `source_roots` entry and one `--tests` flag per test directory; both flags repeat (`--tests a b` fails with "unrecognized arguments"). Add one `--raiser <name>` for each documented raiser the project names beyond `validate` (bare `validate(` and `*.validate(` always count):
+**Evidence-free criteria (Python).** The helper applies exact duplicate, dead, trivially true, parametrize cluster and parametrize pair, with the "Do NOT flag" rules of Redundancy criteria. Pass one `--source-root` per ledger `source_roots` entry and one `--tests` flag per test directory; both flags repeat (`--tests a b` fails with "unrecognized arguments"). Add one `--raiser <name>` for each documented raiser beyond `validate` (bare `validate(` and `*.validate(` always count). Take the names from the `Raisers:` line under `docs/agents/testing.md` → Assertion idiom; when the file is absent, that heading reads `not set`, or the line is missing or reads `not set`, use the names the project documents elsewhere:
 
 ```sh
 python3 $SKILL_DIR/reference/python/scan_static.py --root $PROJECT_PATH --source-root <root> … \

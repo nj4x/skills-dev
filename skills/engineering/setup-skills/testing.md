@@ -1,0 +1,79 @@
+# Testing
+
+How this repo runs and writes tests. Skills read these headings:
+
+- `testing` reads only **Commands**.
+- `tdd` reads all seven headings below **Commands**, once, before the first test.
+- `code-review` reads the whole file. It checks **Order independence** and **Cost budget** for static smells only.
+- `implement` and `implement-spec` read **Seam declaration**.
+- `refactor-tests` reads **Test layout** and **Assertion idiom**. It runs its own order and cost checks and never reads **Order independence** or **Cost budget**.
+
+Edit values freely. Heading names and line keys are fixed: skills cite them by name. The line keys are `full suite:`, `one file:`, `covering tests for changed files:` (the Commands keys), `Integration directory:`, `Guard:`, `Injection point:`, `Checked patch, fallback only:`, `Shared fakes and factories:`, `Prefix:`, `Raisers:`, `Fixtures that assert:`, `Named case id:`, `Shuffler:`, `Shared state a test must not leak:`, `Per-test call time:`, `Slow tier:` and `Known expensive setup:`.
+
+**`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one; a line with no key (`{language}: …`) that is absent means no fact. Each reading skill states its own fallback.
+
+## Commands
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+- full suite: `{command}`
+- one file: `{command} <path>`
+- covering tests for changed files: `{command}` (omit when the repo has no mapper)
+
+## Test layout
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+One line per language present:
+
+- {language}: `{source path template}` → `{test path template}`
+
+Integration directory: `{dir}` (a bare value applies to the primary test language, defined in `refactor-tests` `patterns.md` "Language detection"; with more than one test language, write a single line, pairs separated by `; `, for example `Integration directory: python: tests/integration; kotlin: src/test/integration`). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
+
+Guard: `{meta-test or CI check that enforces the rule}`
+
+## Seam declaration
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+A seam that a ticket agrees is declared public by: {mechanism per language, for example "listed in the module's `__all__`", "`export`ed", "capitalized name", "`public`"}.
+
+## Stub helper
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+- Injection point: {how a port or boundary is passed in: deps object, constructor argument, parameter}
+- Checked patch, fallback only: `{helper}` (for example `autospec=True`)
+- Shared fakes and factories: `{path}` (omit when none)
+
+## Assertion idiom
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+- Prefix: `{prefix}` (the assertion helper prefix, for example `assert_`)
+- Raisers: {name}, … (documented "does not raise" helpers; `refactor-tests` passes each name as `--raiser`)
+- A test with no inline assertion says "does not raise" in its name or docstring (a fixed convention; no line key).
+- Fixtures that assert: {names}, or none
+
+## Parametrize idiom
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+`{runner's table-driven construct}`, for example `@pytest.mark.parametrize`, `test.each`, a table with `t.Run`, `@ParameterizedTest`.
+
+Named case id: `{how a row gets an id that names the behavior it pins}`, for example `pytest.param(..., id="comma-decimal")` or a `test.each` title template.
+
+## Order independence
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+- Shuffler: `{plugin}` installed | planned | none
+- Shared state a test must not leak: {database, environment, cache path, port, …}, isolated by {fixture or mechanism}
+
+## Cost budget
+
+<!-- Delete this comment and replace each {placeholder} with its value. A line key or heading with no fact follows the `not set` rule in the intro; delete a line marked "omit when none". -->
+
+- Per-test call time: under `{limit}`
+- Slow tier: marker `{name}`, excluded from the default run by `{command}`
+- Known expensive setup: `{fixture}`, which stubs {what} because {why}

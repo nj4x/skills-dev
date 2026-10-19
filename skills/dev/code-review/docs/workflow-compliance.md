@@ -248,6 +248,7 @@ When a Data View gap is discovered (e.g., a GSI missing from a synthetic `KeyEnt
 When reviewing test files, validate against established testing patterns.
 
 **Key areas to check:**
+- [ ] **Neutral checks**: apply the eight checks and the Major/Minor split in [testing-standards.md](testing-standards.md).
 - [ ] **Frameworks**: Kotlin Test Framework preferred over JUnit Jupiter. MockK is the primary mocking library (not Mockito, except for simple validator tests).
 - [ ] **MockK type erasure pitfall**: Use `match { it is SpecificType }` instead of `any<SpecificType>()` inside `verify {}` — generics are erased at runtime.
 - [ ] **Test naming**: Backtick descriptive names (`` `should return X when Y` ``).
@@ -257,4 +258,4 @@ When reviewing test files, validate against established testing patterns.
 
 > ⚠️ **Anti-false-positive — Controller Test Full Dependency Mocking**: In `@ControllerDocumentationTest` classes, `@MockkBean` declarations for controller dependencies that are **not directly invoked** in that test's scenarios are **NOT** a violation. They are mandatory for Spring application context wiring of the full controller dependency graph. Do **NOT** report these as "unnecessary dependencies" or flag them as a quality issue.
 
-→ See [testing-standards.md](testing-standards.md) for full patterns, import lists, and code examples.
+→ See [testing-standards.md](testing-standards.md) for the neutral checks and severity, and [kotlin-standards.md](kotlin-standards.md) → Testing for patterns, import lists, and code examples.

@@ -722,3 +722,133 @@ def test_cli_reuse_reads_the_default_confirmed_path(kinds_proj, capsys):
     main(["reuse", "--root", str(kinds_proj), "--proposed", "proposed.json"])
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "ok" and out["diff"]["added"] == {"src/pkg/svc.py": ["report"]}
+
+
+def test_double_of_a_boundary_import_is_boundary_double_and_of_project_logic_is_not(tmp_path):
+    from classify_seams import NOTE_BOUNDARY, NOTE_DOUBLE
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/svc.py": SVC,
+        "src/pkg/cfg.py": CFG,
+        "tests/test_bd.py": '''from unittest.mock import patch
+
+from pkg.svc import run
+
+
+def test_boundary():
+    with patch("pkg.svc.json"):
+        assert run() is not None
+
+
+def test_own_logic():
+    with patch("pkg.svc.load_config"):
+        assert run() is not None
+
+
+def test_boundary_and_own_logic():
+    with patch("pkg.svc.json"), patch("pkg.svc.load_config"):
+        assert run() is not None
+''',
+    })
+    out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_bd.py"])
+    pins = _by_test(out)
+    b = pins[("test_boundary", "src/pkg/svc.py")]
+    assert (b["internals"], b["doubles"], b["kind"], b["note"]) == ([], ["json"], "boundary-double", NOTE_BOUNDARY)
+    o = pins[("test_own_logic", "src/pkg/svc.py")]
+    assert (o["doubles"], o["kind"], o["note"]) == (["load_config"], "collaborator-double", NOTE_DOUBLE)
+    both = pins[("test_boundary_and_own_logic", "src/pkg/svc.py")]
+    assert both["kind"] == "collaborator-double"  # own-logic double is stricter
+
+
+def test_ref_kind_keeps_a_constant_named_in_the_boundary_set_a_constant():
+    from classify_seams import ref_kind
+    assert ref_kind("yaml", {"yaml": "constant"}, True, {"yaml"}) == "constant"
+
+
+_PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
+
+
+@pytest.mark.parametrize(
+    "layout, source_root, importer, code, expected",
+    [
+        pytest.param(
+            {**_PKG, "src/pkg/build/steps.py": ""}, "src", "pkg.svc",
+            "import json\nfrom pkg.build import steps\nfrom pkg.build.steps import run\nimport pkg.build.steps as s\n",
+            {"json"}, id="build-subpackage-is-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg.vendor import requests\n", {"requests"}, id="vendored-from-source"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg import vendor\n", {"vendor"}, id="vendored-imported-name"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "import pkg.vendor.requests\n", set(), id="vendor-bare-import-binds-project-root"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "import pkg.vendor.requests as r\n", {"r"}, id="vendor-aliased-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg._vendor import requests\n", {"requests"}, id="underscore-vendor"),
+        pytest.param(
+            {"svc.py": "", "pkg/payment_vendor.py": ""}, ".", "svc",
+            "from pkg import payment_vendor\n", set(), id="first-party-module-ending-in-vendor"),
+        pytest.param(
+            {"svc.py": "", "build/lib/pkg/mod.py": ""}, ".", "svc",
+            "import build\n", {"build"}, id="top-level-build-directory-is-not-a-module"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",  # pkg has no __init__.py
+            "import json\nimport pkg.cfg\n", {"json"}, id="namespace-package-bare-import"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",
+            "import json\nfrom pkg import cfg as c1\n", {"json"}, id="namespace-package-from-import"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",
+            "import json\nfrom . import cfg as c2\n", {"json"}, id="namespace-package-relative-import"),
+        pytest.param(
+            {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""}, "src", "pkg.svc",
+            "import json\ntry:\n    import ujson as fast\nexcept ImportError:\n    from pkg.cfg import fast\n",
+            {"json"}, id="name-rebound-from-project-source"),
+        pytest.param(
+            {"svc.py": "", "docs/index.md": ""}, ".", "svc",
+            "import docs\n", {"docs"}, id="directory-without-py-file"),
+        pytest.param(
+            {**_PKG, "src/ns/node_modules/x.py": ""}, "src", "pkg.svc",
+            "import ns\n", {"ns"}, id="py-file-only-under-a-pruned-directory-is-no-module"),
+        pytest.param(
+            {**_PKG, "src/ns/build/x.py": ""}, "src", "pkg.svc",
+            "import ns\nfrom ns.build import x\n", set(), id="py-file-only-under-nested-build-is-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor.py": ""}, "src", "pkg.svc",
+            "from pkg import vendor\n", set(), id="first-party-vendor-module-stays-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendored.py": ""}, "src", "pkg.svc",
+            "from pkg import vendored\n", set(), id="first-party-vendored-module-stays-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendored/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg.vendored import requests\nfrom pkg import vendored\n", {"requests", "vendored"},
+            id="vendored-segment"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendored/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg._vendored import requests\n", {"requests"}, id="underscore-vendored-segment"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/__init__.py": "", "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg._vendor import requests\n", {"requests"}, id="pip-style-vendor-package-from-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "import pkg._vendor.requests as r\n", {"r"}, id="underscore-vendor-no-init-aliased-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/requests.py": ""}, "src", "pkg.svc",
+            "from pkg._vendor.requests import get\n", {"get"}, id="underscore-vendor-no-init-from-module-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor.py": ""}, "src", "pkg.svc",
+            "import pkg.vendor as v\n", set(), id="first-party-vendor-module-aliased-stays-project"),
+    ],
+)
+def test_boundary_names_decide_project_vs_boundary_by_the_bound_name(tmp_path, layout, source_root, importer, code, expected):
+    import ast
+
+    from classify_seams import boundary_names, source_files
+    proj = _proj_with(tmp_path, layout)
+    files = source_files(proj, [source_root])
+    assert boundary_names(ast.parse(code), importer, False, files, proj, [source_root]) == expected

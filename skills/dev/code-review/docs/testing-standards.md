@@ -1,196 +1,40 @@
 # Testing Standards
 
-When reviewing test files, validate against established testing patterns.
+Language-neutral standard for test files in the diff. It states the same properties as the `tdd` Test shape section. Read the repo's `docs/agents/testing.md` for the concrete facts each check cites by heading; where it is absent, a heading reads `not set`, or a line key reads `Key: not set` (`Prefix:`, `Raisers:`, `Fixtures that assert:`), follow the neighbouring tests. Language specifics live in the language file (`kotlin-standards.md` → `## Testing`, `python-standards.md` → Testing Patterns).
 
-## Kotlin Test Framework
+Review reads the diff only. Review never runs a shuffle and never measures call time.
 
-**Preferred over JUnit Jupiter** (note: the imports listed below are examples and not exhaustive):
+## Checks
 
-```kotlin
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
-import kotlin.test.assertContains
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
-import kotlin.test.expect
+Check each new or changed test against all eight:
+
+1. **Mirrored layout.** The test file sits where "Test layout" maps its source file; a test that exercises more than one source module sits in the integration directory.
+2. **Seam only.** The test calls seams declared public ("Seam declaration"). It never imports, calls, or patches the project's own internals.
+3. **Mocking stance.** Doubles stand in for ports and boundaries only (I/O, network, clock, process). Call assertions (`verify`, `assert_called_with`) apply to commands only: a call that crosses a boundary or port and is the observable outcome (email sent, row saved). A query is asserted through the returned value. A double the language file mandates (for example `@MockkBean` use cases in a `@ControllerDocumentationTest`) is not a finding.
+4. **Parametrize over copies.** A new test that meets all four grow conditions against an existing test is a row in that test: the same seam, the same setup and doubles, the same assertion shape, and a difference in data only. A second case converts the test, in the mirrored file. Each row carries a named id ("Parametrize idiom").
+5. **In-body behavior.** The code under test runs in the test body, not in a fixture or setup.
+6. **Assertion vocabulary.** The test holds an assertion. A "does not raise" test says so in its name or docstring, or its only check is a call to a name on the `Raisers:` line ("Assertion idiom"); a fixture on the `Fixtures that assert:` line supplies the assertion for a test that uses it. Assertion helpers use the prefix on the `Prefix:` line of "Assertion idiom". Each test asserts something no other test asserts; a property the code enforces (a boundary, an anchor, a case rule, a type guard) has its own case, even when that case covers no new lines.
+7. **Order independence, static smells only.** Flag state a test leaks to another: module-level mutables, shared fixtures that mutate, unisolated environment, database, cache path, or port ("Order independence").
+8. **Cost, static smells only.** Flag unstubbed network, sleep, real subprocess, and expensive setup that "Cost budget" says to stub.
+
+## Severity
+
+- **Major**: the test has no assertion (the check 6 exceptions excepted), is tautological, or tests or doubles the project's own internals (a double the language file mandates excepted).
+- **Minor**: every other test finding.
+
+A tautological test recomputes its expected value the way the code does, so it passes by construction. Expected values come from a literal, a worked example, or the spec.
+
+An assertion that targets the test's own fixture input, and never what the code under test produced or received, is a no-op test: report it as tautological.
+
+## Mock Verification model
+
+```text
+test "creates the user":
+    given   repository = double of the UserRepository port
+    given   service = UserService(repository)
+    given   user = a user with id "user123"
+    when    service.create_user(user)          # runs in the body
+    then    assert_called_once_with(repository.save, user matching id "user123")   # command: asserted on the double's call
 ```
 
-## MockK Framework
-
-**Primary mocking framework** (not Mockito, except for simple validator tests). The imports listed below are examples and not exhaustive:
-
-```kotlin
-import io.mockk.Called
-import io.mockk.CapturingSlot
-import io.mockk.MockKAnnotations
-import io.mockk.MockKStubScope
-import io.mockk.Runs
-import io.mockk.clearAllMocks
-import io.mockk.clearMocks
-import io.mockk.coVerify
-import io.mockk.confirmVerified
-import io.mockk.every
-import io.mockk.impl.annotations.InjectMockKs
-import io.mockk.impl.annotations.MockK
-import io.mockk.impl.annotations.SpyK
-import io.mockk.junit5.MockKExtension
-import io.mockk.just
-import io.mockk.justRun
-import io.mockk.mockk
-import io.mockk.mockkObject
-import io.mockk.mockkStatic
-import io.mockk.runs
-import io.mockk.slot
-import io.mockk.spyk
-import io.mockk.unmockkStatic
-import io.mockk.verify
-import io.mockk.verifyOrder
-import io.mockk.verifySequence
-```
-
-## MockK Verify Pitfall — Type Erasure
-
-`any<SpecificType>()` inside `verify {}` does **not** check the type at runtime (generics are erased). Always use `match {}` for type-specific verification:
-
-```kotlin
-// ❌ BAD — generic is erased, passes even if called with a different Event type
-verify { eventPublisher.publish(any<GroupCreatedEvent>()) }
-
-// ✅ GOOD — explicit runtime type check
-verify { eventPublisher.publish(match { it is GroupCreatedEvent }) }
-```
-
-## Test Naming Conventions
-
-- **Backtick descriptive names**: `` `should return user when user exists` ``
-- **Clear intent**: Names should describe the expected behavior
-- **Given-When-Then structure** when possible
-
-## Controller Tests
-
-- Use `@ControllerDocumentationTest` annotation
-- Use `MockMvc`, `@MockkBean`, and `TestParameters<T>` for parameterized document generation tests
-
-### Controller Test — Full Dependency Mocking (MANDATORY — Do NOT flag as violation)
-
-When testing a controller with `@ControllerDocumentationTest`, ALL constructor-injected dependencies
-of the tested controller MUST be declared as `@MockkBean` in EVERY test class for that controller,
-regardless of whether a specific test file directly invokes them.
-
-This is required because Spring must wire the complete controller bean in the test application
-context, which demands all its constructor dependencies to be present.
-
-❌ **DO NOT flag** `@MockkBean` fields in `@ControllerDocumentationTest` classes as
-"unnecessary dependencies" simply because they are not directly called in that test's scenarios.
-
-✅ **CORRECT**: A controller with 4 use case dependencies requires 4 `@MockkBean` declarations
-in each of its documentation test classes, even if only 1 is exercised per test file.
-
-## UseCase Tests
-
-- Unit tests with MockK mocks
-- Use `@ExtendWith(MockKExtension::class)`
-- Focus on business logic validation
-- Test edge cases and error conditions
-
-## Validator Tests
-
-- Cover valid/invalid inputs with clear assertions
-- Test boundary conditions
-- Verify error messages and codes
-
-## Event Tests
-
-- Verify event exhaustiveness with `require(generatedEvents.size == allConcreteSubclasses.size)` sealed class traversal
-- Test event payload correctness
-- Validate event publishing timing
-
-## DynamoDB Tests
-
-- Use `@DdbTest` annotation for integration tests
-- Test optimistic locking scenarios
-- Validate query and update operations
-
-## OpenAPI Documentation Tests
-
-- Use `@ParameterizedTest` + `@MethodSource` generating RestDocs snippets via `epages/restdocs-api-spec`
-- Validate API contract compliance
-- Test request/response examples
-
-## Test Independence
-
-- **No shared mutable state** between tests
-- Each test should be isolated
-- Use `@BeforeEach` and `@AfterEach` for setup/teardown
-- Avoid static state when possible
-
-## Common Testing Patterns to Validate
-
-### Test Structure
-```kotlin
-@Test
-fun `should return user when user exists`() {
-    // Given
-    val userId = "user123"
-    every { userRepository.findById(userId) } returns User(userId, "John Doe")
-    
-    // When
-    val result = userService.getUser(userId)
-    
-    // Then
-    assertNotNull(result)
-    assertEquals(userId, result.id)
-    assertEquals("John Doe", result.name)
-    
-    verify { userRepository.findById(userId) }
-}
-```
-
-### Exception Testing
-```kotlin
-@Test
-fun `should throw UserNotFoundException when user does not exist`() {
-    // Given
-    val userId = "nonexistent"
-    every { userRepository.findById(userId) } returns null
-    
-    // When/Then
-    val exception = assertFailsWith<UserNotFoundException> {
-        userService.getUser(userId)
-    }
-    
-    assertEquals("User not found: $userId", exception.message)
-}
-```
-
-### Mock Verification
-```kotlin
-@Test
-fun `should call repository to save user`() {
-    // Given
-    val user = User("user123", "John Doe")
-    
-    // When
-    userService.createUser(user)
-    
-    // Then
-    verify(exactly = 1) { userRepository.save(match { it.id == "user123" }) }
-}
-```
-
-## Testing Quality Checklist
-
-- [ ] **Test naming** is descriptive and follows conventions
-- [ ] **Test independence** - no shared state between tests
-- [ ] **Complete coverage** - positive, negative, and edge cases
-- [ ] **Proper mocking** - using MockK correctly with type-safe verification
-- [ ] **Clear assertions** - specific and meaningful
-- [ ] **Setup/teardown** - proper use of @BeforeEach/@AfterEach
-- [ ] **Exception handling** - testing error conditions
-- [ ] **Documentation** - OpenAPI specs generated correctly
-- [ ] **Framework usage** - using Kotlin Test Framework over JUnit
+Assert a double's calls only for commands (`save`, `publish`, `send`). Never assert that a double answered a query (`find`, `get`): the returned value already proves it.

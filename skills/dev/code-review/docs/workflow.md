@@ -194,12 +194,16 @@ fd -H -E .git -d 5 -t f -t l '^(CODING_STANDARDS|CONTRIBUTING)\.md$'
 
 # Agent instruction files, scanned for coding sections below
 fd -d 1 -t f -t l '^(AGENTS|CLAUDE)\.md$'
+
+# Testing conventions, read whole
+[ -f docs/agents/testing.md ] && echo docs/agents/testing.md
 ```
 
 `-t f -t l` keeps symlinked files, so a symlinked `CLAUDE.md` reaches the dedupe in 0.5.2. The `docs/` search does not use `fd -p`: that flag matches the absolute path, so a checkout path such as `~/standards/repo` would match every file under `docs/`. Filtering fd's output, which is relative to the root, anchors the match at the root `docs/` and leaves a nested `vendor/x/docs/` out.
 
 - `CODING_STANDARDS.md` and `CONTRIBUTING.md`: when either exists, it must be on the list.
 - `docs/**/standards*`: every match goes on the list.
+- `docs/agents/testing.md`: when it exists, it goes on the list as a whole-file entry and wins over the bundled testing standard on conflict. Its headings are the facts [testing-standards.md](testing-standards.md) cites.
 - `AGENTS.md` / `CLAUDE.md`: read each file and follow its `@<path>` imports. Only the coding sections count: sections whose heading names code, coding, or style rules (for example `## Coding standards`, `## Code style`, `## Style`). List each such section as `<path>#<heading>`. A file with no such heading adds nothing.
 
 ### 0.5.2 Dedupe by resolved path and heading
@@ -208,13 +212,17 @@ Resolve the path part of every candidate with `realpath`, and keep one entry per
 
 ### 0.5.3 Precedence
 
-`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
+`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled Kotlin, Python and Testing standards apply. A testing fact that `docs/agents/testing.md` lacks (no file, or `not set`) comes from the neighbouring tests; review never asks for a path.
 
 Report the result as one line under the Step 0.4 block:
 
 ```
-📏 Repo Standards: [comma-separated paths, or "none found — bundled Kotlin/Python/Testing standards apply"]
+📏 Repo Standards: [comma-separated paths (include docs/agents/testing.md when present), or "none found — bundled Kotlin/Python/Testing standards apply"]
 ```
+
+### 0.5.4 Test scope
+
+Review grades the new or changed tests in the diff. A testing-standard finding on test lines the diff did not change (`in_diff: no`) is dropped, whether or not the diff touches that test file; it never appears under Pre-existing. A testing-standard finding is a finding from `testing-standards.md` or from the Testing section of a language standards file (`kotlin-standards.md` → Testing, `python-standards.md` Testing Patterns); a security, correctness or other finding on unchanged test lines follows the normal Pre-existing route. When one or more were dropped, the report carries one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". The orchestrator applies this rule to every finder, verifier and subagent finding (Step 4.1 Synthesis step 3, Step 4.2 outcome mapping, Step 4.9).
 
 Proceed to Step 1.
 
@@ -575,7 +583,7 @@ Prompt:
 > - Kotlin idioms: `data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`, named constants
 > - Simplification: dead code, over-engineering, redundant abstractions, unused variables
 > - Efficiency: unnecessary allocations, repeated computations, missing batching
-> - Testing standards: correct framework (Kotlin Test over JUnit), MockK type-erasure pitfall (`match {}` vs `any<T>()`), test naming conventions, test independence, event exhaustiveness checks
+> - Testing standards: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file for the diff's language (Kotlin: `~/.claude/skills/code-review/docs/kotlin-standards.md` → `## Testing`; Python: `~/.claude/skills/code-review/docs/python-standards.md` → Testing Patterns)
 > - Altitude cleanup: magic strings, TODO comments without tracking, stale/misleading comments
 >
 > For each finding, return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE).
@@ -595,7 +603,7 @@ Prompt:
 After all 4 finder reports return inline:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
-3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval.
+3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a testing-standard finding on test lines the diff did not change is dropped, with at most one pointer Note, per Step 0.5.4. The mutating rosters (Step 4.1-RTM Agents 1–4) return `in_diff` too and follow the same rule; `--effort low` (Step 4.9) applies it to the subagent's findings.
 4. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
 5. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
 6. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
@@ -650,7 +658,7 @@ Prompt template:
 
 **Outcome mapping:**
 - `CONFIRMED` or `PLAUSIBLE` → include in main report at stated severity
-- `PRE_EXISTING` → move to the `📌 Pre-existing (outside this diff)` section at MINOR; exclude from grade calculation
+- `PRE_EXISTING` → move to the `📌 Pre-existing (outside this diff)` section at MINOR; exclude from grade calculation. A `PRE_EXISTING` verdict on a testing-standard finding on test lines the diff did not change drops the finding instead, under Step 0.5.4 (one Note, never listed under Pre-existing)
 - `REFUTED` → move to `### 🔍 Candidate Issues (Not Confirmed)` section in the report; exclude from grade calculation
 
 > MINOR findings are **not** sent to verifiers (cost vs benefit). They proceed directly to Step 11.
@@ -674,6 +682,8 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
   3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
   4. Read `~/.claude/skills/code-review/docs/deep-module-lens.md` — the shared deep-module detection scenarios (same as medium/high effort paths).
   5. Read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and binding rules for the maintainability-smells dimension.
+  6. Read `~/.claude/skills/code-review/docs/testing-standards.md` — the language-neutral test checks for the testing-standards dimension.
+  7. Read the language file for the diff's language — Kotlin: `~/.claude/skills/code-review/docs/kotlin-standards.md` (its `## Testing` section); Python: `~/.claude/skills/code-review/docs/python-standards.md` (its Testing Patterns section) — for the language testing checks.
 - This analysis brief:
 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
@@ -694,13 +704,13 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Business logic** (when SRS provided, for UseCase/validator/event-handler changes): business rules enforced; authorization correct; state transitions respected; events published correctly. Apply 2x severity multiplier for UseCase findings.
 >
-> **Testing standards**: Kotlin Test over JUnit; MockK `match {}` vs `any<T>()` pitfall; backtick descriptive names; correct test types per class; event exhaustiveness checks; test independence.
+> **Testing standards**: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file for the diff's language (Kotlin: `~/.claude/skills/code-review/docs/kotlin-standards.md` → `## Testing`; Python: `~/.claude/skills/code-review/docs/python-standards.md` → Testing Patterns).
 >
 > **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Add `in_diff: yes|no` (`yes` only when the cited line is added or modified by the diff); an `in_diff: no` finding is reported MINOR in the `📌 Pre-existing (outside this diff)` section, outside the grade. Open the code a recommended fix would change and confirm the fix keeps the invariants that code relies on. Prefer omission over false positives.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Add `in_diff: yes|no` (`yes` only when the cited line is added or modified by the diff); an `in_diff: no` finding is reported MINOR in the `📌 Pre-existing (outside this diff)` section, outside the grade, except a testing-standard finding on test lines the diff did not change, which the orchestrator drops (Step 0.5.4). Return those with `in_diff: no` and add no Note of your own. Open the code a recommended fix would change and confirm the fix keeps the invariants that code relies on. Prefer omission over false positives.
 
-Wait for the agent to return findings, then proceed to Step 10.5 (Lineage Enforcement), then Step 11 with the unified finding list.
+Wait for the agent to return findings, apply the Step 0.5.4 drop and Note to them, then proceed to Step 10.5 (Lineage Enforcement), then Step 11 with the unified finding list.
 
 **IF `--effort medium` or `--effort high`**: Steps 5–10 are replaced by Step 4.1 (fan-out agents). You MUST have already completed Step 4.1 (and Step 4.2 for high, which also routes to Step 10.5) before reaching this point. Proceed directly to Step 11 with the synthesized/verified finding list.
 
@@ -896,7 +906,7 @@ Copy one verdict string verbatim from this list, chosen by the grade of the conf
 1. **[File]:[Line]** (`[code_name]`) - [Issue] *(Refuted: [reason])*
 
 ### 📌 Pre-existing (outside this diff) — omit section when empty
-> Real problems on lines the diff does not touch. Reported MINOR, excluded from the grade, never a reason to withhold approval; the author may file a follow-up.
+> Real problems on lines the diff does not touch (a testing-standard finding on unchanged test lines is dropped instead, Step 0.5.4). Reported MINOR, excluded from the grade, never a reason to withhold approval; the author may file a follow-up.
 1. **[File]:[Line]** (`[code_name]`) - [Issue] *(finder severity: [CRITICAL|MAJOR|MINOR]; [fix])*
 
 ### 🔗 Lineage (ADR-0061)
@@ -1029,11 +1039,11 @@ Documents are discovered dynamically in Step 0 using `find` commands. The 5 docu
 
 | Topic | Document | Description |
 |-------|----------|-------------|
-| Kotlin Standards | [kotlin-standards.md](kotlin-standards.md) | Kotlin idioms, vertical-slice architecture, three-tier models, DynamoDB patterns |
+| Kotlin Standards | [kotlin-standards.md](kotlin-standards.md) | Kotlin idioms, vertical-slice architecture, three-tier models, DynamoDB patterns, Kotlin/MockK/Spring testing |
 | Python Standards | [python-standards.md](python-standards.md) | Python idioms, pydantic v2, DRY patterns, SQL safety, testing |
 | Security Patterns | [security-patterns.md](security-patterns.md) | Security review patterns |
 | Architecture Patterns | [architecture-patterns.md](architecture-patterns.md) | Module boundary and architecture patterns |
-| Testing Standards | [testing-standards.md](testing-standards.md) | Test framework conventions and patterns |
+| Testing Standards | [testing-standards.md](testing-standards.md) | Language-neutral test checks; Kotlin/Spring test conventions are in kotlin-standards.md → Testing |
 
 ### Modules
 - **git-commands.md** — Git command reference for large changesets
