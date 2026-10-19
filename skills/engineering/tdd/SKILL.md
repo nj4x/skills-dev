@@ -17,11 +17,15 @@ See [tests.md](tests.md) for examples and [mocking.md](mocking.md) for mocking g
 
 ## Seams — where tests go
 
-A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
+A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals. Here "seam" means the module's external seam, its public interface; `codebase-design` also defines internal seams, which are not test surfaces.
 
 **Test only at pre-agreed seams.** Before writing any test, write down the seams under test. A seam is agreed when the user or the ticket/spec names it (a "Test seams" or "Acceptance criteria" section counts); otherwise confirm it with the user. Every test lands at an agreed seam. You can't test everything — agreeing the seams up front is how testing effort lands on the critical paths and complex logic instead of every edge case.
 
 When no seam is agreed, ask: "What's the public interface, and which seams should we test?" Give each proposed seam a one-line note on what it catches and what it misses.
+
+**Declare each agreed seam public in code**, using the mechanism the "Seam declaration" heading of `docs/agents/testing.md` names. Without that file, use the language's own public-export marker; ask the user when that is unclear.
+
+**A seam that cannot be declared public gets no test.** Stop and agree the seam again with the user or ticket: make the name public and declare it, or pick the public interface that exercises it.
 
 When the shape of that interface is itself in question — how deep the module is, where the seam belongs, what the interface should expose — use the `/codebase-design` skill for the vocabulary. It is the shared source of the module, interface, depth, seam, adapter, leverage and locality terms, and it is a reference to consult, not a session to run.
 
