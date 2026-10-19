@@ -222,7 +222,7 @@ Report the result as one line under the Step 0.4 block:
 
 ### 0.5.4 Test scope
 
-Review grades the new or changed tests in the diff. A finding on test lines the diff did not change (`in_diff: no`) is dropped, whether or not the diff touches that test file; it never appears under Pre-existing. When one or more were dropped, the report carries one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". The orchestrator applies this rule to every finder, verifier and subagent finding (Step 4.1 Synthesis step 3, Step 4.2 outcome mapping, Step 4.9).
+Review grades the new or changed tests in the diff. A testing-standard finding on test lines the diff did not change (`in_diff: no`) is dropped, whether or not the diff touches that test file; it never appears under Pre-existing. A testing-standard finding is one that grades the test itself against the `testing-standards.md` checks; a security, correctness or other finding on unchanged test lines follows the normal Pre-existing route. When one or more were dropped, the report carries one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". The orchestrator applies this rule to every finder, verifier and subagent finding (Step 4.1 Synthesis step 3, Step 4.2 outcome mapping, Step 4.9).
 
 Proceed to Step 1.
 
@@ -603,7 +603,7 @@ Prompt:
 After all 4 finder reports return inline:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
-3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a finding on test lines the diff did not change is dropped, with at most one pointer Note, per Step 0.5.4. The mutating rosters (Step 4.1-RTM Agents 1–4) return `in_diff` too and follow the same rule; `--effort low` (Step 4.9) applies it to the subagent's findings.
+3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a testing-standard finding on test lines the diff did not change is dropped, with at most one pointer Note, per Step 0.5.4. The mutating rosters (Step 4.1-RTM Agents 1–4) return `in_diff` too and follow the same rule; `--effort low` (Step 4.9) applies it to the subagent's findings.
 4. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
 5. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
 6. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
@@ -658,7 +658,7 @@ Prompt template:
 
 **Outcome mapping:**
 - `CONFIRMED` or `PLAUSIBLE` → include in main report at stated severity
-- `PRE_EXISTING` → move to the `📌 Pre-existing (outside this diff)` section at MINOR; exclude from grade calculation. A `PRE_EXISTING` verdict on a test-file finding drops the finding instead, under Step 0.5.4 (one Note, never listed under Pre-existing)
+- `PRE_EXISTING` → move to the `📌 Pre-existing (outside this diff)` section at MINOR; exclude from grade calculation. A `PRE_EXISTING` verdict on a testing-standard finding on test lines the diff did not change drops the finding instead, under Step 0.5.4 (one Note, never listed under Pre-existing)
 - `REFUTED` → move to `### 🔍 Candidate Issues (Not Confirmed)` section in the report; exclude from grade calculation
 
 > MINOR findings are **not** sent to verifiers (cost vs benefit). They proceed directly to Step 11.
@@ -904,7 +904,7 @@ Copy one verdict string verbatim from this list, chosen by the grade of the conf
 1. **[File]:[Line]** (`[code_name]`) - [Issue] *(Refuted: [reason])*
 
 ### 📌 Pre-existing (outside this diff) — omit section when empty
-> Real problems on lines the diff does not touch. Reported MINOR, excluded from the grade, never a reason to withhold approval; the author may file a follow-up.
+> Real problems on lines the diff does not touch (a testing-standard finding on unchanged test lines is dropped instead, Step 0.5.4). Reported MINOR, excluded from the grade, never a reason to withhold approval; the author may file a follow-up.
 1. **[File]:[Line]** (`[code_name]`) - [Issue] *(finder severity: [CRITICAL|MAJOR|MINOR]; [fix])*
 
 ### 🔗 Lineage (ADR-0061)

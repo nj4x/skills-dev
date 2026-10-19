@@ -183,11 +183,11 @@ The pass is Python-only for now; other languages get `status: skipped` with reas
 
 ### Step 7b — Seam classification
 
-Set ledger `phase: seams`. Runs after the evidence pass and before Step 8 writes the plan. Python only: other languages get no seams and no pinning classification. Read `codebase-design` for the terms module, interface, seam, and adapter. This skill uses the seam definition from `skills/engineering/tdd/SKILL.md:20` word for word:
+Set ledger `phase: seams`. Runs after the evidence pass and before Step 8 writes the plan. Python only: other languages get no seams and no pinning classification. Read `codebase-design` for the terms module, interface, seam, and adapter. This skill uses the seam definition from `skills/engineering/tdd/SKILL.md` `## Seams — where tests go` word for word:
 
 > A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals. Here "seam" means the module's external seam, its public interface; `codebase-design` also defines internal seams, which are not test surfaces.
 
-Keep that quote and `tdd/SKILL.md:20` in step; `docs/agents/skill-dependencies.md` lists the dependency. Rules, schema, and signal definitions: `reference/patterns.md` → Seam classification. Helper: `$SKILL_DIR/reference/python/classify_seams.py`.
+Keep that quote and `tdd/SKILL.md` `## Seams — where tests go` in step; `docs/agents/skill-dependencies.md` lists the dependency. Rules, schema, and signal definitions: `reference/patterns.md` → Seam classification. Helper: `$SKILL_DIR/reference/python/classify_seams.py`.
 
 **Ledger resume.** Ledger `seams.status: confirmed` is final: reuse `seams.modules`, never ask again, and skip to item 3. Item 3 then runs `classify` again: rebuild `seams.warnings` from `seams.propose_warnings` and the new `classify` warnings, so the earlier `classify` warnings are replaced, not appended twice. A `proposed` record is re-proposed.
 
