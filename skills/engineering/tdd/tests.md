@@ -10,8 +10,10 @@ Examples use TypeScript; the rules are language-neutral. This repo's idioms are 
 // GOOD: Tests observable behavior
 test("user can checkout with valid cart", async () => {
   const cart = createCart();
-  cart.add(product);
-  const result = await checkout(cart, paymentMethod);
+  cart.add({ id: "p1", price: 10 });
+  const paymentClient = { charge: vi.fn().mockResolvedValue({ status: "paid" }) };
+  const email = { send: vi.fn() };
+  const result = await checkout(cart, paymentClient, email);
   expect(result.status).toBe("confirmed");
 });
 ```
@@ -29,11 +31,14 @@ Characteristics:
 **Implementation-detail tests**: Coupled to internal structure.
 
 ```typescript
-// BAD: Tests implementation details
-test("checkout calls paymentService.process", async () => {
-  const mockPayment = jest.mock(paymentService);
-  await checkout(cart, payment);
-  expect(mockPayment.process).toHaveBeenCalledWith(cart.total);
+// BAD: Asserts a call on the project's own collaborator (`pricing` is its own module), not the outcome
+test("checkout calls pricing.total", async () => {
+  const cart = createCart();
+  const paymentClient = { charge: vi.fn().mockResolvedValue({ status: "paid" }) };
+  const email = { send: vi.fn() };
+  const total = vi.spyOn(pricing, "total");
+  await checkout(cart, paymentClient, email);
+  expect(total).toHaveBeenCalledWith(cart.items);
 });
 ```
 

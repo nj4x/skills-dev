@@ -346,8 +346,8 @@ _PINNING_DOUBLE = (
     " the note per test names any other reference. Re-point the stub (deps injection or a checked patch); do not delete.")
 _PINNING_BOUNDARY = (
     "The run flagged these tests for review and did not change them. Each patches a name that the module imports"
-    " from outside the project (a system boundary), and that double is its strictest reference to the"
-    " module's internals; the note per test names any other reference. Doubling a boundary is allowed: keep the double and do not delete the test. Check only"
+    " from outside the project (a system boundary), and that double is its strictest non-seam reference;"
+    " the note per test names any other reference. Doubling a boundary is allowed: keep the double and do not delete the test. Check only"
     " that the patch is injected or checked (`autospec=True` or the repo's checked-patch helper), and that any"
     " call assertion covers a command, not a query.")
 # Per (criterion, kind): replaces the criterion text of _REVIEW_WHAT. Any other kind, or none, keeps that text.

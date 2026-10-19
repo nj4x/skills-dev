@@ -81,6 +81,8 @@ Assert the return value or state first. Assert calls only on commands.
 ```typescript
 // GOOD: The command is the outcome
 test("checkout sends a receipt", async () => {
+  const cart = createCart();
+  const paymentClient = { charge: vi.fn().mockResolvedValue({ status: "paid" }) };
   const email = { send: vi.fn() };
   await checkout(cart, paymentClient, email);
   expect(email.send).toHaveBeenCalledWith(cart.owner, "receipt");

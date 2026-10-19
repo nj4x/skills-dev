@@ -304,14 +304,30 @@ def _bound_names(tree):
     return names
 
 
-def boundary_names(tree, importer, importer_is_pkg, files):
+def _resolves_under_source(root, source_roots, module):
+    """True when `module` is a file or directory under a source root, also one `_skip_dir` leaves out of `files`."""
+    parts = module.split(".")
+    for sr in source_roots:
+        base = root / sr
+        if base.joinpath(*parts).is_dir() or base.joinpath(*parts[:-1], parts[-1] + ".py").is_file():
+            return True
+    return False
+
+
+def boundary_names(tree, importer, importer_is_pkg, files, root=None, source_roots=()):
     """Names the module binds only by imports whose source is not a project module (third-party or stdlib).
 
     A source counts as a project module when it is a source file, or a package (also a namespace
-    package without `__init__.py`) holding one. A name rebound from a project source is not a boundary.
+    package without `__init__.py`) holding one, or, given `root` and `source_roots`, a path that exists
+    under a source root (a subpackage named like a skipped directory, such as `build`, is absent from
+    `files` but still the project's own). A name rebound from a project source is not a boundary.
     """
     def project(module):
-        return module is not None and (module in files or any(k.startswith(module + ".") for k in files))
+        if module is None:
+            return False
+        if module in files or any(k.startswith(module + ".") for k in files):
+            return True
+        return root is not None and _resolves_under_source(root, source_roots, module)
 
     external, internal = set(), set()
     for node in _module_statements(tree.body):
@@ -771,7 +787,7 @@ def classify(root, source_roots, seams_doc, test_paths, evidence=None):
     for mod in seam_sets:
         tree = _parse(root / files[mod][0])
         tables[mod] = module_table(tree) if tree is not None else {}
-        boundaries[mod] = boundary_names(tree, mod, files[mod][1], files) if tree is not None else set()
+        boundaries[mod] = boundary_names(tree, mod, files[mod][1], files, root, source_roots) if tree is not None else set()
     interface, pinning_raw, all_refs = _split_tests(root, test_paths, files, seam_sets, tables, warnings, boundaries)
     _widen_kinds(pinning_raw)
     out = {"modules": modules_out}
