@@ -166,8 +166,8 @@ For detailed guidelines, see the following documents. The Kotlin, Python, and Te
 | Mutating Modes | [workflow-mutating.md](docs/workflow-mutating.md) | Step 4.1-RTM, Step 14, mutating error handling: read for `--mode autofix` or `review-to-merge` |
 | Security Patterns | [security-patterns.md](docs/security-patterns.md) | Hardcoded secrets, injection risks, CORS issues |
 | Architecture Patterns | [architecture-patterns.md](docs/architecture-patterns.md) | Field injection, business logic in controllers, entity exposure |
-| Kotlin Standards (default) | [kotlin-standards.md](docs/kotlin-standards.md) | Vertical slice pattern, three-tier model, validation patterns, Data View alignment |
+| Kotlin Standards (default) | [kotlin-standards.md](docs/kotlin-standards.md) | Vertical slice pattern, three-tier model, validation patterns, Data View alignment, Kotlin/MockK/Spring testing |
 | Python Standards (default) | [python-standards.md](docs/python-standards.md) | DRY, pydantic v2, psycopg2 cursor/row/error/batch patterns, type hints, testing |
-| Testing Standards (default) | [testing-standards.md](docs/testing-standards.md) | Kotlin Test Framework, MockK usage, test independence |
+| Testing Standards (default) | [testing-standards.md](docs/testing-standards.md) | Language-neutral test checks: layout, seams, mocking stance, parametrize, assertions, severity. Kotlin/Spring specifics: kotlin-standards.md → Testing |
 | Git Commands | [git-commands.md](docs/git-commands.md) | Git command reference and best practices |
 | Maintainability Smells | [smell-baseline.md](docs/smell-baseline.md) | Fowler ch.3 12-smell vocabulary; reported as Notes only (no grade impact) |
