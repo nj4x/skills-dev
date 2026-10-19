@@ -212,7 +212,7 @@ Resolve the path part of every candidate with `realpath`, and keep one entry per
 
 ### 0.5.3 Precedence
 
-`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. With no `docs/agents/testing.md`, the bundled neutral testing rules apply, with neighbouring tests supplying the facts. When `REPO_STANDARDS` is empty, the bundled standards apply as before and the review behaves exactly as it did without this step.
+`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. With no `docs/agents/testing.md`, the bundled neutral testing rules apply, with neighbouring tests supplying the facts. When `REPO_STANDARDS` is empty, the bundled Kotlin, Python and Testing standards apply, with neighbouring tests supplying the testing facts.
 
 Report the result as one line under the Step 0.4 block:
 
@@ -222,7 +222,7 @@ Report the result as one line under the Step 0.4 block:
 
 ### 0.5.4 Test scope
 
-Review grades the new or changed tests in the diff. A Finder C finding on a test the diff does not touch is dropped in Synthesis, which adds the one pointer Note (Step 4.1 only; see its Pre-existing rule).
+Review grades the new or changed tests in the diff. A finding from any finder on a test file the diff does not touch (`in_diff: no`) is dropped, and the report carries at most one pointer Note (see Synthesis step 3 of Step 4.1).
 
 Proceed to Step 1.
 
@@ -603,7 +603,7 @@ Prompt:
 After all 4 finder reports return inline:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
-3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a Finder C finding on a test the diff does not touch is dropped, not reported; when Finder C dropped one or more, add one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". At most one such Note per report. Only Step 4.1 Finder C drops and notes. `--effort low` (Step 4.9) and the mutating rosters emit no pointer Note; the mutating Agents 1–4 return no `in_diff` field, so their finding on an untouched test stays in the list and is graded like any other.
+3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: any finder's finding on a test file the diff does not touch (`in_diff: no`) is dropped, not reported; when one or more were dropped, add one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". At most one such Note per report. The mutating rosters (Step 4.1-RTM Agents 1–4) return `in_diff` too and follow the same rule; `--effort low` (Step 4.9) applies it to the subagent's findings.
 4. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
 5. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
 6. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
@@ -706,7 +706,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Add `in_diff: yes|no` (`yes` only when the cited line is added or modified by the diff); an `in_diff: no` finding is reported MINOR in the `📌 Pre-existing (outside this diff)` section, outside the grade. Open the code a recommended fix would change and confirm the fix keeps the invariants that code relies on. Prefer omission over false positives.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Add `in_diff: yes|no` (`yes` only when the cited line is added or modified by the diff); an `in_diff: no` finding is reported MINOR in the `📌 Pre-existing (outside this diff)` section, outside the grade, except on a test file, where it is dropped and the report gets the one pointer Note of Step 4.1 Synthesis step 3. Open the code a recommended fix would change and confirm the fix keeps the invariants that code relies on. Prefer omission over false positives.
 
 Wait for the agent to return findings, then proceed to Step 10.5 (Lineage Enforcement), then Step 11 with the unified finding list.
 

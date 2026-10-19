@@ -35,7 +35,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - Is the `tdd` skill installed? (a `tdd` folder alongside this one, or `tdd` in your available skills.) This decides whether Section E runs at all. When it is, explore the testing facts below.
 - Languages present and their runner markers: read `../refactor-tests/reference/patterns.md` → "Language detection" and "Runner detection" when `refactor-tests` is installed; otherwise `pyproject.toml`, `package.json`, `go.mod`, `pom.xml`, `build.gradle*`.
 - The test tree: sample 5 test files per language. Does each mirror its source path (patterns.md "Path templates")? Is there an integration directory? Is there a meta-test or baseline file that guards the layout (`rg -l 'baseline|tier' <tests dir>`)?
-- Idioms in use, by search, per `testing.md` heading: `__all__` / `export` (Seam declaration); `autospec`, a `patch_*` helper, a deps object (Stub helper); `def (_?assert|check|expect|verify)\w*` in test files (Assertion idiom); the parametrize construct (Parametrize idiom); a shuffler plugin in dependencies (Order independence); slow markers in runner config (Cost budget); a mutation tool in dependencies (`mutmut`, `cosmic-ray`, Stryker, PIT).
+- Idioms in use, by search, per `testing.md` heading: `__all__` / `export` (Seam declaration); `autospec`, a `patch_*` helper, a deps object (Stub helper); `def (_?assert|check|expect|verify)\w*` in test files (Assertion idiom); the parametrize construct (Parametrize idiom); a shuffler plugin in dependencies (Order independence); slow markers in runner config (Cost budget).
 - Existing gates, recorded and never added: the layout guard (`Guard:`), the shuffler (`Shuffler:`), the slow-tier exclusion (Cost budget).
 - An existing testing guide that `AGENTS.md`/`CLAUDE.md` points to (for example `docs/claude/testing.md`, `CODING_STANDARDS.md`).
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
@@ -103,9 +103,8 @@ Ask only these, one question each, recommended answer first:
 
 1. A **detected** value that differs from the default (for example a flat test tree, not mirrored): keep the repo's convention, or adopt the default for new tests? Recommend the default for new tests.
 2. **Seam declaration**, when not detected: propose the language's own public marker.
-3. **Mutation check**, when no tool is detected: `none` (recommended) or a command.
 
-Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. A heading that gets a fact drops the template's comment line and carries no `not set` line; only a heading with no fact says `not set`.
+Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. A heading with no fact reads `not set`; a line key with no fact reads `Key: not set` (for example `Raisers: not set`). A heading or key that gets a fact drops the template's comment and the `{placeholder}` lines under it. The written file holds no `{placeholder}` text.
 
 **Existing guide.** Copy each fact it holds as one line under its heading and link the guide for the detail. Move or rewrite nothing in the guide.
 
@@ -169,7 +168,7 @@ When Section B ran on GitHub or GitLab, create each configured label the tracker
 - **Same tracker only.** The `# Issue tracker: <name>` heading names the tracker. When it differs from the Section A choice, or the file is a freeform "Other" one, redo the Section A write for it.
 - **Compare per operation or section:** present locally, missing, or differing from the template.
 - **Local wins on settings and customizations:** the PR flag value, label names, added operations, the `## Requirements corpus` block. The template wins on operations the local file lacks or holds in an older form. Put each real conflict to the user.
-- **`testing.md`:** the seven fixed headings plus Commands are the template's structure; values stay local. A heading the local file lacks is added from the template. A heading the user renamed is a conflict: put it to the user, since `tdd` finds a heading only by its fixed name.
+- **`testing.md`:** the seven fixed headings plus Commands are the template's structure; values stay local. A heading the local file lacks is added from the template as `not set` (its keys as `Key: not set`) unless Section E detects a value; the sync never writes `{placeholder}` lines into the repo's file. A heading the user renamed is a conflict: put it to the user, since `tdd` finds a heading only by its fixed name.
 - **Compose the merged text with `Skill("writing-for-agents")`.** Each meaning appears once: a section the template replaced is removed, not kept beside its successor. When that skill is absent, merge section by section.
 - **Sync the `## Agent skills` block** by the same rules.
 

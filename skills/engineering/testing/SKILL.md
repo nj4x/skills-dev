@@ -5,7 +5,7 @@ description: Use when running tests or committing changes. Use when the user say
 
 After code changes, run lint and the tests covering the change (selective runner below). Run the full suite when the runner falls back to it, when no changed-file list is given, or when the user asks.
 
-**Run commands.** Take the full-suite and one-file commands from `docs/agents/testing.md` → "Commands". Other headings in that file belong to other skills. With no file, no "Commands" heading, or `not set` under it, find the commands as before: the repo's AGENTS.md, then its runner config.
+**Run commands.** Take the full-suite and one-file commands from `docs/agents/testing.md` → "Commands". Other headings in that file belong to other skills. Each Commands line falls back on its own: when the file, the "Commands" heading, or that line is missing or reads `not set`, find that command in the repo's AGENTS.md, then its runner config.
 
 **Reading results.** Pass/fail comes from the runner's own summary line (pytest's final `N passed` / `N failed` line), read in full. Run the test command unpiped: a pipe (`| head`, `| tail`) returns the last command's exit code, not the runner's, and can cut off the summary. Start a suite expected to exceed two minutes with `run_in_background` and read its summary when it completes — a report of "green" quotes that summary line. This applies to your own test runs; a build gate inside a review runs in the foreground (code-review Step 2.2). Lint and check commands must show their own exit status: chain `&& echo OK` so a proxy that compresses or truncates output cannot turn an empty result into an unverified "clean".
 
@@ -24,7 +24,7 @@ When code-review or the user provides changed files, run only the tests covering
 
 **Docs-only changes:** drop documentation files — Markdown, ADRs, requirements, specs — from the changed set before mapping; no test covers them, so they never count as uncovered. If nothing remains, report "no code changed" and run lint only.
 
-**Repo mapper first:** when the repo ships a covering-tests script (the "covering tests for changed files:" line under `docs/agents/testing.md` → "Commands"; without that line, its AGENTS.md or testing doc), run it instead of the mapping below: it prints the tests to run, and a non-zero exit with `uncovered:` notes triggers the full-suite fallback. Broad `rg` mapping over-matches hub modules (many tests import them).
+**Repo mapper first:** when the repo ships a covering-tests script (the "covering tests for changed files:" line under `docs/agents/testing.md` → "Commands"; when that line is missing or reads `not set`, the script its AGENTS.md or testing doc names), run it instead of the mapping below: it prints the tests to run, and a non-zero exit with `uncovered:` notes triggers the full-suite fallback. Broad `rg` mapping over-matches hub modules (many tests import them).
 
 **Mapping (ripgrep first, search-codebase second, path-based fallback):** for each changed source file —
 1. `rg -l` the tests directory for module symbols from the changed file; pair import paths with bare class names to avoid over-matches; add any hits to the run set — including any matches found under the language's integration directory (`tests/integration/`, `integration/`, `src/test/integration/`). When ripgrep finds nothing, query the `search-codebase` skill for tests that reference the file's symbols.

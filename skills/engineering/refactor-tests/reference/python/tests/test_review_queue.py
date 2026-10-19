@@ -888,11 +888,11 @@ def test_triage_entry_without_a_criterion_is_credited_only_by_name(tmp_path, cap
 
 
 def test_boundary_double_text_asks_for_no_deletion_and_is_for_a_human(tmp_path, capsys):
-    from render_review_queue import WHAT, review_what
+    from render_review_queue import review_what
     text = review_what("pinning", "boundary-double")
     assert "do not delete the test" in text and "Remove a test only when a mutation check" not in text
     assert text != review_what("pinning", "collaborator-double")
-    assert text != WHAT["review"]["pinning"]
+    assert "outside the project (a system boundary)" in text
     _setup(tmp_path, _plan([_cand("test_b", "pinning", kind="boundary-double")]))
     (ticket,) = _render(tmp_path, capsys, "--stage")["tickets"]
     assert ticket["title"] == "Review 1 pinning test (boundary-double) in tests/pkg/adapters"

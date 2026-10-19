@@ -14,14 +14,14 @@ Spawn 5 Explore agents **in parallel**, per the Step 4.1 dispatch rule (READ-ONL
 
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angle is **Correctness & Edge Cases**: logic bugs, off-by-one and boundary conditions, null/empty/overflow handling, incorrect error handling, removed behavior callers rely on, stale-data risks, race conditions, data mutation from ambiguous input.
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`. Omit findings you are not confident about.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`, `in_diff: yes|no` (per the Step 4.1 scope rule). Omit findings you are not confident about.
 
 ### Agent 2 — Tests & Regressions
 
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angle is **Tests & Regressions**: missing coverage for changed paths, regressions introduced by the diff, brittle/flaky tests, test gaps per changed function, framework/standards adherence (Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`; pytest patterns for Python), test independence, event-exhaustiveness checks. For each changed function lacking a regression test, name the test that should exist.
 > Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief; may be empty). Where one conflicts with a bundled standard (Kotlin, Python, Testing), the repo document wins; cite it in the finding.
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix` (or the missing test to add). Omit findings you are not confident about.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix` (or the missing test to add), `in_diff: yes|no` (per the Step 4.1 scope rule). Omit findings you are not confident about.
 
 ### Agent 3 — Architecture & Maintainability
 
@@ -42,13 +42,13 @@ Prompt:
 >
 > Repo standards: read every entry in `REPO_STANDARDS` (the repo standards files and sections passed with this brief; may be empty). Where one conflicts with a bundled standard (Kotlin, Python, Testing), the repo document wins; cite it in the finding.
 >
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE). Omit findings you are not confident about.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE), `in_diff: yes|no` (per the Step 4.1 scope rule). Omit findings you are not confident about.
 
 ### Agent 4 — Security & Operational Risk
 
 Prompt:
 > You are a high-recall code reviewer (READ-ONLY). Your angle is **Security & Operational Risk**: hardcoded secrets/tokens, PII in logs, SQL/command injection, weak auth, insecure CORS, exposed internals — PLUS operational concerns relevant to autonomously merging this change: migration/rollback safety, config and feature-flag risk, idempotency, observability/logging gaps, and merge-safety (anything that would be unsafe to land on main).
-> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`. Omit findings you are not confident about.
+> For each finding return: `severity` (CRITICAL/MAJOR/MINOR), `file:line`, `description`, `recommended fix`, `in_diff: yes|no` (per the Step 4.1 scope rule). Omit findings you are not confident about.
 
 ### Agent 5 — Maintainability Smells
 

@@ -725,7 +725,7 @@ def test_cli_reuse_reads_the_default_confirmed_path(kinds_proj, capsys):
 
 
 def test_double_of_a_boundary_import_is_boundary_double_and_of_project_logic_is_not(tmp_path):
-    from classify_seams import NOTE_BOUNDARY, NOTE_DOUBLE, ref_kind
+    from classify_seams import NOTE_BOUNDARY, NOTE_DOUBLE
     proj = _proj_with(tmp_path, {
         "src/pkg/__init__.py": "",
         "src/pkg/svc.py": SVC,
@@ -758,7 +758,10 @@ def test_boundary_and_own_logic():
     assert (o["doubles"], o["kind"], o["note"]) == (["load_config"], "collaborator-double", NOTE_DOUBLE)
     both = pins[("test_boundary_and_own_logic", "src/pkg/svc.py")]
     assert both["kind"] == "collaborator-double"  # own-logic double is stricter
-    assert ref_kind("json", {"json": "import"}, True, {"json"}) == "boundary-double"
+
+
+def test_ref_kind_keeps_a_patched_constant_and_an_unpatched_import_out_of_boundary_double():
+    from classify_seams import ref_kind
     assert ref_kind("TIMEOUT", {"TIMEOUT": "constant"}, True, {"json"}) == "constant"
     assert ref_kind("json", {"json": "import"}, False, {"json"}) == "other"
 
@@ -774,3 +777,14 @@ def test_boundary_names_treat_namespace_packages_and_rebinds_as_project(tmp_path
         "try:\n    import ujson as fast\nexcept ImportError:\n    from pkg.cfg import fast\n"
     )
     assert boundary_names(tree, "pkg.svc", False, files) == {"json"}
+
+
+def test_project_subpackage_named_like_a_skipped_dir_is_not_a_boundary(tmp_path):
+    import ast
+
+    from classify_seams import boundary_names, source_files
+    proj = _proj_with(tmp_path, {"src/pkg/__init__.py": "", "src/pkg/svc.py": "", "src/pkg/build/steps.py": ""})
+    files = source_files(proj, ["src"])
+    assert "pkg.build.steps" not in files  # `build` is a skipped directory name
+    tree = ast.parse("import json\nfrom pkg.build import steps\nfrom pkg.build.steps import run\nimport pkg.build.steps as s\n")
+    assert boundary_names(tree, "pkg.svc", False, files, proj, ["src"]) == {"json"}
