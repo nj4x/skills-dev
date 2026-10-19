@@ -891,7 +891,7 @@ def test_boundary_double_text_asks_for_no_deletion():
     from render_review_queue import review_what
     text = review_what("pinning", "boundary-double")
     assert "do not delete the test" in text
-    assert "Remove a test only when a mutation check" not in text
+    assert "keep the double" in text
 
 
 def test_boundary_double_pinning_ticket_is_staged_for_a_human(tmp_path, capsys):

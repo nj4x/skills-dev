@@ -40,7 +40,7 @@ Where `docs/agents/testing.md` holds the repo's concrete fact, the line cites it
 5. **Tests with no inline assertion.** A test with no assertion of its own says "does not raise" in its name or docstring, or its only check is a call to a name on the `Raisers:` line, or it uses a fixture on the `Fixtures that assert:` line ("Assertion idiom").
 6. **Order independence.** Each test owns its state and passes in any order ("Order independence").
 7. **Call-time budget.** Stay under the budget; stub the slow boundary, not the test ("Cost budget").
-8. **Assertion strength.** Each test asserts something no other test asserts. Give each property the code enforces (a boundary, an anchor, a case rule, a type guard) its own case, even when that case covers no new lines.
+8. **Assertion strength.** Each test asserts something no other test asserts. Give each property the code enforces (a boundary, an anchor, a case rule, a type guard) its own case, even when that case covers no new lines: an assertion-strength case for a property the code enforces is kept without the spec naming it (see the green-on-arrival rule in "Rules of the loop"), and it never counts as the cycle's red.
 
 ## Anti-patterns
 
