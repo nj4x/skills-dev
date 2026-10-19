@@ -457,7 +457,7 @@ A triage ticket is titled `Triage <n> <criterion> tests from the review queue` (
 
 ## Seam classification (Python)
 
-Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `reuse`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md:20`; module, interface, seam, adapter come from `codebase-design`.
+Step 7b of `SKILL.md`. Helper: `reference/python/classify_seams.py` (`propose`, `reuse`, `classify`). The seam definition quoted in `SKILL.md` comes from `skills/engineering/tdd/SKILL.md` `## Seams — where tests go`; module, interface, seam, adapter come from `codebase-design`.
 
 **Seam signals**, per source module, strongest first. A name takes the first signal that proposes it, and the proposal records that signal.
 
