@@ -1,5 +1,7 @@
 # Good and Bad Tests
 
+Examples use TypeScript; the rules are language-neutral. This repo's idioms are in `docs/agents/testing.md`.
+
 ## Good Tests
 
 **Integration-style**: Test through real interfaces, not mocks of internal parts.
@@ -20,7 +22,7 @@ Characteristics:
 - Uses public API only
 - Survives internal refactors
 - Describes WHAT, not HOW
-- One logical assertion per test
+- One logical assertion per test; in a parametrized test, per case, with no branching on the parameter
 
 ## Bad Tests
 
@@ -39,7 +41,7 @@ Red flags:
 
 - Mocking internal collaborators
 - Testing private methods
-- Asserting on call counts/order
+- Asserting call counts or order on queries or on the project's own collaborators. Call assertions apply to commands only
 - Test breaks when refactoring without behavior change
 - Test name describes HOW not WHAT
 - Verifying through external means instead of interface
@@ -75,3 +77,45 @@ test("calculateTotal sums line items", () => {
   expect(calculateTotal([{ price: 10 }, { price: 5 }])).toBe(15);
 });
 ```
+
+**Grow or sibling**: A new case joins an existing `test.each` table only when it differs in data alone. Give every row a named id.
+
+```typescript
+// GOOD: Same seam, setup and assertion shape; only input and expected value differ
+test.each([
+  { id: "dot-decimal", input: "1.5", expected: 1.5 },
+  { id: "comma-decimal", input: "1,5", expected: 1.5 },
+])("parsePrice [$id]", ({ input, expected }) => {
+  expect(parsePrice(input)).toBe(expected);
+});
+
+// GOOD: A different assertion shape gets a sibling test
+test("parsePrice rejects empty input", () => {
+  expect(() => parsePrice("")).toThrow(EmptyInput);
+});
+
+// BAD: Branching on the parameter hides two tests in one
+test.each([
+  { id: "comma-decimal", input: "1,5", expected: 1.5 },
+  { id: "empty", input: "", expected: EmptyInput },
+])("parsePrice [$id]", ({ input, expected }) => {
+  if (expected === EmptyInput) expect(() => parsePrice(input)).toThrow(EmptyInput);
+  else expect(parsePrice(input)).toBe(expected);
+});
+```
+
+**Same lines, different assertion**: Each property the code enforces gets its own row, even when the row covers no new lines.
+
+```typescript
+// GOOD: Anchor, case and length rows run the same lines as the happy case, and each pins a different property
+test.each([
+  { id: "valid", input: "AAPL", expected: true },
+  { id: "trailing-newline", input: "AAPL\n", expected: false },
+  { id: "lowercase", input: "aapl", expected: false },
+  { id: "too-long", input: "TOOLONGX", expected: false },
+])("isValidSymbol [$id]", ({ input, expected }) => {
+  expect(isValidSymbol(input)).toBe(expected);
+});
+```
+
+The `trailing-newline`, `lowercase` and `too-long` rows add no coverage. They must not be cut as redundant: removing one lets a regex-anchor, case or length regression pass.
