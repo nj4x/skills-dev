@@ -185,7 +185,7 @@ The pass is Python-only for now; other languages get `status: skipped` with reas
 
 Set ledger `phase: seams`. Runs after the evidence pass and before Step 8 writes the plan. Python only: other languages get no seams and no pinning classification. Read `codebase-design` for the terms module, interface, seam, and adapter. This skill uses the seam definition from `skills/engineering/tdd/SKILL.md:20` word for word:
 
-> A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals.
+> A **seam** is the public boundary you test at: the interface where you observe behavior without reaching inside. Tests live at seams, never against internals. Here "seam" means the module's external seam, its public interface; `codebase-design` also defines internal seams, which are not test surfaces.
 
 Keep that quote and `tdd/SKILL.md:20` in step; `docs/agents/skill-dependencies.md` lists the dependency. Rules, schema, and signal definitions: `reference/patterns.md` → Seam classification. Helper: `$SKILL_DIR/reference/python/classify_seams.py`.
 

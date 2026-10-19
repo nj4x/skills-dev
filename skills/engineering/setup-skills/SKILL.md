@@ -12,6 +12,7 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `GLOSSARY.md`, ADRs, requirements, and reference docs live, and the consumer rules for reading them
 - **Legacy glossary migration** — rename a pre-rename `CONTEXT.md`/`CONTEXT-MAP.md` to `GLOSSARY.md`/`GLOSSARY-MAP.md`, so the consumer skills find it
+- **Testing** — how tests run and where they go, and the repo idioms `tdd` writes to (`docs/agents/testing.md`)
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -31,13 +32,19 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `.data/requirements/` — formal requirements docs (FS, SRS, API definitions); note if present. Also note an existing `## Requirements corpus` block in `docs/agents/domain.md`: it names a corpus elsewhere, and the regenerated `domain.md` keeps it verbatim
 - `.data/docs/` — external reference documentation (vendor APIs, integrations); note if present
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
+- Is the `tdd` skill installed? (a `tdd` folder alongside this one, or `tdd` in your available skills.) This decides whether Section E runs at all. When it is, explore the testing facts below.
+- Languages present and their runner markers: read `../refactor-tests/reference/patterns.md` → "Language detection" and "Runner detection" when `refactor-tests` is installed; otherwise `pyproject.toml`, `package.json`, `go.mod`, `pom.xml`, `build.gradle*`.
+- The test tree: sample 5 test files per language. Does each mirror its source path (patterns.md "Path templates")? Is there an integration directory? Is there a meta-test or baseline file that guards the layout (`rg -l 'baseline|tier' <tests dir>`)?
+- Idioms in use, by search, per `testing.md` heading: `__all__` / `export` (Seam declaration); `autospec`, a `patch_*` helper, a deps object (Stub helper); `def (_?assert|check|expect|verify)\w*` in test files (Assertion idiom); the parametrize construct (Parametrize idiom); a shuffler plugin in dependencies (Order independence); slow markers in runner config (Cost budget); a mutation tool in dependencies (`mutmut`, `cosmic-ray`, Stryker, PIT).
+- Existing gates, recorded and never added: the layout guard (`Guard:`), the shuffler (`Shuffler:`), the slow-tier exclusion (Cost budget).
+- An existing testing guide that `AGENTS.md`/`CLAUDE.md` points to (for example `docs/claude/testing.md`, `CODING_STANDARDS.md`).
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
 
 ### 2. Present findings and ask
 
 Summarise what's present and what's missing. Then take the sections in order — one section, one answer, then the next.
 
-Lead each section with the recommended answer so the user can accept it in a word. Give a one-line explainer only when the choice genuinely branches; skip the section entirely when exploration already settled it (Section B when `triage` isn't installed, Section C when there's no monorepo, Section D when no legacy `CONTEXT.md`/`CONTEXT-MAP.md` exists).
+Lead each section with the recommended answer so the user can accept it in a word. Give a one-line explainer only when the choice genuinely branches; skip the section entirely when exploration already settled it (Section B when `triage` isn't installed, Section E when `tdd` isn't installed, Section C when there's no monorepo, Section D when no legacy `CONTEXT.md`/`CONTEXT-MAP.md` exists).
 
 **Section A — Issue tracker.**
 
@@ -82,12 +89,34 @@ Stop and ask the user when a directory has both `CONTEXT.md` and `GLOSSARY.md`. 
 
 If the user declines the migration, record in `docs/agents/domain.md` that this repo keeps its glossary in `CONTEXT.md`. Otherwise the consumer skills will look only for `GLOSSARY.md`.
 
+**Section E — Testing.** Skip this section entirely when the `tdd` skill isn't installed (exploration told you) — an uninstalled skill needs no testing doc.
+
+> Explainer: `tdd` writes tests that `refactor-tests` can later check. It needs this repo's facts — where a test goes, how a seam is declared public, which stub helper and assertion idioms to use — under fixed headings in `docs/agents/testing.md`.
+
+Show one draft of the file from the [testing.md](./testing.md) seed, every heading filled. Tag each value by source:
+
+- **detected** — found in the repo (exploration);
+- **default** — proposed from `../refactor-tests/reference/patterns.md` for the language (path template, integration directory, assertion prefixes). Read it from there every run; never copy a default into this skill. The cost budget has no default there: it stays **not set** unless the user gives one. When `refactor-tests` isn't installed, the value is **not set**;
+- **not set** — nothing found and no default.
+
+Ask only these, one question each, recommended answer first:
+
+1. A **detected** value that differs from the default (for example a flat test tree, not mirrored): keep the repo's convention, or adopt the default for new tests? Recommend the default for new tests.
+2. **Seam declaration**, when not detected: propose the language's own public marker.
+3. **Mutation check**, when no tool is detected: `none` (recommended) or a command.
+
+Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed.
+
+**Existing guide.** Copy each fact it holds as one line under its heading and link the guide for the detail. Move or rewrite nothing in the guide.
+
+**Gates.** Record each gate exploration found in its line: the layout guard in "Test layout" `Guard:`, the shuffler in "Order independence" `Shuffler:`, the slow-tier exclusion in the "Cost budget" `Slow tier:` line. Where none was found, omit `Guard:` and the `Slow tier:` line, and write `Shuffler: none`. Recommend no gate. Write no CI, hook, or runner config.
+
 ### 3. Confirm and edit
 
 Show the user a draft of:
 
 - The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
-- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed); for a file that already exists, the diff against it (see **Sync a docs file that already exists** in step 4)
+- The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed), and `docs/agents/testing.md` (only when Section E ran); for a file that already exists, the diff against it (see **Sync a docs file that already exists** in step 4)
 - The legacy glossary migration plan, when Section D ran: each file rename as `old path → new path`, and each file whose references will be rewritten
 
 Let them edit before writing.
@@ -123,17 +152,24 @@ The block:
 ### Domain docs
 
 [one-line summary of layout — "single-context" or "multi-context"]. See `docs/agents/domain.md`.
+
+### Testing
+
+[one-line summary — languages and runner]. See `docs/agents/testing.md`.
 ```
 
 Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.md`, only when `triage` is installed and Section B ran. When it isn't, both are omitted.
 
+Include the `### Testing` sub-block, and write `docs/agents/testing.md`, only when `tdd` is installed and Section E ran. When it isn't, both are omitted.
+
 When Section B ran on GitHub or GitLab, create each configured label the tracker lacks (`gh label create` / `glab label create`), using a case-insensitive comparison of configured names to existing labels; if a `label create` call fails (lack of permission or any other error), report the labels still missing and continue, without aborting Section B.
 
-**Sync a docs file that already exists.** For each of `docs/agents/issue-tracker.md`, `domain.md`, and `triage-labels.md` already present, compare it with its seed template and merge, instead of regenerating it:
+**Sync a docs file that already exists.** For each of `docs/agents/issue-tracker.md`, `domain.md`, `triage-labels.md`, and `testing.md` already present, compare it with its seed template and merge, instead of regenerating it:
 
 - **Same tracker only.** The `# Issue tracker: <name>` heading names the tracker. When it differs from the Section A choice, or the file is a freeform "Other" one, redo the Section A write for it.
 - **Compare per operation or section:** present locally, missing, or differing from the template.
 - **Local wins on settings and customizations:** the PR flag value, label names, added operations, the `## Requirements corpus` block. The template wins on operations the local file lacks or holds in an older form. Put each real conflict to the user.
+- **`testing.md`:** the seven fixed headings plus Commands are the template's structure; values stay local. A heading the local file lacks is added from the template. A heading the user renamed is a conflict: put it to the user, since `tdd` finds a heading only by its fixed name.
 - **Compose the merged text with `Skill("writing-for-agents")`.** Each meaning appears once: a section the template replaced is removed, not kept beside its successor. When that skill is absent, merge section by section.
 - **Sync the `## Agent skills` block** by the same rules.
 
@@ -145,10 +181,11 @@ Then write the docs files that do not exist yet, using the seed templates in thi
 - [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) — GitLab issue tracker
 - [issue-tracker-local.md](./issue-tracker-local.md) — local-markdown issue tracker
 - [triage-labels.md](./triage-labels.md) — label mapping (only if `triage` is installed)
+- [testing.md](./testing.md) — test commands, layout, and authoring idioms (only if `tdd` is installed)
 - [domain.md](./domain.md) — domain doc consumer rules + layout
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-run this skill to sync those files with the current templates, switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these files. When Section E ran, `tdd`, `testing`, `code-review`, `implement`, `implement-spec`, and `refactor-tests` now read `docs/agents/testing.md`: `testing` only Commands, `tdd` all seven headings, `code-review` the whole file, `implement` and `implement-spec` Seam declaration, `refactor-tests` Test layout and Assertion idiom. If the glossary was migrated, list the renamed files and any old-name mentions that were left alone on purpose. Mention they can edit `docs/agents/*.md` directly later — re-run this skill to sync those files with the current templates, switch issue trackers, migrate a legacy `CONTEXT.md` glossary, or restart from scratch.
