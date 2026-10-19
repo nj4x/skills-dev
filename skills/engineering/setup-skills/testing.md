@@ -10,10 +10,10 @@ How this repo runs and writes tests. Skills read these headings:
 
 Edit values freely. Heading names and line keys are fixed: skills cite them by name. The line keys are `full suite:`, `one file:`, `covering tests for changed files:` (the Commands keys), `Integration directory:`, `Guard:`, `Prefix:`, `Raisers:`, `Fixtures that assert:`, `Named case id:`, `Shuffler:` and `Slow tier:`.
 
-**`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one. Each reader states its own fallback:
+**`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one; a line with no key (`{language}: …`) that is absent means no fact. Each reader states its own fallback:
 
-- `testing` falls back per Commands line (one-file included) to the repo's AGENTS.md, then its runner config.
-- `tdd` and `code-review` follow the neighbouring tests. `tdd` keeps the language's public-export marker for Seam declaration, and runs no budget check when Cost budget reads `not set`.
+- `testing` falls back per run-command line (full-suite and one-file) to the repo's AGENTS.md, then its runner config. The mapper line falls back to the script the repo's AGENTS.md or testing doc names, then to `testing`'s own mapping.
+- `tdd` and `code-review` follow the neighbouring tests. `tdd` keeps the language's public-export marker for Seam declaration, and runs no budget check when `Per-test call time:` reads `not set`.
 - `implement` and `implement-spec` use the public-export marker for Seam declaration.
 - `refactor-tests` uses its own table defaults and the project's other docs.
 
@@ -33,7 +33,7 @@ One line per language present:
 
 - {language}: `{source path template}` → `{test path template}`
 
-Integration directory: `{dir}` (a bare value applies to the primary test language, the one with the most test files; write one `{language}: {dir}` per language when the repo has more than one test language). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
+Integration directory: `{dir}` (a bare value applies to the primary test language, defined in `refactor-tests` `patterns.md` "Language detection"; write one `{language}: {dir}` per language when the repo has more than one test language). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
 
 Guard: `{meta-test or CI check that enforces the rule}`
 

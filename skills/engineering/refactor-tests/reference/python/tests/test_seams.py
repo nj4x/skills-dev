@@ -776,35 +776,46 @@ def test_boundary_names_treat_namespace_packages_and_rebinds_as_project(tmp_path
         "import json\nimport pkg.cfg\nfrom pkg import cfg as c1\nfrom . import cfg as c2\n"
         "try:\n    import ujson as fast\nexcept ImportError:\n    from pkg.cfg import fast\n"
     )
-    assert boundary_names(tree, "pkg.svc", False, files) == {"json"}
-
-
-def test_project_subpackage_named_like_a_skipped_dir_is_not_a_boundary(tmp_path):
-    import ast
-
-    from classify_seams import boundary_names, source_files
-    proj = _proj_with(tmp_path, {"src/pkg/__init__.py": "", "src/pkg/svc.py": "", "src/pkg/build/steps.py": ""})
-    files = source_files(proj, ["src"])
-    assert "pkg.build.steps" not in files  # `build` is a skipped directory name
-    tree = ast.parse("import json\nfrom pkg.build import steps\nfrom pkg.build.steps import run\nimport pkg.build.steps as s\n")
     assert boundary_names(tree, "pkg.svc", False, files, proj, ["src"]) == {"json"}
 
 
-def test_vendored_package_under_a_source_root_stays_a_boundary(tmp_path):
+_PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
+
+
+@pytest.mark.parametrize(
+    "layout, source_root, importer, code, expected",
+    [
+        pytest.param(
+            {**_PKG, "src/pkg/build/steps.py": ""}, "src", "pkg.svc",
+            "import json\nfrom pkg.build import steps\nfrom pkg.build.steps import run\nimport pkg.build.steps as s\n",
+            {"json"}, id="build-subpackage-is-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg.vendor import requests\n", {"requests"}, id="vendor-from-module-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg import vendor\n", {"vendor"}, id="vendor-from-package-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "import pkg.vendor.requests\n", set(), id="vendor-bare-import-binds-project-root"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "import pkg.vendor.requests as r\n", {"r"}, id="vendor-aliased-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg._vendor import requests\n", {"requests"}, id="underscore-vendor"),
+        pytest.param(
+            {"svc.py": "", "docs/index.md": ""}, ".", "svc",
+            "import docs\n", {"docs"}, id="directory-without-py-file"),
+        pytest.param(
+            {**_PKG, "src/ns/build/x.py": ""}, "src", "pkg.svc",
+            "import ns\n", set(), id="py-file-only-deeper-in-directory"),
+    ],
+)
+def test_boundary_names_decide_project_vs_boundary_by_the_bound_name(tmp_path, layout, source_root, importer, code, expected):
     import ast
 
     from classify_seams import boundary_names, source_files
-    proj = _proj_with(tmp_path, {"src/pkg/__init__.py": "", "src/pkg/svc.py": "", "src/pkg/vendor/requests/__init__.py": ""})
-    files = source_files(proj, ["src"])
-    tree = ast.parse("from pkg.vendor import requests\n")
-    assert boundary_names(tree, "pkg.svc", False, files, proj, ["src"]) == {"requests"}
-
-
-def test_directory_without_a_py_file_is_not_a_project_module(tmp_path):
-    import ast
-
-    from classify_seams import boundary_names, source_files
-    proj = _proj_with(tmp_path, {"svc.py": "", "docs/index.md": ""})
-    files = source_files(proj, ["."])
-    tree = ast.parse("import docs\n")
-    assert boundary_names(tree, "svc", False, files, proj, ["."]) == {"docs"}
+    proj = _proj_with(tmp_path, layout)
+    files = source_files(proj, [source_root])
+    assert boundary_names(ast.parse(code), importer, False, files, proj, [source_root]) == expected

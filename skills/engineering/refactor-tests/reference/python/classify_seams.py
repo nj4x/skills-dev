@@ -48,6 +48,7 @@ warning names the candidate so it is checked by hand.
 """
 import argparse
 import ast
+import functools
 import json
 import sys
 from pathlib import Path
@@ -307,50 +308,59 @@ def _bound_names(tree):
     return names
 
 
+@functools.cache
+def _holds_module(base, parts):
+    """True when `base/<parts>` is a directory holding a `.py` file at any depth, or a `<parts>.py` file."""
+    folder = base.joinpath(*parts)
+    if folder.is_dir() and next(folder.rglob("*.py"), None) is not None:
+        return True
+    return base.joinpath(*parts[:-1], parts[-1] + ".py").is_file()
+
+
+def _is_vendored(segment):
+    return segment in ("vendor", "vendored") or segment.endswith("_vendor")
+
+
 def _resolves_under_source(root, source_roots, module):
     """True when `module` is a `.py` file or a directory holding one under a source root, though `files` omits it.
 
     Only `build` (first-party generated code) overrides `_skip_dir`: `vendor`, `node_modules`, `.venv`
     and the other skipped names stay outside the project. A directory with no `.py` file is no module.
     """
-    parts = module.split(".")
+    parts = tuple(module.split("."))
     if any(p in _SKIP_NAMES - {"build"} for p in parts):
         return False
-    for sr in source_roots:
-        base = root / sr
-        folder = base.joinpath(*parts)
-        if folder.is_dir() and next(folder.rglob("*.py"), None) is not None:
-            return True
-        if base.joinpath(*parts[:-1], parts[-1] + ".py").is_file():
-            return True
-    return False
+    return any(_holds_module(root / sr, parts) for sr in source_roots)
 
 
-def boundary_names(tree, importer, importer_is_pkg, files, root=None, source_roots=()):
-    """Names the module binds only by imports whose source is not a project module (third-party or stdlib).
+def boundary_names(tree, importer, importer_is_pkg, files, root, source_roots):
+    """Names the module binds only by imports that do not refer to a project module (third-party or stdlib).
 
-    A source counts as a project module when it is a source file, or a package (also a namespace
-    package without `__init__.py`) holding one, or, given `root` and `source_roots`, a `.py` file or a
-    directory holding one under a source root (a subpackage named like `build`, absent from `files`,
-    is still the project's own; `vendor` is not). A name rebound from a project source is not a boundary.
+    A name refers to a project module when it is a source file, or a package (also a namespace
+    package without `__init__.py`) holding one, or a `.py` file or a directory holding one under a
+    source root of `root` (a subpackage named like `build`, absent from `files`, is still the
+    project's own). A vendored segment (`vendor`, `vendored`, `*_vendor`) marks third-party code.
+    `import a.b.c` binds `a`, so `a` decides; `import a.b.c as x` and `from a.b import c` bind the
+    full module. A name rebound from a project source is not a boundary.
     """
     def project(module):
-        if module is None:
+        if module is None or any(_is_vendored(p) for p in module.split(".")):
             return False
         if module in files or any(k.startswith(module + ".") for k in files):
             return True
-        return root is not None and _resolves_under_source(root, source_roots, module)
+        return _resolves_under_source(root, source_roots, module)
 
     external, internal = set(), set()
     for node in _module_statements(tree.body):
         if isinstance(node, ast.Import):
             for a in node.names:
-                (internal if project(a.name) else external).add(a.asname or a.name.split(".")[0])
+                bound = a.asname or a.name.split(".")[0]
+                (internal if project(a.name if a.asname else bound) else external).add(bound)
         elif isinstance(node, ast.ImportFrom):
             src = _resolve_from(importer, importer_is_pkg, node.level, node.module)
             for a in node.names:
                 if a.name != "*":
-                    (internal if project(src) else external).add(a.asname or a.name)
+                    (internal if project(src) and not _is_vendored(a.name) else external).add(a.asname or a.name)
     return external - internal
 
 
