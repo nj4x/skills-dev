@@ -7,7 +7,7 @@ description: Test-driven development. Use when the user wants to build features 
 
 TDD is the red → green loop. This skill is the reference that makes that loop produce tests worth keeping: what a good test is, where tests go, the anti-patterns, and the rules of the loop. Every section applies on every cycle — consult them before and during the loop, not after.
 
-When exploring the codebase, read `GLOSSARY.md` (if it exists) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching. Search source code conceptually and cross-file; search docs and requirements as a document corpus; for architecture-level questions start with a global search before reading individual files.
+When exploring the codebase, read `GLOSSARY.md` (if it exists) so test names and interface vocabulary match the project's domain language, and respect ADRs in the area you're touching. Read `docs/agents/testing.md` once here too, before the first test. With no such file, follow the neighbouring tests' convention, ask when that is unclear, suggest `/setup-skills` once, and never block. Search source code conceptually and cross-file; search docs and requirements as a document corpus; for architecture-level questions start with a global search before reading individual files.
 
 ## What a good test is
 
@@ -29,6 +29,19 @@ When no seam is agreed, ask: "What's the public interface, and which seams shoul
 
 When the shape of that interface is itself in question — how deep the module is, where the seam belongs, what the interface should expose — use the `/codebase-design` skill for the vocabulary. It is the shared source of the module, interface, depth, seam, adapter, leverage and locality terms, and it is a reference to consult, not a session to run.
 
+## Test shape
+
+Where `docs/agents/testing.md` holds the repo's concrete fact, the line cites its heading.
+
+1. **Placement.** Mirror the source layout; put cross-cutting tests in the integration directory ("Test layout").
+2. **Parametrize over copies.** Grow an existing parametrized test only when all four hold: the same seam, the same setup and doubles, the same assertion shape, and a difference in data only. Convert on the second case, in the mirrored file. Add one row per cycle, each with a named id ("Parametrize idiom").
+3. **Behavior runs in the test body.** The code under test runs in the test body, not in a fixture or setup.
+4. **Assertion helpers.** Name assertion helpers with the repo's assertion prefix ("Assertion idiom", `Prefix:` line).
+5. **"Does not raise" tests.** The name or docstring says "does not raise" ("Assertion idiom").
+6. **Order independence.** Each test owns its state and passes in any order ("Order independence").
+7. **Call-time budget.** Stay under the budget; stub the slow boundary, not the test ("Cost budget").
+8. **Assertion strength.** Each test asserts something no other test asserts. Give each property the code enforces (a boundary, an anchor, a case rule, a type guard) its own case, even when that case covers no new lines.
+
 ## Anti-patterns
 
 - **Implementation-coupled** — mocks internal collaborators, tests private methods, or verifies through a side channel (querying the database instead of using the interface). The tell: the test breaks when you refactor but behavior hasn't changed.
@@ -39,4 +52,6 @@ When the shape of that interface is itself in question — how deep the module i
 
 - **Red before green.** Write the failing test first, then only enough code to pass it. Don't anticipate future tests or add speculative features.
 - **One slice at a time.** One seam, one test, one minimal implementation per cycle.
-- **Refactoring is not part of the loop.** It belongs to the review stage (see the `code-review` skill), not the red → green implementation cycle.
+- **Refactoring is not part of the loop.** Refactoring the diff's tests and code follows review findings (`implement` Minor triage, autofix for Majors), not the red → green cycle. Suite-wide test restructuring belongs to `refactor-tests`.
+- **Reshaping a test to take a new case row is part of writing the test.**
+- **A green-on-arrival row never counts as the cycle's red.** Keep it only when the spec names that edge.
