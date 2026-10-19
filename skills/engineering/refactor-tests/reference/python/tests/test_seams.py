@@ -722,3 +722,55 @@ def test_cli_reuse_reads_the_default_confirmed_path(kinds_proj, capsys):
     main(["reuse", "--root", str(kinds_proj), "--proposed", "proposed.json"])
     out = json.loads(capsys.readouterr().out)
     assert out["status"] == "ok" and out["diff"]["added"] == {"src/pkg/svc.py": ["report"]}
+
+
+def test_double_of_a_boundary_import_is_boundary_double_and_of_project_logic_is_not(tmp_path):
+    from classify_seams import NOTE_BOUNDARY, NOTE_DOUBLE, ref_kind
+    proj = _proj_with(tmp_path, {
+        "src/pkg/__init__.py": "",
+        "src/pkg/svc.py": SVC,
+        "src/pkg/cfg.py": CFG,
+        "tests/test_bd.py": '''from unittest.mock import patch
+
+from pkg.svc import run
+
+
+def test_boundary():
+    with patch("pkg.svc.json"):
+        assert run() is not None
+
+
+def test_own_logic():
+    with patch("pkg.svc.load_config"):
+        assert run() is not None
+
+
+def test_boundary_and_own_logic():
+    with patch("pkg.svc.json"), patch("pkg.svc.load_config"):
+        assert run() is not None
+''',
+    })
+    out = classify(proj, ["src"], _confirmed(propose(proj, ["src"])), ["tests/test_bd.py"])
+    pins = _by_test(out)
+    b = pins[("test_boundary", "src/pkg/svc.py")]
+    assert (b["internals"], b["doubles"], b["kind"], b["note"]) == ([], ["json"], "boundary-double", NOTE_BOUNDARY)
+    o = pins[("test_own_logic", "src/pkg/svc.py")]
+    assert (o["doubles"], o["kind"], o["note"]) == (["load_config"], "collaborator-double", NOTE_DOUBLE)
+    both = pins[("test_boundary_and_own_logic", "src/pkg/svc.py")]
+    assert both["kind"] == "collaborator-double"  # own-logic double is stricter
+    assert ref_kind("json", {"json": "import"}, True, {"json"}) == "boundary-double"
+    assert ref_kind("TIMEOUT", {"TIMEOUT": "constant"}, True, {"json"}) == "constant"
+    assert ref_kind("json", {"json": "import"}, False, {"json"}) == "other"
+
+
+def test_boundary_names_treat_namespace_packages_and_rebinds_as_project(tmp_path):
+    import ast
+
+    from classify_seams import boundary_names, source_files
+    proj = _proj_with(tmp_path, {"src/pkg/svc.py": "", "src/pkg/cfg.py": ""})  # pkg has no __init__.py
+    files = source_files(proj, ["src"])
+    tree = ast.parse(
+        "import json\nimport pkg.cfg\nfrom pkg import cfg as c1\nfrom . import cfg as c2\n"
+        "try:\n    import ujson as fast\nexcept ImportError:\n    from pkg.cfg import fast\n"
+    )
+    assert boundary_names(tree, "pkg.svc", False, files) == {"json"}
