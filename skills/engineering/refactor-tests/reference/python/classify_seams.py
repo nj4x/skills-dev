@@ -31,9 +31,12 @@ Coverage plays no part in that split. A patch or setattr target that names a mod
 attribute bound by an import (not defined in the module) is a test double: it is listed
 under `doubles`, not `internals`. A double of a name imported from outside the project's
 source files (third-party or stdlib: a system boundary) has kind `boundary-double`; a double
-of a name imported from a project module keeps `collaborator-double`. Each pinning candidate
-has a `kind`, the strictest over all the test's non-seam references: `public-non-seam` >
-`private` > `collaborator-double` > `constant` > `boundary-double` > `other`.
+of a name imported from a project module keeps `collaborator-double`. Outside the project means a
+module that is not a source file and has a `vendor`, `vendored`, `_vendor`, or `_vendored` segment (a
+source file with such a name stays project), or that resolves to no `.py` file under a source root; a
+`build` subpackage below the first segment counts as project, a top-level `build` does not.
+Each pinning candidate has a `kind`, the strictest over all the test's non-seam references:
+`public-non-seam` > `private` > `collaborator-double` > `constant` > `boundary-double` > `other`.
 
 `reuse` merges the `propose` output with an earlier run's seams-confirmed file and prints
 the difference the confirm round shows; see `reuse()`.
@@ -315,7 +318,7 @@ def _holds_module(base, parts):
     folder = base.joinpath(*parts)
     if folder.is_dir():
         for _, dirs, names in os.walk(folder):
-            dirs[:] = [d for d in dirs if d not in _SKIP_NAMES]
+            dirs[:] = [d for d in dirs if d not in _SKIP_NAMES - {"build"}]
             if any(n.endswith(".py") for n in names):
                 return True
     return base.joinpath(*parts[:-1], parts[-1] + ".py").is_file()
@@ -349,9 +352,13 @@ def boundary_names(tree, importer, importer_is_pkg, files, root, source_roots):
     full module. A name rebound from a project source is not a boundary.
     """
     def project(module):
-        if module is None or any(_is_vendored(p) for p in module.split(".")):
+        if module is None:
             return False
-        if module in files or any(k.startswith(module + ".") for k in files):
+        if module in files:
+            return True
+        if any(_is_vendored(p) for p in module.split(".")):
+            return False
+        if any(k.startswith(module + ".") for k in files):
             return True
         return _resolves_under_source(root, source_roots, module)
 
@@ -365,7 +372,8 @@ def boundary_names(tree, importer, importer_is_pkg, files, root, source_roots):
             src = _resolve_from(importer, importer_is_pkg, node.level, node.module)
             for a in node.names:
                 if a.name != "*":
-                    (internal if project(src) and not _is_vendored(a.name) else external).add(a.asname or a.name)
+                    first_party = project(src) and (f"{src}.{a.name}" in files or not _is_vendored(a.name))
+                    (internal if first_party else external).add(a.asname or a.name)
     return external - internal
 
 

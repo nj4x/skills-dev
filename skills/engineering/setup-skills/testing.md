@@ -8,7 +8,7 @@ How this repo runs and writes tests. Skills read these headings:
 - `implement` and `implement-spec` read **Seam declaration**.
 - `refactor-tests` reads **Test layout** and **Assertion idiom**. It runs its own order and cost checks and never reads **Order independence** or **Cost budget**.
 
-Edit values freely. Heading names and line keys are fixed: skills cite them by name. The line keys are `full suite:`, `one file:`, `covering tests for changed files:` (the Commands keys), `Integration directory:`, `Guard:`, `Prefix:`, `Raisers:`, `Fixtures that assert:`, `Named case id:`, `Shuffler:`, `Slow tier:` and `Per-test call time:`.
+Edit values freely. Heading names and line keys are fixed: skills cite them by name. The line keys are `full suite:`, `one file:`, `covering tests for changed files:` (the Commands keys), `Integration directory:`, `Guard:`, `Injection point:`, `Checked patch, fallback only:`, `Shared fakes and factories:`, `Prefix:`, `Raisers:`, `Fixtures that assert:`, `Named case id:`, `Shuffler:`, `Shared state a test must not leak:`, `Per-test call time:`, `Slow tier:` and `Known expensive setup:`.
 
 **`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one; a line with no key (`{language}: …`) that is absent means no fact. Each reader states its own fallback:
 

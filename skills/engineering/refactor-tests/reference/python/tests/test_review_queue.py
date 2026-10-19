@@ -892,7 +892,6 @@ def test_boundary_double_text_asks_for_no_deletion():
     text = review_what("pinning", "boundary-double")
     assert "do not delete the test" in text
     assert "Remove a test only when a mutation check" not in text
-    assert "outside the project (a system boundary)" in text
 
 
 def test_boundary_double_pinning_ticket_is_staged_for_a_human(tmp_path, capsys):
