@@ -212,7 +212,7 @@ Resolve the path part of every candidate with `realpath`, and keep one entry per
 
 ### 0.5.3 Precedence
 
-`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled Kotlin, Python and Testing standards apply. A testing fact that `docs/agents/testing.md` lacks (no file, or `not set`) comes from the neighbouring tests.
+`REPO_STANDARDS` goes to Finder C (Step 4.1), to the low-effort subagent (Step 4.9), and in mutating modes to the Step 4.1-RTM roster and the RTM-3 fixes ([workflow-mutating.md](workflow-mutating.md)). Where a repo document conflicts with a bundled standard (Steps 5-10 in [workflow-compliance.md](workflow-compliance.md): Kotlin, Python, Testing), the repo document wins. When `REPO_STANDARDS` is empty, the bundled Kotlin, Python and Testing standards apply. A testing fact that `docs/agents/testing.md` lacks (no file, or `not set`) comes from the neighbouring tests; review never asks for a path.
 
 Report the result as one line under the Step 0.4 block:
 
@@ -222,7 +222,7 @@ Report the result as one line under the Step 0.4 block:
 
 ### 0.5.4 Test scope
 
-Review grades the new or changed tests in the diff. A testing-standard finding on test lines the diff did not change (`in_diff: no`) is dropped, whether or not the diff touches that test file; it never appears under Pre-existing. A testing-standard finding is one that grades the test itself against the `testing-standards.md` checks; a security, correctness or other finding on unchanged test lines follows the normal Pre-existing route. When one or more were dropped, the report carries one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". The orchestrator applies this rule to every finder, verifier and subagent finding (Step 4.1 Synthesis step 3, Step 4.2 outcome mapping, Step 4.9).
+Review grades the new or changed tests in the diff. A testing-standard finding on test lines the diff did not change (`in_diff: no`) is dropped, whether or not the diff touches that test file; it never appears under Pre-existing. A testing-standard finding is a finding from `testing-standards.md` or from the Testing section of a language standards file (`kotlin-standards.md` → Testing, `python-standards.md` Testing Patterns); a security, correctness or other finding on unchanged test lines follows the normal Pre-existing route. When one or more were dropped, the report carries one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". The orchestrator applies this rule to every finder, verifier and subagent finding (Step 4.1 Synthesis step 3, Step 4.2 outcome mapping, Step 4.9).
 
 Proceed to Step 1.
 
@@ -583,7 +583,7 @@ Prompt:
 > - Kotlin idioms: `data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`, named constants
 > - Simplification: dead code, over-engineering, redundant abstractions, unused variables
 > - Efficiency: unnecessary allocations, repeated computations, missing batching
-> - Testing standards: the neutral checks in `testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`kotlin-standards.md` → Testing: Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`, naming, event exhaustiveness)
+> - Testing standards: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`~/.claude/skills/code-review/docs/kotlin-standards.md` → Testing: Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`, naming, event exhaustiveness)
 > - Altitude cleanup: magic strings, TODO comments without tracking, stale/misleading comments
 >
 > For each finding, return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE).
@@ -682,6 +682,8 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
   3. Read `~/.claude/skills/codebase-design/DEEPENING.md` — for dependency classification and seam discipline.
   4. Read `~/.claude/skills/code-review/docs/deep-module-lens.md` — the shared deep-module detection scenarios (same as medium/high effort paths).
   5. Read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and binding rules for the maintainability-smells dimension.
+  6. Read `~/.claude/skills/code-review/docs/testing-standards.md` — the language-neutral test checks for the testing-standards dimension.
+  7. Read `~/.claude/skills/code-review/docs/kotlin-standards.md` — its Testing section, for the language testing checks.
 - This analysis brief:
 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
@@ -702,7 +704,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Business logic** (when SRS provided, for UseCase/validator/event-handler changes): business rules enforced; authorization correct; state transitions respected; events published correctly. Apply 2x severity multiplier for UseCase findings.
 >
-> **Testing standards**: the neutral checks in `testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`kotlin-standards.md` → Testing: Kotlin Test over JUnit, `match {}` vs `any<T>()`, backtick names, test types per class, event exhaustiveness).
+> **Testing standards**: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`~/.claude/skills/code-review/docs/kotlin-standards.md` → Testing: Kotlin Test over JUnit, `match {}` vs `any<T>()`, backtick names, test types per class, event exhaustiveness).
 >
 > **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >

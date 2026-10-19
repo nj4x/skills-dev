@@ -220,7 +220,7 @@ Fill the reserved `kill_set` slot ([PAT]:453) with a check that runs per module,
 
 - **Seam definition quote.** Step 7b quotes `skills/engineering/tdd/SKILL.md` `## Seams — where tests go` word for word and reads `codebase-design` terms (`docs/agents/skill-dependencies.md:12`). G5 adds the "test double" term. Check `codebase-design` for an existing word before inventing one.
 - **Step 11 and `to-tickets`** (`docs/agents/skill-dependencies.md:13`; ADR-0079). Any edit must keep these: the slug rule, the `` key: `…` `` lines, the `label:` field, and headless mode. A new category (G3 `hotspot`) or status (G8 `declined`) changes the [PAT] tables and `render_review_queue.py` together, and needs an ADR-0079 amendment for the new status and edge.
-- **Path templates.** `testing` reads the [PAT] path templates (`docs/agents/skill-dependencies.md:14`). None of the proposals touch them.
+- **Path templates.** `testing` reads the [PAT] path templates (the `engineering/testing` → `engineering/refactor-tests` entry of `docs/agents/skill-dependencies.md`). None of the proposals touch them.
 - **Audio cues.** `say_skill_start` / `say_skill_done` / `say_skill_cancel` on every exit path ([SKILL]:36, :40-44, :394-401; `docs/agents/hooks.md`). A new interactive question (G6 bulk confirm, G8 volume gate) sits inside the run's suppression window. Check `docs/agents/hooks.md` for whether a mid-run question needs a permission or idle cue.
 - **Dry-run purity.** [SKILL]:33 allows writes only under `.scratch/refactor-tests/`. G3 profiling, the G6 seams file, and G7 summary all stay there. G2 mutation runs must not edit project config: install mutmut ephemerally, as Step 7 does.
 

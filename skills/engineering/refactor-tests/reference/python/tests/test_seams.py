@@ -813,15 +813,30 @@ _PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
             {"svc.py": "", "docs/index.md": ""}, ".", "svc",
             "import docs\n", {"docs"}, id="directory-without-py-file"),
         pytest.param(
-            {**_PKG, "src/ns/sub/x.py": ""}, "src", "pkg.svc",
-            "import ns\n", set(), id="py-file-only-deeper-in-directory"),
+            {**_PKG, "src/ns/node_modules/x.py": ""}, "src", "pkg.svc",
+            "import ns\n", {"ns"}, id="py-file-only-under-a-pruned-directory-is-no-module"),
+        pytest.param(
+            {**_PKG, "src/ns/build/x.py": ""}, "src", "pkg.svc",
+            "import ns\nfrom ns.build import x\n", set(), id="py-file-only-under-nested-build-is-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor.py": ""}, "src", "pkg.svc",
+            "from pkg import vendor\n", set(), id="first-party-vendor-module-stays-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendored.py": ""}, "src", "pkg.svc",
+            "from pkg import vendored\n", set(), id="first-party-vendored-module-stays-project"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendored/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg.vendored import requests\nfrom pkg import vendored\n", {"requests", "vendored"},
+            id="vendored-segment"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendored/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg._vendored import requests\n", {"requests"}, id="underscore-vendored-segment"),
     ],
 )
 def test_boundary_names_decide_project_vs_boundary_by_the_bound_name(tmp_path, layout, source_root, importer, code, expected):
     import ast
 
-    from classify_seams import _SKIP_NAMES, boundary_names, source_files
-    assert "build" in _SKIP_NAMES  # the build rows pin the code only while source_files skips build
+    from classify_seams import boundary_names, source_files
     proj = _proj_with(tmp_path, layout)
     files = source_files(proj, [source_root])
     assert boundary_names(ast.parse(code), importer, False, files, proj, [source_root]) == expected
