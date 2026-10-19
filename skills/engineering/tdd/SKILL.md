@@ -23,7 +23,7 @@ A **seam** is the public boundary you test at: the interface where you observe b
 
 When no seam is agreed, ask: "What's the public interface, and which seams should we test?" Give each proposed seam a one-line note on what it catches and what it misses.
 
-**Declare each agreed seam public in code**, using the mechanism the "Seam declaration" heading of `docs/agents/testing.md` names. Without that file, use the language's own public-export marker; ask the user when that is unclear.
+**Declare each agreed seam public in code**, using the mechanism the "Seam declaration" heading of `docs/agents/testing.md` names. Without that file, or when that heading reads `not set`, use the language's own public-export marker; ask the user when that is unclear.
 
 **A seam that cannot be declared public gets no test.** Stop and agree the seam again with the user or ticket: make the name public and declare it, or pick the public interface that exercises it.
 

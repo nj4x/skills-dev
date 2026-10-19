@@ -108,7 +108,6 @@ See [workflow-compliance.md §Step 8.5](workflow-compliance.md) for the full Dat
 
 Kotlin and Spring test conventions. The language-neutral checks live in [testing-standards.md](testing-standards.md); apply both.
 
-
 ### Kotlin Test Framework
 
 **Preferred over JUnit Jupiter** (note: the imports listed below are examples and not exhaustive):
@@ -245,10 +244,10 @@ fun `should return user when user exists`() {
     // Given
     val userId = "user123"
     every { userRepository.findById(userId) } returns User(userId, "John Doe")
-    
+
     // When
     val result = userService.getUser(userId)
-    
+
     // Then
     assertNotNull(result)
     assertEquals(userId, result.id)
@@ -263,12 +262,12 @@ fun `should throw UserNotFoundException when user does not exist`() {
     // Given
     val userId = "nonexistent"
     every { userRepository.findById(userId) } returns null
-    
+
     // When/Then
     val exception = assertFailsWith<UserNotFoundException> {
         userService.getUser(userId)
     }
-    
+
     assertEquals("User not found: $userId", exception.message)
 }
 ```
@@ -279,10 +278,10 @@ fun `should throw UserNotFoundException when user does not exist`() {
 fun `should call repository to save user`() {
     // Given
     val user = User("user123", "John Doe")
-    
+
     // When
     userService.createUser(user)
-    
+
     // Then
     verify(exactly = 1) { userRepository.save(match { it.id == "user123" }) }
 }

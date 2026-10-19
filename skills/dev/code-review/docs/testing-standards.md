@@ -19,7 +19,7 @@ Check each new or changed test against all eight:
 
 ## Severity
 
-- **Major**: the test has no assertion, is tautological, or tests or doubles the project's own internals (a double the language file mandates excepted).
+- **Major**: the test has no assertion (a test whose name or docstring says "does not raise" excepted), is tautological, or tests or doubles the project's own internals (a double the language file mandates excepted).
 - **Minor**: every other test finding.
 
 A tautological test recomputes its expected value the way the code does, so it passes by construction. Expected values come from a literal, a worked example, or the spec.
@@ -32,8 +32,7 @@ An assertion that targets the test's own fixture input, and never what the code 
 test "creates the user":
     given   repository = double of the UserRepository port
     when    service.create_user(user)          # runs in the body
-    then    assert_called_once_with(repository.save, user matching id "user123")   # command
-            assert result.id == "user123"      # query: asserted on the returned value
+    then    assert_called_once_with(repository.save, user matching id "user123")   # command: asserted on the double's call
 ```
 
 Assert a double's calls only for commands (`save`, `publish`, `send`). Never assert that a double answered a query (`find`, `get`): the returned value already proves it.

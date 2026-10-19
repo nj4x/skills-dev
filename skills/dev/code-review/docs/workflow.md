@@ -222,7 +222,7 @@ Report the result as one line under the Step 0.4 block:
 
 ### 0.5.4 Test scope
 
-Review grades the new or changed tests in the diff. A finding on a test the diff does not touch is dropped in Synthesis, which adds the one pointer Note.
+Review grades the new or changed tests in the diff. A finding on a test the diff does not touch is dropped in Synthesis, which adds the one pointer Note (Step 4.1 only; see its Pre-existing rule).
 
 Proceed to Step 1.
 
@@ -603,7 +603,7 @@ Prompt:
 After all 4 finder reports return inline:
 1. Merge all findings into a single list.
 2. Deduplicate: if two agents reported the same issue at the same file:line, keep the higher-severity entry. Finder D (Smell) Notes always lose to any Finder A/B/C finding at the same file:line — drop the Note.
-3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a finding on a test the diff does not touch is dropped, not reported; when Finder C dropped one or more, add one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". At most one such Note per report.
+3. Pre-existing: every finding with `in_diff: no` is re-graded MINOR, leaves the grade, and goes to the report's `📌 Pre-existing (outside this diff)` section with the finder's original severity noted. It never reaches a verifier and never blocks approval. Exception: a finding on a test the diff does not touch is dropped, not reported; when Finder C dropped one or more, add one NOTE: "pre-existing tests miss the testing standard; run `/refactor-tests`". At most one such Note per report. Only Step 4.1 Finder C drops and notes; `--effort low` (Step 4.9) and the mutating rosters emit no pointer Note.
 4. Sort: CRITICAL → MAJOR → MINOR → NOTE → POSITIVE.
 5. If `--effort medium`: proceed to Step 10.5 (Lineage Enforcement), then Step 11 (Categorize Findings) with this list.
 6. If `--effort high`: proceed to Step 4.2 (Adversarial Verification). Finder D Notes are never sent to verifiers.
