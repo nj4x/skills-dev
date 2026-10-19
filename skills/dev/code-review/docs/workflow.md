@@ -583,7 +583,7 @@ Prompt:
 > - Kotlin idioms: `data class` with `val`, extension functions, sealed interfaces, `checkNotNull {}`, named constants
 > - Simplification: dead code, over-engineering, redundant abstractions, unused variables
 > - Efficiency: unnecessary allocations, repeated computations, missing batching
-> - Testing standards: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`~/.claude/skills/code-review/docs/kotlin-standards.md` → Testing: Kotlin Test over JUnit, MockK `match {}` vs `any<T>()`, naming, event exhaustiveness)
+> - Testing standards: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file for the diff's language (Kotlin: `~/.claude/skills/code-review/docs/kotlin-standards.md` → `## Testing`; Python: `~/.claude/skills/code-review/docs/python-standards.md` → Testing Patterns)
 > - Altitude cleanup: magic strings, TODO comments without tracking, stale/misleading comments
 >
 > For each finding, return: `severity` (CRITICAL/MAJOR/MINOR/NOTE/POSITIVE), `file:line`, `description`, `recommended fix` (or `what's good` for POSITIVE).
@@ -683,7 +683,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
   4. Read `~/.claude/skills/code-review/docs/deep-module-lens.md` — the shared deep-module detection scenarios (same as medium/high effort paths).
   5. Read `~/.claude/skills/code-review/docs/smell-baseline.md` — the canonical 12-smell catalogue and binding rules for the maintainability-smells dimension.
   6. Read `~/.claude/skills/code-review/docs/testing-standards.md` — the language-neutral test checks for the testing-standards dimension.
-  7. Read `~/.claude/skills/code-review/docs/kotlin-standards.md` — its Testing section, for the language testing checks.
+  7. Read the language file for the diff's language — Kotlin: `~/.claude/skills/code-review/docs/kotlin-standards.md` (its `## Testing` section); Python: `~/.claude/skills/code-review/docs/python-standards.md` (its Testing Patterns section) — for the language testing checks.
 - This analysis brief:
 
 > You are a high-recall code reviewer (READ-ONLY). Analyze the diff against all dimensions below and return a unified finding list.
@@ -704,7 +704,7 @@ After all verifier agents complete, proceed to Step 10.5 (Lineage Enforcement), 
 >
 > **Business logic** (when SRS provided, for UseCase/validator/event-handler changes): business rules enforced; authorization correct; state transitions respected; events published correctly. Apply 2x severity multiplier for UseCase findings.
 >
-> **Testing standards**: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file (`~/.claude/skills/code-review/docs/kotlin-standards.md` → Testing: Kotlin Test over JUnit, `match {}` vs `any<T>()`, backtick names, test types per class, event exhaustiveness).
+> **Testing standards**: the neutral checks in `~/.claude/skills/code-review/docs/testing-standards.md` (layout, seam only, mocking stance, parametrize, in-body behavior, assertion vocabulary, static order and cost smells) plus the language file for the diff's language (Kotlin: `~/.claude/skills/code-review/docs/kotlin-standards.md` → `## Testing`; Python: `~/.claude/skills/code-review/docs/python-standards.md` → Testing Patterns).
 >
 > **Maintainability smells** (Fowler ch.3 — always Notes, never grade-affecting): apply the canonical 12-smell catalogue and binding rules from the pre-read `~/.claude/skills/code-review/docs/smell-baseline.md`. Only raise a smell you can name concretely with a specific code location.
 >

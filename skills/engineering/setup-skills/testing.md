@@ -10,12 +10,7 @@ How this repo runs and writes tests. Skills read these headings:
 
 Edit values freely. Heading names and line keys are fixed: skills cite them by name. The line keys are `full suite:`, `one file:`, `covering tests for changed files:` (the Commands keys), `Integration directory:`, `Guard:`, `Injection point:`, `Checked patch, fallback only:`, `Shared fakes and factories:`, `Prefix:`, `Raisers:`, `Fixtures that assert:`, `Named case id:`, `Shuffler:`, `Shared state a test must not leak:`, `Per-test call time:`, `Slow tier:` and `Known expensive setup:`.
 
-**`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one; a line with no key (`{language}: …`) that is absent means no fact. Each reader states its own fallback:
-
-- `testing` falls back per run-command line (full-suite and one-file) to the repo's AGENTS.md, then its runner config. The mapper line falls back to the script the repo's AGENTS.md or testing doc names, then to `testing`'s own mapping.
-- `tdd` and `code-review` follow the neighbouring tests. `tdd` keeps the language's public-export marker for Seam declaration, and runs no budget check when `Per-test call time:` reads `not set`.
-- `implement` and `implement-spec` use the public-export marker for Seam declaration.
-- `refactor-tests` uses its own table defaults and the project's other docs.
+**`not set` rule.** A line key with no fact reads `Key: not set`. A heading with no line key and no fact reads `not set`. A reader treats a missing line like a `not set` one; a line with no key (`{language}: …`) that is absent means no fact. Each reading skill states its own fallback.
 
 ## Commands
 
@@ -33,7 +28,7 @@ One line per language present:
 
 - {language}: `{source path template}` → `{test path template}`
 
-Integration directory: `{dir}` (a bare value applies to the primary test language, defined in `refactor-tests` `patterns.md` "Language detection"; write one `{language}: {dir}` per language when the repo has more than one test language). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
+Integration directory: `{dir}` (a bare value applies to the primary test language, defined in `refactor-tests` `patterns.md` "Language detection"; with more than one test language, write a single line, pairs separated by `; `, for example `Integration directory: python: tests/integration; kotlin: src/test/integration`). A test goes there when it exercises more than one source module. {Membership rule, or omit.}
 
 Guard: `{meta-test or CI check that enforces the rule}`
 
@@ -57,7 +52,7 @@ A seam that a ticket agrees is declared public by: {mechanism per language, for 
 
 - Prefix: `{prefix}` (the assertion helper prefix, for example `assert_`)
 - Raisers: {name}, … (documented "does not raise" helpers; `refactor-tests` passes each name as `--raiser`)
-- "Does not raise" tests: name or docstring says "does not raise".
+- A test with no inline assertion says "does not raise" in its name or docstring (a fixed convention; no line key).
 - Fixtures that assert: {names}, or none
 
 ## Parametrize idiom

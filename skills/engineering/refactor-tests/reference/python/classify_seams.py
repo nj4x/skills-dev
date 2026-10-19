@@ -77,6 +77,7 @@ def _public(name):
 
 
 _SKIP_NAMES = {"vendor", "node_modules", ".venv", "build", ".scratch", ".reference-projects", "__pycache__"}
+_SKIP_NAMES_BELOW_ROOT = _SKIP_NAMES - {"build"}  # first-party generated code may sit in a nested `build`
 
 
 def _skip_dir(parts):
@@ -314,11 +315,11 @@ def _bound_names(tree):
 
 @functools.cache
 def _holds_module(base, parts):
-    """True when `base/<parts>` is a directory holding a `.py` file at any depth outside skipped directories, or a `<parts>.py` file."""
+    """True when `base/<parts>` is a directory holding a `.py` file at any depth (skipping `_SKIP_NAMES_BELOW_ROOT` directories; `build` is walked), or a `<parts>.py` file."""
     folder = base.joinpath(*parts)
     if folder.is_dir():
         for _, dirs, names in os.walk(folder):
-            dirs[:] = [d for d in dirs if d not in _SKIP_NAMES - {"build"}]
+            dirs[:] = [d for d in dirs if d not in _SKIP_NAMES_BELOW_ROOT]
             if any(n.endswith(".py") for n in names):
                 return True
     return base.joinpath(*parts[:-1], parts[-1] + ".py").is_file()
@@ -336,7 +337,7 @@ def _resolves_under_source(root, source_roots, module):
     other skipped names stay outside the project. A directory with no `.py` file is no module.
     """
     parts = tuple(module.split("."))
-    if parts[0] in _SKIP_NAMES or any(p in _SKIP_NAMES - {"build"} for p in parts[1:]):
+    if parts[0] in _SKIP_NAMES or any(p in _SKIP_NAMES_BELOW_ROOT for p in parts[1:]):
         return False
     return any(_holds_module(root / sr, parts) for sr in source_roots)
 
@@ -351,10 +352,16 @@ def boundary_names(tree, importer, importer_is_pkg, files, root, source_roots):
     `import a.b.c` binds `a`, so `a` decides; `import a.b.c as x` and `from a.b import c` bind the
     full module. A name rebound from a project source is not a boundary.
     """
+    def own_file(module):
+        """A first-party source file: a vendored parent segment, or a vendored package name, marks third-party code."""
+        parts = module.split(".")
+        return (module in files and not any(_is_vendored(p) for p in parts[:-1])
+                and not (_is_vendored(parts[-1]) and files[module][1]))
+
     def project(module):
         if module is None:
             return False
-        if module in files:
+        if own_file(module):
             return True
         if any(_is_vendored(p) for p in module.split(".")):
             return False
@@ -372,7 +379,7 @@ def boundary_names(tree, importer, importer_is_pkg, files, root, source_roots):
             src = _resolve_from(importer, importer_is_pkg, node.level, node.module)
             for a in node.names:
                 if a.name != "*":
-                    first_party = project(src) and (f"{src}.{a.name}" in files or not _is_vendored(a.name))
+                    first_party = project(src) and (own_file(f"{src}.{a.name}") or not _is_vendored(a.name))
                     (internal if first_party else external).add(a.asname or a.name)
     return external - internal
 

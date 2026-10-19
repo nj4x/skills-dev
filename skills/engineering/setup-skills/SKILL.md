@@ -33,7 +33,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `.data/docs/` — external reference documentation (vendor APIs, integrations); note if present
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Is the `tdd` skill installed? (a `tdd` folder alongside this one, or `tdd` in your available skills.) This decides whether Section E runs at all. When it is, explore the testing facts below.
-- Languages present and their runner markers: read `../refactor-tests/reference/patterns.md` → "Language detection" and "Runner detection" when `refactor-tests` is installed; otherwise `pyproject.toml`, `package.json`, `go.mod`, `pom.xml`, `build.gradle*`.
+- Languages present and their runner markers: read `../refactor-tests/reference/patterns.md` → "Language detection" and "Runner detection (convention markers)" when `refactor-tests` is installed; otherwise `pyproject.toml`, `package.json`, `go.mod`, `pom.xml`, `build.gradle*`.
 - The test tree: sample 5 test files per language. Does each mirror its source path (patterns.md "Path templates")? Is there an integration directory? Is there a meta-test or baseline file that guards the layout (`rg -l 'baseline|tier' <tests dir>`)?
 - Idioms in use, by search, per `testing.md` heading: `__all__` / `export` (Seam declaration); `autospec`, a `patch_*` helper, a deps object (Stub helper); `def (_?assert|check|expect|verify)\w*` in test files (Assertion idiom); the parametrize construct (Parametrize idiom); a shuffler plugin in dependencies (Order independence); slow markers in runner config (Cost budget).
 - Existing gates, recorded and never added: the layout guard (`Guard:`), the shuffler (`Shuffler:`), the slow-tier exclusion (Cost budget).
@@ -104,7 +104,7 @@ Ask only these, one question each, recommended answer first:
 1. A **detected** value that differs from the default (for example a flat test tree, not mirrored): keep the repo's convention, or adopt the default for new tests? Recommend the default for new tests.
 2. **Seam declaration**, when not detected: propose the language's own public marker.
 
-Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. Write every missing fact by the seed's `not set` rule. A heading that gets a fact drops the template's comment and the `{placeholder}` lines under it. The written file holds no `{placeholder}` text. When exploration detects more than one test language, write `Integration directory:` as one `{language}: {dir}` per language.
+Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. Write every missing fact by the seed's `not set` rule. A heading that gets a fact drops the template's comment and the `{placeholder}` lines under it. The written file holds no `{placeholder}` text. When exploration detects more than one test language, write `Integration directory:` as a single line, pairs separated by `; `, for example `Integration directory: python: tests/integration; kotlin: src/test/integration`.
 
 **Existing guide.** Copy each fact it holds as one line under its heading and link the guide for the detail. Move or rewrite nothing in the guide.
 

@@ -831,6 +831,18 @@ _PKG = {"src/pkg/__init__.py": "", "src/pkg/svc.py": ""}
         pytest.param(
             {**_PKG, "src/pkg/_vendored/requests/__init__.py": ""}, "src", "pkg.svc",
             "from pkg._vendored import requests\n", {"requests"}, id="underscore-vendored-segment"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/__init__.py": "", "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "from pkg._vendor import requests\n", {"requests"}, id="pip-style-vendor-package-from-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/requests/__init__.py": ""}, "src", "pkg.svc",
+            "import pkg._vendor.requests as r\n", {"r"}, id="underscore-vendor-no-init-aliased-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/_vendor/requests.py": ""}, "src", "pkg.svc",
+            "from pkg._vendor.requests import get\n", {"get"}, id="underscore-vendor-no-init-from-module-import"),
+        pytest.param(
+            {**_PKG, "src/pkg/vendor.py": ""}, "src", "pkg.svc",
+            "import pkg.vendor as v\n", set(), id="first-party-vendor-module-aliased-stays-project"),
     ],
 )
 def test_boundary_names_decide_project_vs_boundary_by_the_bound_name(tmp_path, layout, source_root, importer, code, expected):
