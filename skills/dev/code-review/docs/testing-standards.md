@@ -31,6 +31,7 @@ An assertion that targets the test's own fixture input, and never what the code 
 ```text
 test "creates the user":
     given   repository = double of the UserRepository port
+    given   user = a user with id "user123"
     when    service.create_user(user)          # runs in the body
     then    assert_called_once_with(repository.save, user matching id "user123")   # command: asserted on the double's call
 ```

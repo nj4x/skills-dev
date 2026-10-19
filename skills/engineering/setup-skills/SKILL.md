@@ -105,7 +105,7 @@ Ask only these, one question each, recommended answer first:
 2. **Seam declaration**, when not detected: propose the language's own public marker.
 3. **Mutation check**, when no tool is detected: `none` (recommended) or a command.
 
-Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed.
+Accept the rest in one word. A value the user doesn't give stays `not set`; write only what the user confirmed. A heading that gets a fact drops the template's comment line and carries no `not set` line; only a heading with no fact says `not set`.
 
 **Existing guide.** Copy each fact it holds as one line under its heading and link the guide for the detail. Move or rewrite nothing in the guide.
 
