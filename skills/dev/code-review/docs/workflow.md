@@ -280,6 +280,16 @@ Parse the output for divergence indicators (e.g., `"Your branch and 'origin/...'
 
 All subsequent committed-scope diff/log commands use `origin/$REVIEW_BASE_REF`, not local `main`. Because `git diff A...B` computes the merge-base of the local refs, the three-dot result is only PR-accurate after this fetch of `origin/$REVIEW_BASE_REF` and the current branch.
 
+> ⛔ **HARD GATE — Zero-commit guard**: This gate MUST be resolved before proceeding to Step 1.5. A review of zero commits has nothing to grade, so it stops before the Step 2 build gate (ADR-0082).
+
+**Check commits ahead of the review base**:
+```bash
+AHEAD=$(git rev-list --count "origin/$REVIEW_BASE_REF..HEAD")
+```
+
+- **IF `AHEAD` is 0**: stop the review. Print: "No commits ahead of `origin/$REVIEW_BASE_REF` on `<current branch>`; nothing to review." Then list every worktree from `git worktree list --porcelain` with its path, branch (or "detached"), and `git -C <path> rev-list --count origin/$REVIEW_BASE_REF..HEAD`; label the counts "commits ahead of origin/$REVIEW_BASE_REF (this review's base; another PR may target a different base)". Suggest running `/pr-worktree <branch>` or entering one of the listed worktrees. The review never moves the session itself.
+- **IF `AHEAD` > 0**: proceed to Step 1.5.
+
 ---
 
 ## Step 1.5: PR Context Discovery via GitHub CLI (MANDATORY WHEN `gh` IS AVAILABLE AND `--scope committed`)
@@ -955,6 +965,7 @@ After presenting report, ask: "Would you like me to help address any of these fi
 
 - Not in git repository → "Requires git repository"
 - On main branch → "Switch to feature branch"
+- Zero commits ahead of origin/<base> (Step 1 guard) → "No commits ahead of origin/<base>; nothing to review" plus the worktree list
 - No changes → "No committed changes to review"
 - Git command fails → "Git error: [details]"
 - `gh` unavailable or not authenticated → "PR integration unavailable; continuing in non-PR mode"
@@ -984,6 +995,7 @@ After presenting report, ask: "Would you like me to help address any of these fi
 - [ ] `--effort`, `--scope`, and any `--no-build` / `--build-cmd` flags recorded at top of review
 - [ ] **IF `--scope working-tree`**: Steps 1–1.5 skipped; `PR_INTEGRATION = DISABLED` set before Step 2
 - [ ] **IF `--scope committed`** (default): Step 1.5 resolved and recorded (`PR_INTEGRATION`, `PR_CONTEXT_COLLECTED`, reason if disabled)
+- [ ] **IF `--scope committed`**: Step 1 zero-commit guard ran before Step 1.5; review stopped when `git rev-list --count origin/<base>..HEAD` was 0
 - [ ] **IF `--scope committed` and `gh` ready**: helper-script PR intake (`discover` + `triage`) completed and helper artifacts exist (or explicit user waiver recorded)
 - [ ] **IF `--scope committed`** (default): `PR_UNRESOLVED_THREAD_COUNT` recorded (0 is valid, missing is not)
 - [ ] Step 2 gate resolved (success+verified OR `--no-build` waiver OR explicit user waiver OR explicit partial-mode approval)
