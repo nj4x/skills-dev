@@ -37,7 +37,7 @@ source-srs: .data/requirements/{Domain}-SRS-{Version}.md
 ---
 ```
 
-With a `## Requirements corpus` block, `source-srs` names the corpus file that holds the anchoring SRS item instead. See [ADR-FORMAT.md](../domain-modeling/ADR-FORMAT.md) for full details. The ADR title and body are all that's required; optional sections (Status, Considered Options, Consequences, API Contract, Use Case Sequence, Data Realization) should only be included when they add genuine value.
+With a `## Requirements corpus` block, `source-srs` names the corpus file that holds the anchoring SRS item instead. See [ADR-FORMAT.md](../domain-modeling/ADR-FORMAT.md) — it decides the template, which optional sections, and which visual an ADR carries.
 
 ## Grilling conclusion
 

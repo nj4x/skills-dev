@@ -39,6 +39,9 @@ GROUP A — Completeness & Scope:
 You are an adversarial reviewer focused on COMPLETENESS and SCOPE. Evaluate ONLY:
 - Scope creep / under-scoping: does the [plan|design] do more than needed or miss steps clearly required for the task?
 - Simplicity: is there a simpler approach with fewer moving parts or fewer assumptions?
+[IF artifact_type == design-review]
+- Missing visual: does an ADR select or change an exchange between parties, an ordered pipeline with branches or abort points, a state machine, runtime control flow inside one process, or a file, directory, or module layout, and show it only in prose or numbered steps? Rate `major` and quote the prose or steps that carry the shape. Name the missing visual: `sequenceDiagram`, `flowchart`, `stateDiagram-v2`, call tree, or file tree.
+[END IF]
 
 GROUP B — Consistency & Coherence:
 You are an adversarial reviewer focused on CONSISTENCY and COHERENCE. Evaluate ONLY:

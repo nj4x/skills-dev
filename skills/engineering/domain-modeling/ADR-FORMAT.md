@@ -21,21 +21,58 @@ source-srs: .data/requirements/{Domain}-SRS-{Version}.md
 
 `source-srs` names the file that holds the anchoring SRS item, found through [Requirements corpus lookup](../setup-lineage/SKILL.md#requirements-corpus-lookup). When `docs/agents/domain.md` has a `## Requirements corpus` block, use the file under its `path` that the `resolver` prints for that ID (for example `docs/requirements/{FAMILY}.md`); otherwise keep the `.data/requirements/` form above.
 
-That's it. An ADR can be a single paragraph. The value is in recording *that* a decision was made and *why* — not in filling out sections.
+That's it. An ADR can be a single paragraph. The value is in recording *that* a decision was made and *why* — not in filling out sections. The one addition: when the decision selects or changes a shape listed in [Visual](#visual), add that visual.
 
 ## Optional sections
 
-Only include these when they add genuine value. Most ADRs won't need them.
+Add a section only when its note below applies.
 
 - **Status** frontmatter (`proposed | accepted | deprecated | superseded by ADR-NNNN`) — useful when decisions are revisited
 - **Considered Options** — only when the rejected alternatives are worth remembering
 - **Consequences** — only when non-obvious downstream effects need to be called out
 - **Requirements** — a `Requirements:` line listing the requirement IDs the decision traces to (e.g. `Requirements: REQ-1234`), when the ADR is driven by a formal requirement
 - **API Contract** — required when the decision selects or changes an API or invocation contract; state the operation, inputs, outputs, failure behavior, and compatibility constraints.
-- **Use Case Sequence** — required when the decision selects or changes a multi-party interaction sequence; include a concise sequence diagram or numbered exchange.
+- **Use Case Sequence** — required when the decision selects or changes an exchange; include the `sequenceDiagram` from [Visual](#visual); numbered steps may follow it to carry detail.
 - **Data Realization** — required when the decision selects or changes persistence shape, data representation, or provider translation; state the relevant model and invariants.
 
 FS/SRS define outcomes and system contracts. Invocation and realization mechanisms belong here; consult [Requirements boundary](../setup-lineage/SKILL.md#requirements-boundary). Include only the mechanism sections the ADR decides.
+
+## Visual
+
+Prose and numbered steps hide some decision shapes. When the ADR selects or changes one of these shapes, add the matching visual:
+
+- Exchange between two or more parties (client, proxy, upstream): Mermaid `sequenceDiagram`.
+- Ordered pipeline with branches or abort points (startup, install, migration): Mermaid `flowchart`.
+- State machine: Mermaid `stateDiagram-v2`.
+- Runtime control flow inside one process: `text` call tree.
+- File, directory, or module layout: shallow `text` file tree; use a `diff` tree when the ADR changes a layout that already exists.
+
+Pick the smallest view that makes the decision clear. Put it next to the text it shows, and use the same names for parties, steps, and files. Show the path the decision selects; show a rejected path only when the rejection is the point.
+
+An exchange:
+
+```mermaid
+sequenceDiagram
+    participant Ordering
+    participant Billing
+    participant Ledger
+    Ordering->>Billing: OrderPlaced event
+    Billing->>Ledger: post charge
+    Ledger-->>Billing: charge id
+    Billing-->>Ordering: PaymentCaptured event
+```
+
+A pipeline with an abort point:
+
+```mermaid
+flowchart LR
+    A[Pre-flight checks] -->|pass| B[Write config]
+    A -->|fail| X[Abort, change nothing]
+    B --> C[Start service]
+    C --> D{Health check}
+    D -->|pass| E[Record install]
+    D -->|fail| R[Roll back config]
+```
 
 ## Numbering
 
