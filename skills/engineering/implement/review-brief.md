@@ -1,6 +1,6 @@
 # Review brief template
 
-`render_review_brief.py` fills the `{{slot}}` markers below and prints the brief; pass its stdout verbatim as the `Agent({subagent_type: "general-purpose", ...})` prompt. Add no claims about the diff to it. A re-review runs the script again with `--diff-changed` set. Everything under the line is the brief.
+`render_review_brief.py` fills the `{{slot}}` markers below and prints the brief; pass its stdout verbatim as the `Agent({subagent_type: "general-purpose", ...})` prompt. With `--out <path>` it writes the brief to that file and prints a one-line prompt pointing at it; pass that line verbatim instead. Add no claims about the diff to it. A re-review runs the script again with `--diff-changed` set. Everything under the line is the brief.
 
 ---
 

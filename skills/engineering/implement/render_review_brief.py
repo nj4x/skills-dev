@@ -8,10 +8,15 @@ Usage:
         --test-evidence "7916 passed, 12 skipped in 677.42s (full suite: python -m pytest)" \
         --check "Does <symbol> do <ticket requirement>?" --check "Does <decision beyond the ticket> hold on <input>?"
 
-Integration review (implement-spec): add --spec and repeat --ticket once per merged ticket.
+Integration review (implement-spec): add --spec and repeat --ticket once per merged ticket, and pass
+each implementer seam line as --seam "<seam>: <test id>"; the script words the seam check once.
 
-Each --spec and --ticket value is a GitHub issue number (all digits) or a file path, resolved against --worktree when relative.
-Fixed text comes from review-brief.md; only the slots take input, so the brief carries no paraphrase of the diff. Works with any test runner. Exits 1 with the reason when the test evidence holds no digit, no check is given, a check is not a question (ends without `?`), --git is not a single git binary path, or a pointer is not an existing file.
+--out <path> writes the brief to that file and prints a one-line agent prompt that points at it, so the
+brief never passes through the caller's context. A relative path resolves against the current directory;
+a path inside --worktree is refused, since the brief would show up as an untracked file in the reviewed diff.
+
+Each --spec and --ticket value is a GitHub issue number (digits, optional leading `#`) or a file path, resolved against --worktree when relative.
+Fixed text comes from review-brief.md; only the slots take input, so the brief carries no paraphrase of the diff. Works with any test runner. Exits 1 with the reason when the test evidence holds no digit, neither --check nor --seam is given, a check is not a question (ends without `?`), a --seam is not a "<seam>: <test id>" line, --git is not a single git binary path, a pointer is not an existing file, --out is inside --worktree, or the template holds a slot without a value.
 """
 
 from __future__ import annotations
@@ -30,18 +35,53 @@ def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+SEAM_CHECK = (
+    "Is the reported covering test {test} in the diff, does it exercise the seam {seam}, and is that seam "
+    "declared public per docs/agents/testing.md \"Seam declaration\" (the public-export marker when the repo "
+    "has no testing.md or the heading reads not set)?"
+)
+NO_TEST_SEAM_CHECK = (
+    "The implementer reports no covering test for the seam {seam}, with this reason: {reason}. A reason that "
+    "does not hold is a Major finding. Does it hold, given the code and docs/agents/testing.md \"Seam "
+    "declaration\" (the public-export marker when the repo has no testing.md or the heading reads not set)?"
+)
+NO_TEST_LINE = re.compile(r"^(?P<seam>.+?): none\b(?P<reason>.*)$", re.DOTALL)
+AGENT_PROMPT = "Read {path} with the Read tool and follow it exactly: it is your complete review brief."
+
+
 def _is_issue(value: str) -> bool:
     return value.isascii() and value.isdigit()
 
 
+def _seam_check(line: str) -> str:
+    """Word the seam check for one implementer line.
+
+    A `none` line splits at the first `: none`, so a seam signature containing `: ` and a reason containing
+    `: ` both survive. Any other line splits at the last `: `, since a test id holds none.
+    """
+    none_line = NO_TEST_LINE.match(line.strip())
+    if none_line:
+        seam = none_line["seam"].strip()
+        reason = none_line["reason"].strip().lstrip("—-").strip() or "none given"
+        return NO_TEST_SEAM_CHECK.format(seam=seam, reason=reason)
+    seam, sep, test = line.rpartition(": ")
+    if not sep or not seam.strip() or not test.strip():
+        sys.exit(f'--seam takes the implementer\'s "<seam>: <test id>" line; got: {line!r}')
+    return SEAM_CHECK.format(seam=seam.strip(), test=test.strip())
+
+
 def _pointer(value: str, worktree: str) -> str:
-    if _is_issue(value):
-        return value
+    value = value.strip()
+    if _is_issue(value.removeprefix("#")):
+        return value.removeprefix("#")
     path = Path(value)
     if not path.is_absolute():
         path = Path(worktree) / path
     if not path.is_file():
-        sys.exit(f"pointer is neither an issue number nor an existing file: {path}")
+        sys.exit(
+            f"pointer is neither an issue number nor an existing file: {path} "
+            "(GitHub tracker: pass the bare issue number, e.g. --spec 1037 --ticket 1045)"
+        )
     return str(path)
 
 
@@ -67,9 +107,9 @@ def _slots(args: argparse.Namespace) -> dict[str, str]:
             "--git is the git binary the reviewer prefixes to each subcommand, e.g. `git` or `/usr/bin/git`: "
             "a single path whose basename is `git`"
         )
-    checks = [c.strip() for c in args.check if c.strip()]
+    checks = [_seam_check(s) for s in args.seam if s.strip()] + [c.strip() for c in args.check if c.strip()]
     if not checks:
-        sys.exit("give at least one --check: a ticket requirement the diff must satisfy, phrased as a question")
+        sys.exit("give at least one --check (a question) or --seam: a ticket requirement the diff must satisfy")
     claims = [c for c in checks if not c.endswith("?")]
     if claims:
         sys.exit(
@@ -100,7 +140,7 @@ def _slots(args: argparse.Namespace) -> dict[str, str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry: print the filled brief."""
+    """CLI entry: print the filled brief, or write it to --out and print the one-line agent prompt."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--spec", help="spec pointer: GitHub issue number or file path")
     parser.add_argument(
@@ -115,13 +155,26 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--effort", choices=["high", "low"], default="high")
     parser.add_argument("--diff-changed", default="none (first review)")
     parser.add_argument("--check", action="append", default=[], help="one specific check; repeat")
+    parser.add_argument(
+        "--seam", action="append", default=[], help='implementer seam line "<seam>: <test id>"; repeat'
+    )
+    parser.add_argument("--out", type=Path, help="write the brief here and print a one-line agent prompt")
     args = parser.parse_args(argv)
     slots = _slots(args)
     body = TEMPLATE.read_text().split("\n---\n", 1)[1].lstrip("\n")
     missing = set(re.findall(r"\{\{(\w+)\}\}", body)) - slots.keys()
     if missing:
         sys.exit(f"template slots without a value: {sorted(missing)}")
-    sys.stdout.write(re.sub(r"\{\{(\w+)\}\}", lambda m: slots[m.group(1)], body))
+    brief = re.sub(r"\{\{(\w+)\}\}", lambda m: slots[m.group(1)], body)
+    if args.out is None:
+        sys.stdout.write(brief)
+        return 0
+    out = args.out.resolve()
+    if out.is_relative_to(Path(args.worktree).resolve()):
+        sys.exit(f"--out {out} is inside --worktree: the brief would be an untracked file in the reviewed diff")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(brief)
+    print(AGENT_PROMPT.format(path=out))
     return 0
 
 
