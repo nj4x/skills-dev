@@ -40,8 +40,14 @@ Run `glab issue view <number> --comments`.
 Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
 - **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `glab issue create --label wayfinder:map`. (On GitLab tiers with native epics, an epic may hold the map instead; a labelled issue works everywhere.)
-- **Child ticket**: an issue attached to the map (see **Attach an issue to a parent issue** above), so it carries `Part of #<map>` at the top of its description, and labels `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Child ticket**: an issue created with `glab issue create --linked-issues <map> --link-type relates_to`, with `Part of #<map>` at the top of its description (see **Attach an issue to a parent issue** above) and labels `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
 - **Blocking**: GitLab's **native blocking link** — the canonical, UI-visible representation. Add it with the `/blocked_by #<n>` quick action, posted as a note (`glab issue note <child> --message "/blocked_by #<blocker>"`). Native blocking links are a Premium/Ultimate feature; on the free tier (or where unavailable) fall back to a `Blocked by: #<n>, #<n>` line at the top of the description. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: `glab issue list -O json` scoped to the map's children, drop any with an open blocker — a native `blocked_by` link to an open issue (`glab api projects/:id/issues/<child-iid>/links`), or an open issue in the `Blocked by` line — or an assignee; first in map order wins.
+- **Frontier query**:
+  1. Collect the map's children from two sources and union them:
+     - the issues linked to it: `glab api projects/:id/issues/<map>/links`;
+     - the issues whose description opens with `Part of #<map>`: `glab issue list -O json --search "Part of #<map>" --in description`, keeping only those where the line opens the description. This set catches children made before linking and by the `Part of` fallback.
+  2. Keep the open ones that carry a `wayfinder:<type>` label.
+  3. Drop any with an assignee or an open blocker — a native `blocked_by` link to an open issue (`glab api projects/:id/issues/<child-iid>/links`), or an open issue in the `Blocked by` line.
+  4. First in map order wins: linked children in the order `/links` returns them, then `Part of` children by issue number.
 - **Claim**: `glab issue update <n> --assignee @me` — the session's first write.
 - **Resolve**: `glab issue note <n> --message "<answer>"`, then `glab issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
