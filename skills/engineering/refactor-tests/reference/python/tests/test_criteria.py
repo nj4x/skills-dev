@@ -342,7 +342,7 @@ def test_removed_full_method_id_is_charged_only_its_own_class():
 
 
 def test_class_less_id_rule_differs_on_purpose_between_gate_and_call_time():
-    """Pinned rule (patterns.md, Demotion): the gate treats a class-less side as matching any
+    """Pinned rule (random-order-gate.md, Demotion): the gate treats a class-less side as matching any
     class, so it errs toward demoting; call time treats a bare id as top-level only, so it errs
     toward charging nothing."""
     assert matches("tests/t.py::TestK::test_c", "tests/t.py", "test_c")
